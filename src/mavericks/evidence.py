@@ -1,0 +1,312 @@
+import hashlib
+import json
+import sqlite3
+from datetime import date
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+from .schemas import Evidence
+
+
+def read_records(path):
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, list) else [data]
+    if suffix == ".pdf":
+        from pypdf import PdfReader
+
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+        return [
+            {
+                "source": str(path),
+                "question_summary": text or None,
+                "metadata": {"document_type": "unstructured", "requires_ocr": not bool(text.strip())},
+            }
+        ]
+    readers = {
+        ".csv": lambda path: pd.read_csv(
+            path, dtype={"estudio_id": str, "respondent_uid": str, "question_uid": str}
+        ),
+        ".parquet": pd.read_parquet,
+        ".xlsx": pd.read_excel,
+        ".xls": pd.read_excel,
+    }
+    if suffix == ".sav":
+        import pyreadstat
+
+        frame, _ = pyreadstat.read_sav(str(path))
+    elif suffix in readers:
+        frame = readers[suffix](path)
+    else:
+        raise ValueError(f"Formato no soportado: {suffix}")
+    return json.loads(frame.to_json(orient="records", date_format="iso"))
+
+
+class EvidenceRepository:
+    def __init__(self, path="data/processed/evidence.sqlite", semantic_index=None):
+        self.semantic_index = semantic_index
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.path = str(path)
+        with sqlite3.connect(self.path) as db:
+            db.execute("CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+
+    def ingest(self, path):
+        count = 0
+        with sqlite3.connect(self.path) as db:
+            for record in read_records(path):
+                # Explicit aliases only; never infer respondent joins or survey percentages.
+                record = dict(record)
+                for source, target in [("question_uid", "evidence_id"), ("estudio_id", "study_id")]:
+                    if source in record and target not in record:
+                        record[target] = record[source]
+                record.setdefault("source", str(path))
+                record.setdefault("original_file", str(path))
+                record.setdefault(
+                    "evidence_id",
+                    "FILE_"
+                    + hashlib.sha256(
+                        json.dumps(record, sort_keys=True, ensure_ascii=False).encode()
+                    ).hexdigest()[:24],
+                )
+                extras = {k: v for k, v in record.items() if k not in Evidence.model_fields}
+                record["metadata"] = {**record.get("metadata", {}), "original_fields": extras}
+                evidence = Evidence.model_validate(record)
+                db.execute(
+                    "INSERT INTO evidence VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+                    (evidence.evidence_id, evidence.model_dump_json()),
+                )
+                count += 1
+        if self.semantic_index is not None:
+            self.semantic_index.upsert(self.all())
+        return count
+
+    def attach_microdata(
+        self,
+        respondents_path,
+        responses_path,
+        weight="peso",
+        option_column="answer",
+        question_type="single",
+        demographics=("grupo_edad", "sexo", "nivel_estudios"),
+    ):
+        respondents = pd.DataFrame(read_records(respondents_path))
+        responses = pd.DataFrame(read_records(responses_path))
+        updated = 0
+        with sqlite3.connect(self.path) as db:
+            for evidence in self.all():
+                if evidence.evidence_id not in set(responses.question_uid):
+                    continue
+                stats = {
+                    "national": survey_distribution(
+                        respondents,
+                        responses,
+                        evidence.evidence_id,
+                        weight=weight,
+                        option_column=option_column,
+                        question_type=question_type,
+                    )["national"]
+                }
+                for column in demographics:
+                    if column in respondents:
+                        stats[column] = survey_distribution(
+                            respondents,
+                            responses,
+                            evidence.evidence_id,
+                            weight=weight,
+                            option_column=option_column,
+                            question_type=question_type,
+                            group_by=column,
+                        )
+                evidence.metadata["empirical_statistics"] = stats
+                evidence.metadata["microdata_files"] = [str(respondents_path), str(responses_path)]
+                evidence.metadata["question_type"] = question_type
+                evidence.sample_size = stats["national"]["n_respondents"]
+                db.execute(
+                    "UPDATE evidence SET payload=? WHERE id=?",
+                    (evidence.model_dump_json(), evidence.evidence_id),
+                )
+                updated += 1
+        return updated
+
+    def all(self):
+        with sqlite3.connect(self.path) as db:
+            return [
+                Evidence.model_validate_json(row[0])
+                for row in db.execute("SELECT payload FROM evidence ORDER BY id")
+            ]
+
+    def search(
+        self,
+        query,
+        limit=5,
+        excluded_ids=(),
+        excluded_texts=(),
+        cutoff=None,
+        target_population=None,
+        options=(),
+        topic=None,
+    ):
+        def normalize(t):
+            return " ".join((t or "").casefold().split())
+
+        excluded = {normalize(t) for t in excluded_texts}
+        records = [
+            e
+            for e in self.all()
+            if e.evidence_id not in excluded_ids
+            and normalize(e.question_text) not in excluded
+            and not set(e.metadata.get("equivalent_ids", [])) & set(excluded_ids)
+        ]
+        if cutoff:
+            # Unknown dates are excluded in temporal evaluation rather than assumed safe.
+            records = [e for e in records if e.fieldwork_date and e.fieldwork_date[:10] <= cutoff]
+        if not records:
+            return []
+        texts = [" ".join(filter(None, [e.question_text, e.question_summary, e.topic])) for e in records]
+        try:
+            vectorizer = TfidfVectorizer(strip_accents="unicode", ngram_range=(1, 2))
+            matrix = vectorizer.fit_transform(texts)
+            similarities = cosine_similarity(vectorizer.transform([query]), matrix)[0]
+        except ValueError:
+            return []
+        semantic_ranks = {}
+        if self.semantic_index is not None:
+            hits = self.semantic_index.search(query, limit=max(limit * 4, 20))
+            if hits:
+                semantic_ranks = {e_id: rank for rank, e_id in enumerate(hits["ids"][0])}
+        results = []
+        for e, similarity in zip(records, similarities):
+            if similarity <= 0 and e.evidence_id not in semantic_ranks:
+                continue
+            universe = float(target_population is not None and e.target_population == target_population)
+            option_match = len(set(options) & set(e.options)) / max(1, len(set(options) | set(e.options)))
+            thematic = float(bool(topic) and normalize(topic) == normalize(e.topic))
+            recency = 0.0
+            if e.fieldwork_date:
+                try:
+                    recency = 1 / (
+                        1 + max(0, (date.today() - date.fromisoformat(e.fieldwork_date[:10])).days) / 365
+                    )
+                except ValueError:
+                    pass
+            score = (
+                0.65 * float(similarity)
+                + 0.1 * universe
+                + 0.1 * option_match
+                + 0.1 * thematic
+                + 0.05 * recency
+            )
+            if e.evidence_id in semantic_ranks:
+                score = 0.7 * score + 0.3 / (1 + semantic_ranks[e.evidence_id])
+            results.append(
+                {"evidence": e.model_dump(), "retrieval_score": score, "cosine_similarity": float(similarity)}
+            )
+        return sorted(results, key=lambda r: (-r["retrieval_score"], r["evidence"]["evidence_id"]))[:limit]
+
+
+class SemanticIndex:
+    """Optional persistent multilingual index. Only accepts an already downloaded local model."""
+
+    def __init__(self, model_path, persist_path):
+        if not Path(model_path).is_dir():
+            raise ValueError("Se requiere un modelo de embeddings local; no se descarga automáticamente")
+        import chromadb
+        from sentence_transformers import SentenceTransformer
+
+        self.model = SentenceTransformer(str(model_path), local_files_only=True)
+        self.collection = chromadb.PersistentClient(path=str(persist_path)).get_or_create_collection(
+            "evidence"
+        )
+
+    def upsert(self, records):
+        if not records:
+            return
+        texts = [e.question_text or e.question_summary or "" for e in records]
+        self.collection.upsert(
+            ids=[e.evidence_id for e in records],
+            documents=texts,
+            embeddings=self.model.encode(texts).tolist(),
+        )
+
+    def search(self, query, limit=5):
+        count = self.collection.count()
+        if not count:
+            return []
+        return self.collection.query(
+            query_embeddings=self.model.encode([query]).tolist(), n_results=min(limit, count)
+        )
+
+
+def survey_distribution(
+    respondents,
+    responses,
+    question_uid,
+    weight="peso",
+    group_by=None,
+    question_type="single",
+    option_column="answer",
+    selected_column="selected",
+):
+    keys = ["estudio_id", "respondent_uid"]
+    required_r = set(keys + [weight] + ([group_by] if group_by else []))
+    if not required_r <= set(respondents) or not set(keys + ["question_uid", option_column]) <= set(
+        responses
+    ):
+        raise ValueError("Contrato CIS incompleto; indique columnas explícitas")
+    if respondents.duplicated(keys).any():
+        raise ValueError("Entrevistados duplicados dentro de un estudio")
+    selected = responses[responses.question_uid == question_uid]
+    if selected.empty:
+        raise ValueError("Pregunta no encontrada")
+    if selected.estudio_id.nunique() != 1:
+        raise ValueError("question_uid ambiguo entre estudios")
+    if question_type == "single" and selected.duplicated(keys).any():
+        raise ValueError("Respuesta única duplicada")
+    if question_type == "multiple":
+        if selected_column not in selected or selected.duplicated(keys + [option_column]).any():
+            raise ValueError("Respuesta múltiple requiere selected y una fila por persona/opción")
+        if not selected[selected_column].isin([0, 1, False, True]).all():
+            raise ValueError("selected debe ser booleano")
+    if question_type == "multiple":
+        option_sets = selected.groupby(keys)[option_column].apply(lambda values: frozenset(values))
+        if len(set(option_sets)) != 1:
+            raise ValueError(
+                "Respuesta múltiple requiere todas las opciones, incluso selected=0, por entrevistado"
+            )
+    merged = selected.merge(respondents, on=keys, how="left", validate="many_to_one", indicator=True)
+    if (merged._merge != "both").any():
+        raise ValueError("Respuestas sin entrevistado del mismo estudio")
+    weights = pd.to_numeric(merged[weight], errors="raise")
+    if not np.isfinite(weights).all() or (weights <= 0).any():
+        raise ValueError("Peso muestral inválido")
+    if merged[option_column].isna().any():
+        raise ValueError("Codifique NS/NC explícitamente; hay respuestas ausentes")
+    merged[weight] = weights
+    groups = [("national", merged)] if not group_by else merged.groupby(group_by, dropna=False)
+    result = {}
+    for key, group in groups:
+        individuals = group.drop_duplicates(keys)
+        denominator = individuals[weight].sum()
+        numerator = group if question_type == "single" else group[group[selected_column].astype(bool)]
+        counts = numerator.groupby(option_column, dropna=False)[weight].sum()
+        result[str(key)] = {
+            "weighted_frequencies": {str(k): float(v) for k, v in counts.items()},
+            "distribution": {str(k): float(v / denominator) for k, v in counts.items()},
+            "n_respondents": len(individuals),
+            "weight_sum": float(denominator),
+            "n_eff": float(denominator**2 / (individuals[weight] ** 2).sum()),
+            "source": {
+                "question_uid": question_uid,
+                "estudio_id": str(group.estudio_id.iloc[0]),
+                "weight_column": weight,
+            },
+            "warnings": ["n_eff es diagnóstico de Kish, no precisión bajo diseño complejo"]
+            + (["Muestra de segmento insuficiente"] if len(individuals) < 30 else []),
+        }
+    return result

@@ -1,0 +1,10 @@
+[
+  {
+    "evidence_id": "DEMO_AI",
+    "question": "¿Utiliza aplicaciones de inteligencia artificial?",
+    "options": ["Sí", "No"],
+    "fieldwork_date": "2020-01-01",
+    "observed_distribution": {"Sí": 0.5, "No": 0.5},
+    "topic": "DEMO / SYNTHETIC — cifras ficticias, no encuesta real"
+  }
+]

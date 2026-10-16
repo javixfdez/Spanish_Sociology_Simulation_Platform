@@ -1,0 +1,16 @@
+[
+  {
+    "evidence_id": "DEMO_AI",
+    "source": "DEMO / SYNTHETIC",
+    "study_id": "DEMO",
+    "question_text": "¿Utiliza aplicaciones de inteligencia artificial?",
+    "options": [
+      "Sí",
+      "No"
+    ],
+    "topic": "tecnología inteligencia artificial",
+    "metadata": {
+      "synthetic": true
+    }
+  }
+]

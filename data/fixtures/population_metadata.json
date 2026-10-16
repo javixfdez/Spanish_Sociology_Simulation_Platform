@@ -1,0 +1,16 @@
+{
+  "population_version": "DEMO-SYNTHETIC-v1",
+  "synthetic": true,
+  "variable_provenance": {
+    "person_id": "synthetic",
+    "peso": "synthetic",
+    "edad": "synthetic",
+    "grupo_edad": "synthetic",
+    "sexo": "synthetic",
+    "nivel_estudios": "synthetic",
+    "ingresos_hogar_tramo": "synthetic",
+    "version_poblacion": "synthetic"
+  },
+  "categories": {},
+  "coverage": "Adultos en hogares privados; excluye establecimientos colectivos"
+}
