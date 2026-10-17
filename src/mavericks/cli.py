@@ -78,6 +78,10 @@ def parser():
     pop.add_argument("--n", type=int, default=50_000)
     pop.add_argument("--seed", type=int, default=42)
     pop.add_argument("--period", default="1 de enero de 2026", help="Periodo de la ECP (anterior al 30/06/2026)")
+    ext = commands.add_parser("etl-external", help="Eurobarómetro y ESS (solo España) como evidencia adicional")
+    ext.add_argument("--raw", default="maverick_data/raw")
+    ext.add_argument("--out", default="data/processed_v2")
+    ext.add_argument("--only", nargs="*", help="Eurobarómetros (ZA7848) o ESS (ESS11, ESS10SC) concretos")
     stats = commands.add_parser("survey-stats")
     stats.add_argument("--respondents", required=True)
     stats.add_argument("--responses", required=True)
@@ -143,6 +147,10 @@ def run(args):
         )
         save_json(args.out, built)
         return {"cases": len(built), "out": args.out, "studies": sorted({c["estudio_id"] for c in built})}
+    if args.command == "etl-external":
+        from .etl.external import run_external_etl
+
+        return run_external_etl(args.raw, args.out, set(args.only) if args.only else None)
     if args.command == "create-demo":
         path = create_demo("data/fixtures")
         EvidenceRepository().ingest(path.parent / "evidence.json")

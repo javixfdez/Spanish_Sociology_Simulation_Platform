@@ -14,3 +14,4 @@ data/processed/
 maverick_data/*
 !maverick_data/catalogo.csv
 !maverick_data/README.md
+data/processed_v2/
