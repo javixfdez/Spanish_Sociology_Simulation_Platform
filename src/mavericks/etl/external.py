@@ -48,6 +48,45 @@ _OTHER_COUNTRIES = (
 ).split()
 
 
+_FIELD = re.compile(r"\(campo\s+([^)]*)\)", re.I)
+_RANGE = re.compile(r"^(\d{1,2})(?:/(\d{1,2}))?(?:/(\d{4}))?\s*-\s*(\d{1,2})/(\d{1,2})/(\d{4})$")
+
+
+def parse_field_dates(title):
+    """Fechas de campo del título del catálogo: «(campo 26/03-10/05/2025)», «(campo 23-30/11/2022)».
+
+    Devuelve (inicio, fin) en ISO o None si el título no trae un rango completo (p. ej. «campo 2022»).
+    """
+    match = _FIELD.search(title or "")
+    range_match = _RANGE.match(match.group(1).strip()) if match else None
+    if not range_match:
+        return None
+    d1, m1, y1, d2, m2, y2 = range_match.groups()
+    end = date(int(y2), int(m2), int(d2))
+    start = date(int(y1 or y2), int(m1 or m2), int(d1))
+    if start > end:  # el campo cruza el año: 28/12-10/01/2025
+        start = date(start.year - 1, start.month, start.day)
+    return start.isoformat(), end.isoformat()
+
+
+def read_external_catalog(path):
+    """{nombre de fichero: {titulo, publicado}} de las filas encuesta_eurobarometro / encuesta_ess del catálogo."""
+    import csv
+
+    rows = {}
+    if not path or not Path(path).exists():
+        return rows
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            if row.get("tipo") in {"encuesta_eurobarometro", "encuesta_ess"}:
+                published = row.get("fecha_publicacion") or None
+                rows[Path(row["archivo"].replace("\\", "/")).name] = {
+                    "title": row.get("titulo", ""),
+                    "published": date.fromisoformat(published) if published else None,
+                }
+    return rows
+
+
 def _clean(text):
     return re.sub(r"\s+", " ", html.unescape(str(text or ""))).strip()
 
@@ -109,7 +148,9 @@ def _weighted_distribution(values, weights, options):
     return {o: float(v / mass) for o, v in chosen.items()}, n_eff
 
 
-def _questions(frame, meta, spain, weight_col, prefix, study_id, topic, wording, technical, note, source, dates, ns_style):
+def _questions(
+    frame, meta, spain, weight_col, prefix, study_id, topic, wording, technical, note, source, dates, published=None
+):
     """Registros de evidencia para las variables categóricas con datos españoles suficientes."""
     L, V = meta.column_names_to_labels, meta.variable_value_labels
     w = pd.to_numeric(spain[weight_col], errors="coerce").fillna(0.0)
@@ -139,7 +180,7 @@ def _questions(frame, meta, spain, weight_col, prefix, study_id, topic, wording,
         records.append(
             _record(prefix, base, study_id, topic, text.split(":")[0] + " (multiple response)", text, options, "multiple",
                     {"distribution": shares, "n_respondents": int(answered.sum()), "n_eff": float((w[answered].sum() ** 2) / (w[answered] ** 2).sum())},
-                    {}, note, source, dates, weight_col)
+                    {}, note, source, dates, weight_col, published)
         )
     for c in columns:
         if c in used or not 2 <= len(V[c]) <= 40:
@@ -174,11 +215,14 @@ def _questions(frame, meta, spain, weight_col, prefix, study_id, topic, wording,
             if groups:
                 subgroups[dim] = groups
         text = wording.get(c) or label
-        records.append(_record(prefix, c, study_id, topic, label, text, options, "single", stats, subgroups, note, source, dates, weight_col))
+        records.append(_record(prefix, c, study_id, topic, label, text, options, "single", stats, subgroups, note, source, dates, weight_col, published))
     return records
 
 
-def _record(prefix, variable, study_id, topic, summary, text, options, qtype, national, subgroups, note, source, dates, weight_col):
+def _record(
+    prefix, variable, study_id, topic, summary, text, options, qtype, national, subgroups, note, source, dates, weight_col,
+    published=None,
+):
     uid = f"{prefix}_{variable}".replace(" ", "")
     return {
         "evidence_id": uid,
@@ -193,7 +237,7 @@ def _record(prefix, variable, study_id, topic, summary, text, options, qtype, na
         "topic": topic,
         "idioma": "en",
         "fieldwork_start": dates[0],
-        "fieldwork_estimated": dates[0] is None,
+        "fecha_publicacion": published.isoformat() if published else None,
         "fieldwork_end": dates[1],
         "fieldwork_date": dates[1],
         "reservado_examen": False,
@@ -218,7 +262,7 @@ def _read(path):
     return pyreadstat.read_sav(str(path))
 
 
-def process_eurobarometer(path, topic):
+def process_eurobarometer(path, topic, catalog_row=None):
     frame, meta = _read(path)
     frame.columns = [c.lower() for c in frame.columns]
     meta.column_names_to_labels = {k.lower(): v for k, v in meta.column_names_to_labels.items()}
@@ -233,25 +277,27 @@ def process_eurobarometer(path, topic):
     spain["_sexo"] = _num(spain, "d10").map({1: "hombre", 2: "mujer"})
     spain["_grupo"] = _grupo(_num(spain, "d11").where(lambda x: x < 97))
     spain["_estudios"] = eb_education(_num(spain, "d8"))
-    dates = _eb_dates(spain, meta)
-    published = _eb_published(spain)
+    # La fecha de campo es la del catálogo (título) o, si falta, la de las entrevistas. La fecha de publicación
+    # (catálogo o variable version) solo sirve para la regla del 30/06/2026: GESIS publica 1-2 años después del campo.
+    catalog_dates = parse_field_dates((catalog_row or {}).get("title"))
+    micro_dates = _eb_dates(spain, meta)
+    dates = catalog_dates or micro_dates
+    published = (catalog_row or {}).get("published") or _eb_published(spain)
     report["published"] = published.isoformat() if published else None
+    report["fieldwork_source"] = "catalogo" if catalog_dates else ("entrevistas" if micro_dates[1] else None)
+    if catalog_dates and micro_dates[1] and micro_dates != catalog_dates:
+        report["date_mismatch"] = {"catalogo": catalog_dates, "entrevistas": micro_dates}
     if published and published > CUTOFF:
         report["skipped"] = f"archivo publicado el {published.isoformat()}, posterior al 30/06/2026"
         return [], report
-    if dates[1] is None and published:
-        # Sin fecha de entrevista se usa la de publicación del archivo: cota superior conservadora del campo.
-        dates = (None, published.isoformat())
-        report["warning"] = "sin fecha de entrevista: fieldwork_end estimado con la fecha de publicación del archivo"
-        report["fieldwork_estimated"] = True
     report["fieldwork"] = dates
     if dates[1] is None:
-        report["warning"] = "sin fecha de trabajo de campo ni de publicación: la evidencia quedará fuera de cualquier corte"
+        report["warning"] = "sin fecha de trabajo de campo: la evidencia quedará fuera de cualquier corte temporal"
     elif date.fromisoformat(dates[1]) > CUTOFF:
         report["skipped"] = "trabajo de campo posterior al 30/06/2026"
         return [], report
     records = _questions(frame, meta, spain, "w1", f"EB{study}", f"EB-{study}", topic, {}, _EB_TECHNICAL,
-                         EB_NOTE, "eurobarometro", dates, False)
+                         EB_NOTE, "eurobarometro", dates, published)
     report["n_questions"] = len(records)
     return records, report
 
@@ -276,7 +322,7 @@ def _eb_dates(spain, meta):
     return (min(stamps).isoformat(), max(stamps).isoformat()) if stamps else (None, None)
 
 
-def process_ess(path, codebook_html, topic):
+def process_ess(path, codebook_html, topic, catalog_row=None):
     frame, meta = _read(path)
     spain = frame[frame["cntry"].astype(str).str.upper() == "ES"].copy()
     rnd = int(_num(spain, "essround").dropna().iloc[0])
@@ -287,15 +333,26 @@ def process_ess(path, codebook_html, topic):
     spain["_estudios"] = ess_education(_num(spain, "eisced"))
     produced = _ess_production_date(spain)
     report["produced"] = produced.isoformat() if produced else None
-    if produced and produced > CUTOFF:
-        # Regla del reto: ningún dato publicado después del 30/06/2026, aunque el campo sea anterior.
-        report["skipped"] = f"edición producida el {produced.isoformat()}, posterior al 30/06/2026"
+    # Publicación según el catálogo si existe (puede documentar que los datos de España ya salieron en una
+    # edición anterior); si no, la fecha de producción del fichero. Regla del reto: nada posterior al 30/06/2026.
+    published = (catalog_row or {}).get("published") or produced
+    report["published"] = published.isoformat() if published else None
+    if (catalog_row or {}).get("published") and produced and produced > CUTOFF:
+        report["edition_note"] = (
+            f"fichero producido el {produced.isoformat()}; se usa la publicación del catálogo "
+            f"({published.isoformat()}), que indica datos de España idénticos a la edición anterior"
+        )
+    if published and published > CUTOFF:
+        report["skipped"] = f"edición publicada el {published.isoformat()}, posterior al 30/06/2026"
         return [], report
     dates = _ess_dates(spain)
+    catalog_dates = parse_field_dates((catalog_row or {}).get("title"))
+    if catalog_dates:
+        dates = catalog_dates
     report["fieldwork"] = dates
     wording = parse_codebook(codebook_html, frame.columns) if codebook_html else {}
     report["wording_from_codebook"] = len(wording)
-    records = _questions(frame, meta, spain, "anweight", name, name, topic, wording, _ESS_TECHNICAL, ESS_NOTE, "ess", dates, True)
+    records = _questions(frame, meta, spain, "anweight", name, name, topic, wording, _ESS_TECHNICAL, ESS_NOTE, "ess", dates, published)
     report["n_questions"] = len(records)
     return records, report
 
@@ -326,15 +383,16 @@ def _ess_dates(spain):
     return (min(stamps).isoformat(), max(stamps).isoformat()) if stamps else (None, None)
 
 
-def run_external_etl(raw_dir, out_dir, only=None):
+def run_external_etl(raw_dir, out_dir, only=None, catalog=None):
     raw_dir, out_dir = Path(raw_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     records, reports = [], []
+    rows = read_external_catalog(catalog or raw_dir.parent / "catalogo.csv")
     for path in sorted(raw_dir.glob("*/eurobarometro/*.sav")):
         if only and path.name.split("_")[0] not in only:
             continue
         logger.info("Eurobarómetro %s", path.name)
-        recs, report = process_eurobarometer(path, path.parent.parent.name)
+        recs, report = process_eurobarometer(path, path.parent.parent.name, rows.get(path.name))
         records += recs
         reports.append(report)
     for zip_path in sorted((raw_dir / "general" / "ess").glob("*.zip")):
@@ -346,7 +404,7 @@ def run_external_etl(raw_dir, out_dir, only=None):
             z.extract(data, tmp)
             html_text = z.read(book).decode("utf-8", errors="ignore") if book else ""
             logger.info("ESS %s", zip_path.name)
-            recs, report = process_ess(Path(tmp) / data, html_text, "general")
+            recs, report = process_ess(Path(tmp) / data, html_text, "general", rows.get(zip_path.name))
         records += recs
         reports.append(report)
     (out_dir / "external_evidence.json").write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
@@ -357,6 +415,8 @@ def run_external_etl(raw_dir, out_dir, only=None):
         "n_spain": {r["study_id"]: r["n_spain"] for r in reports},
         "skipped": {r["study_id"]: r["skipped"] for r in reports if r.get("skipped")},
         "warnings": {r["study_id"]: r["warning"] for r in reports if r.get("warning")},
+        "date_mismatches": {r["study_id"]: r["date_mismatch"] for r in reports if r.get("date_mismatch")},
+        "edition_notes": {r["study_id"]: r["edition_note"] for r in reports if r.get("edition_note")},
     }
     (out_dir / "etl_external_report.json").write_text(json.dumps({**summary, "detail": reports}, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary

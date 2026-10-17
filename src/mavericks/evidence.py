@@ -203,21 +203,24 @@ class EvidenceRepository:
         return self._cache
 
     def _embeddings(self, records):
-        """Matriz de embeddings normalizados, con caché en disco ligada al modelo y al texto indexado."""
+        """Matriz de embeddings normalizados con caché incremental en disco (por modelo y por texto indexado)."""
         texts = [evidence_text(e) for e in records]
-        digest = hashlib.sha256(
-            (getattr(self.embedder, "name", "embedder") + "\n" + "\n".join(texts)).encode("utf-8")
-        ).hexdigest()[:16]
-        cache = Path(self.path).with_suffix(f".emb-{digest}.npy")
+        model = getattr(self.embedder, "name", "embedder")
+        keys = [hashlib.sha1(t.encode("utf-8")).hexdigest() for t in texts]
+        safe = "".join(c if c.isalnum() else "_" for c in model)[:60]
+        cache = Path(self.path).with_suffix(f".emb-{safe}.npz")
+        known = {}
         if cache.exists():
-            return np.load(cache)
-        matrix = np.asarray(self.embedder.encode_passages(texts), dtype=np.float32)
-        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
-        matrix = matrix / np.maximum(norms, 1e-9)
-        for old in cache.parent.glob(cache.stem.split(".emb-")[0] + ".emb-*.npy"):
-            old.unlink()
-        np.save(cache, matrix)
-        return matrix
+            with np.load(cache, allow_pickle=False) as stored:
+                known = dict(zip(stored["keys"].tolist(), stored["vectors"]))
+        missing = [i for i, k in enumerate(keys) if k not in known]
+        if missing:
+            fresh = np.asarray(self.embedder.encode_passages([texts[i] for i in missing]), dtype=np.float32)
+            fresh = fresh / np.maximum(np.linalg.norm(fresh, axis=1, keepdims=True), 1e-9)
+            known.update({keys[i]: fresh[j] for j, i in enumerate(missing)})
+            used = sorted(set(keys))
+            np.savez(cache, keys=np.array(used), vectors=np.stack([known[k] for k in used]))
+        return np.stack([known[k] for k in keys])
 
     def all(self):
         return list(self._index()["records"])

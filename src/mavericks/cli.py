@@ -93,6 +93,7 @@ def parser():
     ext.add_argument("--raw", default="maverick_data/raw")
     ext.add_argument("--out", default="data/processed_v2")
     ext.add_argument("--only", nargs="*", help="Eurobarómetros (ZA7848) o ESS (ESS11, ESS10SC) concretos")
+    ext.add_argument("--catalog", default="maverick_data/catalogo.csv", help="Catálogo con las fechas de campo en el título")
     ctx = commands.add_parser("etl-context", help="Indexa raw/*/contexto con fecha de publicación")
     ctx.add_argument("--raw", default="maverick_data/raw")
     ctx.add_argument("--out", default="data/processed_v2/context.json")
@@ -216,7 +217,7 @@ def run(args):
     if args.command == "etl-external":
         from .etl.external import run_external_etl
 
-        return run_external_etl(args.raw, args.out, set(args.only) if args.only else None)
+        return run_external_etl(args.raw, args.out, set(args.only) if args.only else None, args.catalog)
     if args.command == "create-demo":
         path = create_demo("data/fixtures")
         EvidenceRepository().ingest(path.parent / "evidence.json")

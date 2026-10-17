@@ -78,10 +78,10 @@ def test_leak_protections_apply_to_every_retriever(tmp_path, mode):
     assert "HELD" not in same_day
 
 
-def test_embedding_cache_is_reused_and_invalidated(tmp_path):
+def test_embedding_cache_is_incremental(tmp_path):
     repo = _repo(tmp_path, "embed")
     repo.search("vivienda", limit=2)
-    files = list(tmp_path.glob("db.emb-*.npy"))
+    files = list(tmp_path.glob("db.emb-*.npz"))
     assert len(files) == 1
     calls = []
 
@@ -92,12 +92,13 @@ def test_embedding_cache_is_reused_and_invalidated(tmp_path):
 
     again = EvidenceRepository(tmp_path / "db.sqlite", embedder=Counting(), retriever="embed")
     again.search("vivienda", limit=2)
-    assert calls == []  # leído de disco
+    assert calls == []  # todo leído de disco
     extra = tmp_path / "extra.json"
     extra.write_text(json.dumps([dict(evidence_id="NEW", source="cis", question_text="salud health")]), encoding="utf-8")
     again.ingest(extra)
     again.search("salud", limit=2)
-    assert calls and len(list(tmp_path.glob("db.emb-*.npy"))) == 1  # caché antigua sustituida
+    assert calls == [1]  # solo el texto nuevo; los demás vienen de la caché
+    assert len(list(tmp_path.glob("db.emb-*.npz"))) == 1
 
 
 def test_embed_requires_an_embedder(tmp_path):
