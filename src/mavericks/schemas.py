@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     anchor_prior_similarity: float = Field(0.55, gt=0, le=1)
     cis_dir: str = "data/processed"
     stability_runs: int = Field(1, ge=1, le=10)
+    llm_assessment: bool = True
+    max_evidence_hits: int = Field(8, ge=1, le=20)
     stability_temperature: float = Field(0.7, ge=0, le=2)
     calibration_path: str = "data/processed/calibration.json"
     interval_alpha: float = Field(0.1, gt=0, lt=1)

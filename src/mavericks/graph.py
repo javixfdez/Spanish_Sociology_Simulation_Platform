@@ -9,7 +9,7 @@ import numpy as np
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from .anchor import constraints_of, project_to_band, select_anchor
+from .anchor import constraints_of, project_to_band, question_similarity, select_anchor
 from .payloads import compact_evidence, compact_segment
 from .population import build_segments
 from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
@@ -117,15 +117,25 @@ def build_graph(
             queries = list(dict.fromkeys([state["question"]["question"], *state["methodology"]["retrieval_queries"]]))
             literal = state["question"]["question"]
             for query in queries:
-                for hit in evidence_repository.search(
+                hits = evidence_repository.search(
                     query,
+                    limit=30 if query == literal else 5,
                     target_population=state["question"]["target_population"],
                     options=state["question"]["options"],
                     topic=state["methodology"]["topic"],
                     # El tema lo decide el LLM y puede equivocarse: la consulta literal solo lo usa como bonificación.
                     topic_filter=query != literal,
                     **filters,
-                ):
+                )
+                if query == literal:
+                    # Con muchas preguntas parecidas la misma pregunta de otra oleada podría quedar fuera del top-5
+                    # por opciones o tema: se añaden también las de mayor parecido de redacción.
+                    by_text = sorted(
+                        hits,
+                        key=lambda h: -question_similarity(literal, h["evidence"].get("question_text") or ""),
+                    )
+                    hits = [*hits[:5], *by_text[:5]]
+                for hit in hits:
                     e = hit["evidence"]
                     if e.get("metadata", {}).get("synthetic") and not repository.metadata.synthetic:
                         continue
@@ -138,8 +148,11 @@ def build_graph(
                 settings.anchor_direct_similarity,
                 settings.anchor_prior_similarity,
             )
+        ranked = sorted(found.values(), key=lambda h: -h["retrieval_score"])[: settings.max_evidence_hits]
+        if spec and spec["evidence_id"] not in {h["evidence"]["evidence_id"] for h in ranked}:
+            ranked = [*ranked[:-1], found[spec["evidence_id"]]]  # el ancla siempre se conserva
         return {
-            "retrieved_evidence": list(found.values()),
+            "retrieved_evidence": ranked,
             "anchor_spec": spec,
             "stages": ["retrieve_sociological_evidence"],
             "warnings": []
@@ -155,16 +168,23 @@ def build_graph(
             empty = Assessment(items=[], missing_information=["Sin evidencia recuperada"])
             return {"evidence_assessment": empty.model_dump(), "stages": ["interpret_evidence"]}
 
-        def validate(value):
-            returned = [item.evidence_id for item in value.items]
-            if set(returned) != ids or len(returned) != len(ids):
-                raise ValueError("Assessment debe evaluar exactamente cada evidence_id recuperado")
+        if not settings.llm_assessment:
+            spec = state.get("anchor_spec")
+            items = [
+                AssessmentItem(
+                    evidence_id=hit["evidence"]["evidence_id"],
+                    relevance="direct" if spec and hit["evidence"]["evidence_id"] == spec["evidence_id"] else "indirect",
+                    differences=["Evaluación determinista (sin LLM)"],
+                )
+                for hit in hits
+            ]
+            value = Assessment(items=items, missing_information=[])
+            return {"evidence_assessment": value.model_dump(), "stages": ["interpret_evidence:deterministic"]}
 
         try:
             value = await service.call(
                 Assessment,
                 {"question": state["question"], "evidence": compact_evidence(hits, {}, anchors, limit=None)},
-                validate,
             )
         except Exception as exc:
             # Evaluación conservadora: toda la evidencia se considera indirecta, con aviso explícito.
@@ -183,6 +203,21 @@ def build_graph(
                 "warnings": [note],
                 "stages": ["interpret_evidence:fallback"],
             }
+        # Conciliación tolerante: se ignoran ids desconocidos y a la evidencia sin valorar se le da valoración neutra.
+        by_id = {}
+        for item in value.items:
+            if item.evidence_id in ids and item.evidence_id not in by_id:
+                by_id[item.evidence_id] = item
+        missing = [i for i in ids if i not in by_id]
+        ignored = len(value.items) - len(by_id)
+        if missing or ignored:
+            for i in missing:
+                by_id[i] = AssessmentItem(
+                    evidence_id=i, relevance="indirect", differences=["Sin valoración del evaluador: neutral"]
+                )
+            note = f"Evaluador LLM incompleto ({len(missing)} sin valorar, {ignored} ignoradas): valoración neutra"
+            value = Assessment(items=[by_id[i] for i in sorted(by_id)], missing_information=[*value.missing_information, note])
+            return {"evidence_assessment": value.model_dump(), "warnings": [note], "stages": ["interpret_evidence:repaired"]}
         return {"evidence_assessment": value.model_dump(), "stages": ["interpret_evidence"]}
 
     def segment(state):
@@ -499,6 +534,7 @@ async def simulate(
             "llm_calls": service.calls,
             "rag": rag,
             "anchors": anchors is not None,
+            "context_warnings": getattr(service.provider, "context_warnings", 0),
         }
     )
     return state

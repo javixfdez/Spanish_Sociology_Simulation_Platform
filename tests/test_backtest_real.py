@@ -139,3 +139,38 @@ def test_national_baseline_and_mode_topic_summary(tmp_path):
     summary = summarize_backtest([done])
     block = summary["by_mode_and_topic"]["none | t"]
     assert block["national_baseline"]["wins"] == 1 and block["assessment_fallback_rate"] == 0.0
+
+
+def test_widened_literal_pool_keeps_leak_protections(tmp_path):
+    """El grupo ampliado de 30 candidatos de la consulta literal respeta excluded_ids, corte estricto y reservados."""
+    records = []
+    for i in range(40):  # mismo enunciado en 40 oleadas, de enero a octubre de 2025
+        records.append(
+            dict(source="CIS", question_text=TEXT, options=["Mejor", "Peor"], topic="consumo", question_type="single",
+                 evidence_id=f"W{i:02d}", study_id=str(100 + i), fieldwork_date=f"2025-{1 + i // 4:02d}-{1 + i % 4 * 7:02d}")
+        )
+    records.append({**records[0], "evidence_id": "HELD", "study_id": "999", "fieldwork_date": "2026-03-06"})
+    records.append({**records[0], "evidence_id": "RESERVED", "study_id": "998", "fieldwork_date": "2025-02-01", "reservado_examen": True})
+    path = tmp_path / "w.json"
+    path.write_text(json.dumps(records), encoding="utf-8")
+    evidence = EvidenceRepository(tmp_path / "w.sqlite")
+    evidence.ingest(path, include_reserved=True)  # incluso almacenada, una reservada no puede salir
+    demo = create_demo(tmp_path / "fixtures")
+    frame, meta = PopulationLoader().load(demo)
+    cutoff = "2025-06-01"
+    case = {
+        "evidence_id": "HELD", "question": TEXT, "options": ["Mejor", "Peor"], "fieldwork_date": cutoff,
+        "observed_distribution": {"Mejor": 0.4, "Peor": 0.6}, "allow_previous_waves": True,
+    }
+    settings = Settings(llm_provider="mock", llm_retries=0, max_evidence_hits=20)
+    results = asyncio.run(
+        backtest([case], PopulationRepository(frame, meta), evidence, lambda: LLMService(MockLLMProvider(), settings, tmp_path / "c"))
+    )
+    ids = results[0]["retrieved_ids"]
+    assert ids, "debe recuperar oleadas anteriores"
+    assert "HELD" not in ids and "RESERVED" not in ids
+    dates = {r["evidence_id"]: r["fieldwork_date"] for r in records}
+    assert all(dates[i] < cutoff for i in ids), "solo trabajo de campo anterior al inicio del estudio evaluado"
+    # Misma garantía directamente sobre la búsqueda con el tamaño de pool que usa el grafo
+    pool = [h["evidence"]["evidence_id"] for h in evidence.search(TEXT, limit=30, excluded_ids=["HELD"], cutoff=cutoff)]
+    assert "HELD" not in pool and "RESERVED" not in pool and all(dates[i] < cutoff for i in pool)

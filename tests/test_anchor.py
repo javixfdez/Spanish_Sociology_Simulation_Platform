@@ -229,3 +229,44 @@ def test_evaluator_cannot_veto_a_valid_anchor(tmp_path, world):
     assert result["execution_metadata"]["status"] == "completed"
     assert all(p["anchor"]["mode"] == "direct" for p in result["segment_predictions"].values())
     assert any("marcó como incompatible la evidencia ancla" in w for w in result["warnings"])
+
+
+def test_direct_anchor_is_independent_of_methodologist_and_assessment(tmp_path, world):
+    from mavericks.schemas import Assessment, Methodology
+
+    class Garbage(MockLLMProvider):
+        async def generate(self, schema, payload, temperature=None):
+            if schema is Methodology:
+                return Methodology(
+                    topic="salud", question_type="single", relevant_demographics=["xx"], retrieval_queries=["zzz qqq"]
+                )
+            if schema is Assessment:
+                raise RuntimeError("evaluador caído")
+            return await super().generate(schema, payload)
+
+    class Spy(Garbage):
+        predictions = 0
+
+        async def generate(self, schema, payload, temperature=None):
+            if schema is Prediction:
+                Spy.predictions += 1
+            return await super().generate(schema, payload)
+
+    result = _run(tmp_path, world, Spy())
+    assert Spy.predictions == 0
+    assert result["anchor_spec"]["mode"] == "direct"
+    assert all(p["anchor"]["mode"] == "direct" for p in result["segment_predictions"].values())
+
+
+def test_retrieved_evidence_is_capped_and_keeps_the_anchor(tmp_path, world):
+    population, evidence, store = world
+    extra = [
+        dict(evidence_id=f"X{i}", source="t", question_text=f"{QUESTION} variante {i}", options=["Sí", "No"], topic="ia_tecnologia")
+        for i in range(12)
+    ]
+    (tmp_path / "x.json").write_text(json.dumps(extra), encoding="utf-8")
+    evidence.ingest(tmp_path / "x.json")
+    llm = LLMService(MockLLMProvider(), Settings(llm_provider="mock", llm_retries=0, max_evidence_hits=4), tmp_path / "c2")
+    result = asyncio.run(simulate(Question(question=QUESTION, options=["Sí", "No"]), population, evidence, llm, 4, anchors=store))
+    ids = [h["evidence"]["evidence_id"] for h in result["retrieved_evidence"]]
+    assert len(ids) <= 4 and "CIS9001_P1" in ids

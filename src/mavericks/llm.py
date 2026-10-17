@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import hashlib
 import inspect
 import json
@@ -6,9 +7,10 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 import httpx
+from pydantic import BaseModel, Field, create_model
 
 from .schemas import Assessment, Methodology, Narrative, Prediction
 from .topics import classify_topic
@@ -46,6 +48,88 @@ ROLES = {
     "Diferencia al segmento solo cuando la evidencia lo respalde; evita estereotipos.",
     "Narrative": "Rol: analista. Interpreta sin alterar ninguna cifra; señala límites y advertencias.",
 }
+
+
+class _AssessmentItemOut(BaseModel):
+    ref: str
+    relevance: Literal["direct", "indirect", "incompatible"]
+    differences: list[str] = []
+    supported_variables: list[str] = []
+    extrapolations: list[str] = []
+
+
+class _AssessmentOut(BaseModel):
+    items: list[_AssessmentItemOut]
+    missing_information: list[str] = []
+
+
+def prediction_answer_model(n_options):
+    """Esquema que ve el LLM: o1..oN (probabilidades), explicación y límites. Los ids y las etiquetas los pone el código."""
+    fields = {f"o{i + 1}": (float, Field(ge=0.0, le=1.0)) for i in range(n_options)}
+    fields["explanation"] = (str, ...)
+    fields["limitations"] = (list[str], Field(default_factory=list))
+    return create_model("PredictionAnswer", **fields)
+
+
+def _prediction_view(payload):
+    options = payload["options"]
+    keyed = {f"o{i + 1}": o for i, o in enumerate(options)}
+    by_option = {o: k for k, o in keyed.items()}
+    view = copy.deepcopy(payload)
+    view["options"] = keyed
+    if isinstance(view.get("question"), dict):
+        view["question"]["options"] = keyed
+    anchor = view.get("anchor")
+    if isinstance(anchor, dict):
+        for key in ("prior", "national"):
+            if key in anchor:
+                anchor[key] = {by_option[o]: v for o, v in anchor[key].items() if o in by_option}
+    view["answer_format"] = "Devuelve o1..oN con la probabilidad de cada opción, explanation y limitations."
+    return view
+
+
+def _prediction_result(parsed, payload):
+    options = payload["options"]
+    anchor = payload.get("anchor")
+    evidence_ids = (
+        [anchor["evidence_id"]] if isinstance(anchor, dict) else [e["evidence_id"] for e in payload.get("evidence", [])]
+    )
+    return Prediction(
+        segment_id=payload["segment"]["segment_id"],
+        probabilities={o: float(getattr(parsed, f"o{i + 1}")) for i, o in enumerate(options)},
+        explanation=parsed.explanation,
+        evidence_ids=evidence_ids,
+        limitations=list(parsed.limitations),
+    )
+
+
+def _assessment_view(payload):
+    view = copy.deepcopy(payload)
+    view["evidence"] = [
+        {**{k: v for k, v in e.items() if k != "evidence_id"}, "ref": f"e{i + 1}"}
+        for i, e in enumerate(payload.get("evidence", []))
+    ]
+    return view
+
+
+def _assessment_result(parsed, payload):
+    ids = [e["evidence_id"] for e in payload.get("evidence", [])]
+    items, seen = [], set()
+    for item in parsed.items:
+        match = re.search(r"\d+", item.ref or "")
+        index = int(match.group()) - 1 if match else -1
+        if 0 <= index < len(ids) and ids[index] not in seen:
+            seen.add(ids[index])
+            items.append(
+                {
+                    "evidence_id": ids[index],
+                    "relevance": item.relevance,
+                    "differences": item.differences,
+                    "supported_variables": item.supported_variables,
+                    "extrapolations": item.extrapolations,
+                }
+            )
+    return Assessment(items=items, missing_information=parsed.missing_information)
 
 
 class LLMProvider(Protocol):
@@ -118,6 +202,8 @@ class StructuredProvider:
     synthetic = False
 
     def __init__(self, settings):
+        self.context_warnings = 0
+        self.num_ctx = settings.ollama_num_ctx if settings.llm_provider == "ollama" else None
         if settings.llm_provider == "ollama":
             check_ollama(settings)
             from langchain_ollama import ChatOllama
@@ -148,10 +234,22 @@ class StructuredProvider:
 
     async def generate(self, schema, payload, temperature=None):
         model = self.model if temperature is None else self.model.model_copy(update={"temperature": temperature})
-        chain = model.with_structured_output(schema, method="json_schema", include_raw=True)
+        role, view, wire_schema, convert = schema.__name__, payload, schema, None
+        if schema is Prediction and isinstance(payload.get("options"), list):
+            view, wire_schema, convert = _prediction_view(payload), prediction_answer_model(len(payload["options"])), _prediction_result
+        elif schema is Assessment and "evidence" in payload:
+            view, wire_schema, convert = _assessment_view(payload), _AssessmentOut, _assessment_result
+        chain = model.with_structured_output(wire_schema, method="json_schema", include_raw=True)
         response = await chain.ainvoke(
-            [("system", f"{SYSTEM}\n{ROLES.get(schema.__name__, '')}"), ("human", json.dumps(payload, ensure_ascii=False))]
+            [("system", f"{SYSTEM}\n{ROLES.get(role, '')}"), ("human", json.dumps(view, ensure_ascii=False))]
         )
+        usage = getattr(response.get("raw"), "usage_metadata", None) or {}
+        tokens = usage.get("input_tokens")
+        if tokens and self.num_ctx and tokens >= 0.9 * self.num_ctx:
+            self.context_warnings += 1
+            logger.warning(
+                "%s: el prompt usa %s de %s tokens de contexto (>= 90 %%): riesgo de truncado", role, tokens, self.num_ctx
+            )
         raw = response.get("raw")
         content = getattr(raw, "content", None)
         if (response.get("parsing_error") or response.get("parsed") is None) and isinstance(content, str):
@@ -159,13 +257,14 @@ class StructuredProvider:
             cleaned = strip_think(content)
             if cleaned != content.strip():
                 try:
-                    return schema.model_validate_json(cleaned)
+                    parsed = wire_schema.model_validate_json(cleaned)
+                    return convert(parsed, payload) if convert else parsed
                 except ValueError:
                     pass
         if response.get("parsing_error") or response.get("parsed") is None:
             raise ValueError(f"Salida estructurada inválida: {response.get('parsing_error')}")
-        logger.info("LLM usage: %s", getattr(response.get("raw"), "usage_metadata", None))
-        return response["parsed"]
+        logger.info("LLM usage: %s", usage or None)
+        return convert(response["parsed"], payload) if convert else response["parsed"]
 
 
 class LLMService:

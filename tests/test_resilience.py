@@ -49,7 +49,7 @@ def test_no_evidence_skips_assessment_llm(tmp_path):
     assert any("Sin evidencia" in w for w in result["warnings"])
 
 
-def test_failing_assessment_does_not_abort(tmp_path):
+def test_invented_assessment_ids_are_ignored_and_missing_ones_neutral(tmp_path):
     class BadAssessment(MockLLMProvider):
         async def generate(self, schema, payload, temperature=None):
             if schema is Assessment:
@@ -58,9 +58,45 @@ def test_failing_assessment_does_not_abort(tmp_path):
 
     result = _run(tmp_path, BadAssessment(), _resources(tmp_path))
     assert result["execution_metadata"]["status"] == "completed"
-    assert "interpret_evidence:fallback" in result["stages"]
+    assert "interpret_evidence:repaired" in result["stages"]
     assert {i["relevance"] for i in result["evidence_assessment"]["items"]} == {"indirect"}
-    assert any("Evaluación automática no disponible" in w for w in result["warnings"])
+    assert "inventada" not in {i["evidence_id"] for i in result["evidence_assessment"]["items"]}
+    assert any("Evaluador LLM incompleto" in w for w in result["warnings"])
+
+
+def test_assessment_exception_still_falls_back(tmp_path):
+    class Broken(MockLLMProvider):
+        async def generate(self, schema, payload, temperature=None):
+            if schema is Assessment:
+                raise RuntimeError("caído")
+            return await super().generate(schema, payload)
+
+    result = _run(tmp_path, Broken(), _resources(tmp_path))
+    assert result["execution_metadata"]["status"] == "completed"
+    assert "interpret_evidence:fallback" in result["stages"]
+
+
+def test_deterministic_assessment_never_calls_the_llm(tmp_path):
+    class Spy(MockLLMProvider):
+        schemas = []
+
+        async def generate(self, schema, payload, temperature=None):
+            self.schemas.append(schema)
+            return await super().generate(schema, payload)
+
+    population, evidence = _resources(tmp_path)
+    settings = Settings(llm_provider="mock", llm_retries=0, llm_assessment=False)
+    result = asyncio.run(
+        simulate(
+            Question(question="¿Usas inteligencia artificial?", options=["Sí", "No"]),
+            population,
+            evidence,
+            LLMService(Spy(), settings, tmp_path / "c"),
+            max_segments=3,
+        )
+    )
+    assert Assessment not in Spy.schemas and "interpret_evidence:deterministic" in result["stages"]
+    assert result["execution_metadata"]["status"] == "completed"
 
 
 def test_methodologist_and_analyst_failures_degrade(tmp_path):

@@ -36,6 +36,7 @@ def parser():
             sub.add_argument("--concurrency", type=int)
             sub.add_argument("--anchor", choices=["auto", "off"], default="auto", help="Ancla empírica CIS")
             sub.add_argument("--stability-runs", type=int, help="Repeticiones por segmento para medir estabilidad")
+            sub.add_argument("--no-llm-assessment", action="store_true", help="Evaluador de evidencia determinista (sin LLM)")
             sub.add_argument("--calibration", help="JSON de calibración (por defecto data/processed/calibration.json) u off")
             sub.add_argument("--cis-dir", help="Carpeta con cis_respondents/cis_responses (por defecto data/processed)")
         if name == "simulate":
@@ -95,6 +96,8 @@ def run(args):
         updates["llm_provider"] = args.provider
     if getattr(args, "model", None):
         updates["ollama_model"] = args.model
+    if getattr(args, "no_llm_assessment", False):
+        updates["llm_assessment"] = False
     if getattr(args, "stability_runs", None):
         updates["stability_runs"] = args.stability_runs
     if getattr(args, "concurrency", None) is not None:
@@ -204,6 +207,7 @@ def run(args):
         output = args.output or f"outputs/{result['simulation_id']}.json"
     else:
         cases = json.loads(Path(args.cases).read_text(encoding="utf-8-sig"))
+        total_cases = len(cases)
         output = args.output or "outputs/backtest.json"
         partial = Path(output).with_suffix(".partial.jsonl")
         done = []
@@ -215,7 +219,16 @@ def run(args):
             partial.unlink()
         partial.parent.mkdir(parents=True, exist_ok=True)
 
+        counter = {"n": len(done)}
+
         def keep(row):
+            counter["n"] += 1
+            label = row["evidence_id"].removeprefix("CIS")
+            mae_text = "FALLIDO" if row["mae"] is None else f"MAE {row['mae']:.3f}"
+            logging.info(
+                "[caso %d/%d] %s · %s · %s · %s · %.0f s",
+                counter["n"], total_cases, label, row.get("topic"), row.get("anchor_mode"), mae_text, row.get("execution_time", 0),
+            )
             with partial.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
 
@@ -235,7 +248,12 @@ def run(args):
 
 
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")  # logs y JSON siempre en UTF-8, aunque la consola sea cp1252
+        except (AttributeError, ValueError):
+            pass
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", stream=sys.stderr)
     args = parser().parse_args()
     try:
         result = run(args)

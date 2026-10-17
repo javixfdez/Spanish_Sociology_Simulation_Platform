@@ -231,7 +231,8 @@ def _latencies(calls):
     for call in calls:
         if call.get("cache_hit"):
             continue
-        entry = summary.setdefault(call["schema"], {"n": 0, "total": 0.0})
+        entry = summary.setdefault(call["schema"], {"n": 0, "total": 0.0, "retries": 0})
         entry["n"] += 1
         entry["total"] += call.get("latency", 0.0)
-    return {k: {"n": v["n"], "mean_s": v["total"] / v["n"]} for k, v in summary.items()}
+        entry["retries"] += int(call.get("attempt", 0))
+    return {k: {"n": v["n"], "mean_s": v["total"] / v["n"], "retries": v["retries"]} for k, v in summary.items()}

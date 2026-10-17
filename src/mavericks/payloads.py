@@ -23,6 +23,17 @@ COMPOSITION_DIMENSIONS = [
 MAX_EVIDENCE = 3
 
 
+def _clip(text, n):
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def _summary(distribution, top=6):
+    """Distribución resumida: las opciones más frecuentes con dos decimales."""
+    items = sorted(distribution.items(), key=lambda kv: -kv[1])[:top]
+    return {_clip(k, 60): round(v, 2) for k, v in items}
+
+
 def compact_segment(segment, total_weight):
     homogeneous = set(segment.get("homogeneous_dimensions", segment["demographic_profile"]))
     composition = {}
@@ -56,22 +67,22 @@ def compact_evidence(hits, assessment, anchors=None, limit=MAX_EVIDENCE, keep_id
             continue
         entry = {
             "evidence_id": e["evidence_id"],
-            "question_text": e.get("question_text"),
-            "options": (e.get("options") or [])[:10],
+            "question_text": _clip(e.get("question_text"), 240),
+            "options": [_clip(o, 60) for o in (e.get("options") or [])[:8]],
             "study_id": e.get("study_id"),
             "fieldwork_date": e.get("fieldwork_date"),
             "relevance": item.get("relevance"),
-            "differences": item.get("differences", [])[:2],
+            "differences": [_clip(d, 120) for d in item.get("differences", [])[:2]],
         }
         stats = e.get("metadata", {}).get("empirical_statistics", {}).get("national")
         if stats:
-            entry["empirical_national"] = {k: round(v, 3) for k, v in stats["distribution"].items()}
+            entry["empirical_national"] = _summary(stats["distribution"])
         elif anchors is not None and e.get("study_id"):
             original = e.get("metadata", {}).get("original_fields", {})
             try:
                 dist, n = anchors.national(e["study_id"], e["evidence_id"], original.get("question_type", "single"))
                 if n:
-                    entry["empirical_national"] = {k: round(v, 3) for k, v in dist.items()}
+                    entry["empirical_national"] = _summary(dist)
             except Exception:  # sin microdatos para esta evidencia: se omite la cifra
                 pass
         compact.append(entry)
