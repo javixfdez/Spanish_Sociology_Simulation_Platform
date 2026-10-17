@@ -57,12 +57,18 @@ class EvidenceRepository:
         with sqlite3.connect(self.path) as db:
             db.execute("CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
 
-    def ingest(self, path):
+    def ingest(self, path, include_reserved=False):
+        """Ingiere registros. Los estudios reservados para el examen (reservado_examen) se omiten
+        salvo ``include_reserved``: no pueden alimentar el RAG, solo el backtesting."""
         count = 0
+        self.skipped_reserved = 0
         with sqlite3.connect(self.path) as db:
             for record in read_records(path):
                 # Explicit aliases only; never infer respondent joins or survey percentages.
                 record = dict(record)
+                if record.get("reservado_examen") and not include_reserved:
+                    self.skipped_reserved += 1
+                    continue
                 for source, target in [("question_uid", "evidence_id"), ("estudio_id", "study_id")]:
                     if source in record and target not in record:
                         record[target] = record[source]
@@ -160,6 +166,7 @@ class EvidenceRepository:
         options=(),
         topic=None,
         topic_filter=True,
+        include_reserved=False,
     ):
         """Búsqueda híbrida. Con ``topic`` se filtra a ese tema y a 'general'; si no hay resultados
         se repite sin filtro y los resultados llevan ``topic_fallback=True``."""
@@ -174,10 +181,12 @@ class EvidenceRepository:
             if e.evidence_id not in excluded_ids
             and normalize(e.question_text) not in excluded
             and not set(e.metadata.get("equivalent_ids", [])) & set(excluded_ids)
+            and (include_reserved or not e.metadata.get("original_fields", {}).get("reservado_examen"))
         ]
         if cutoff:
-            # Unknown dates are excluded in temporal evaluation rather than assumed safe.
-            records = [e for e in records if e.fieldwork_date and e.fieldwork_date[:10] <= cutoff]
+            # Corte estricto: la evidencia debe haber terminado su trabajo de campo (fieldwork_date, fin)
+            # antes de la fecha de corte. Las fechas desconocidas se excluyen en lugar de darse por válidas.
+            records = [e for e in records if e.fieldwork_date and e.fieldwork_date[:10] < cutoff]
         if not records:
             return []
         topic = normalize_topic(topic) if topic else None

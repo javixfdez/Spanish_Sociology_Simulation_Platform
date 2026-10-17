@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from .anchor import load_anchor_store
-from .evaluation import backtest, save_json
+from .evaluation import backtest, save_json, summarize_backtest
 from .evidence import EvidenceRepository, SemanticIndex, read_records, survey_distribution
 from .graph import simulate
 from .llm import LLMService, check_ollama, create_provider
@@ -50,6 +50,15 @@ def parser():
     ingest.add_argument("--weight", choices=["peso", "peso_ccaa"], default="peso")
     ingest.add_argument("--answer-column", default="answer")
     ingest.add_argument("--question-type", choices=["single", "multiple"], default="single")
+    ingest.add_argument("--include-reserved", action="store_true", help="Incluye estudios reservados (solo backtesting)")
+    cases = commands.add_parser("make-backtest-cases", help="Casos de backtest desde los estudios reservados")
+    cases.add_argument("--cis-dir", default="data/processed")
+    cases.add_argument("--out", default="data/processed/backtest_cases.json")
+    cases.add_argument("--max-per-study", type=int, default=8)
+    cases.add_argument("--min-n", type=int, default=500)
+    cases.add_argument("--seed", type=int, default=42)
+    cases.add_argument("--mode", choices=["temporal", "strict"], default="temporal")
+    cases.add_argument("--studies", nargs="*")
     search = commands.add_parser("search-evidence")
     search.add_argument("--query", required=True)
     search.add_argument("--db", default="data/processed/evidence.sqlite")
@@ -117,6 +126,14 @@ def run(args):
         from .etl.population import run_population_etl
 
         return run_population_etl(args.raw, args.out, args.n, args.seed, args.period)
+    if args.command == "make-backtest-cases":
+        from .backtest_cases import build_cases
+
+        built = build_cases(
+            args.cis_dir, args.max_per_study, args.min_n, args.seed, args.mode == "temporal", args.studies
+        )
+        save_json(args.out, built)
+        return {"cases": len(built), "out": args.out, "studies": sorted({c["estudio_id"] for c in built})}
     if args.command == "create-demo":
         path = create_demo("data/fixtures")
         EvidenceRepository().ingest(path.parent / "evidence.json")
@@ -127,7 +144,7 @@ def run(args):
         if bool(args.respondents) != bool(args.responses):
             raise ValueError("Indique --respondents y --responses juntos")
         repo = evidence_repository(args.db)
-        processed = repo.ingest(args.path)
+        processed = repo.ingest(args.path, include_reserved=args.include_reserved)
         attached = (
             repo.attach_microdata(
                 args.respondents, args.responses, args.weight, args.answer_column, args.question_type
@@ -135,7 +152,11 @@ def run(args):
             if args.respondents
             else 0
         )
-        return {"processed": processed, "questions_with_microdata": attached}
+        return {
+            "processed": processed,
+            "skipped_reserved": repo.skipped_reserved,
+            "questions_with_microdata": attached,
+        }
     if args.command == "search-evidence":
         return evidence_repository(args.db).search(args.query)
     frame, metadata = PopulationLoader().load(args.path, args.metadata)
@@ -174,7 +195,8 @@ def run(args):
         output = args.output or f"outputs/{result['simulation_id']}.json"
     else:
         cases = json.loads(Path(args.cases).read_text(encoding="utf-8-sig"))
-        result = asyncio.run(backtest(cases, repository, evidence, factory, args.segments, anchors=anchors))
+        results = asyncio.run(backtest(cases, repository, evidence, factory, args.segments, anchors=anchors))
+        result = {"summary": summarize_backtest(results), "results": results}
         output = args.output or "outputs/backtest.json"
     save_json(output, result)
     print(f"Resultado guardado: {output}", file=sys.stderr)

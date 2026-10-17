@@ -104,12 +104,18 @@ def build_graph(
     def retrieve(state):
         found = {}
         if rag:
-            for query in state["methodology"]["retrieval_queries"]:
+            # La pregunta literal siempre es una consulta: garantiza recuperar la misma pregunta en otras
+            # oleadas aunque las consultas generadas por el LLM sean más vagas.
+            queries = list(dict.fromkeys([state["question"]["question"], *state["methodology"]["retrieval_queries"]]))
+            literal = state["question"]["question"]
+            for query in queries:
                 for hit in evidence_repository.search(
                     query,
                     target_population=state["question"]["target_population"],
                     options=state["question"]["options"],
                     topic=state["methodology"]["topic"],
+                    # El tema lo decide el LLM y puede equivocarse: la consulta literal solo lo usa como bonificación.
+                    topic_filter=query != literal,
                     **filters,
                 ):
                     e = hit["evidence"]

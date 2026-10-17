@@ -76,7 +76,7 @@ def _write_study(root, n=120):
     pyreadstat.write_sav(
         frame,
         str(sav),
-        column_labels={"P1": "Pregunta uno", "P2_1": "Opción A", "P2_2": "Opción B", "P3": "Filtrada"},
+        column_labels={"P1": "Pregunta uno con una redacción suficientemente larga", "P2_1": "Opción A", "P2_2": "Opción B", "P3": "Filtrada"},
         variable_value_labels=labels,
     )
     raw = root / "raw" / "vivienda" / "cis"
