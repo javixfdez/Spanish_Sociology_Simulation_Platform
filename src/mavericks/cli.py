@@ -48,6 +48,11 @@ def parser():
     search = commands.add_parser("search-evidence")
     search.add_argument("--query", required=True)
     search.add_argument("--db", default="data/processed/evidence.sqlite")
+    etl = commands.add_parser("etl-cis", help="Convierte los zips del CIS al contrato de la Fase 1")
+    etl.add_argument("--raw", default="maverick_data/raw")
+    etl.add_argument("--catalog", default="maverick_data/catalogo.csv")
+    etl.add_argument("--out", default="data/processed")
+    etl.add_argument("--only", nargs="*", help="Números de estudio CIS (p. ej. 3546 3535)")
     stats = commands.add_parser("survey-stats")
     stats.add_argument("--respondents", required=True)
     stats.add_argument("--responses", required=True)
@@ -93,6 +98,10 @@ def run(args):
         if args.output:
             save_json(args.output, value)
         return value
+    if args.command == "etl-cis":
+        from .etl.cis import run_etl
+
+        return run_etl(args.raw, args.catalog, args.out, set(args.only) if args.only else None)
     if args.command == "create-demo":
         path = create_demo("data/fixtures")
         EvidenceRepository().ingest(path.parent / "evidence.json")
