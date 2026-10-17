@@ -14,7 +14,7 @@ import pyarrow.parquet as pq
 from .anchor import option_key
 
 SUBGROUP_DIMENSIONS = ["sexo", "grupo_edad", "nivel_estudios"]
-_NON_SUBSTANTIVE = {"ns", "nc", "np", "no sabe", "no contesta"}
+_NON_SUBSTANTIVE = {"ns", "nc", "np", "no sabe", "no contesta", "no procede", "no aplicable"}
 MIN_SUBGROUP = 100
 
 

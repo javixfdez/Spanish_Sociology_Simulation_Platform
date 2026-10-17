@@ -36,3 +36,11 @@ def test_battery_items_use_stem_without_suffix_and_append_item():
     assert text.endswith("[Pedro Sánchez]") and text.startswith("A continuación")
     assert compose_text("Grado de preocupación", ["P1"], stems, {}) == stems["P1"]
     assert compose_text("x", ["P99"], stems, {}) is None
+
+
+def test_clean_stem_removes_directives_without_control_characters():
+    from mavericks.etl.questionnaire import clean_stem
+
+    text = clean_stem(["¿Y está Ud. viviendo? . “LEER LAS OPCIONES DE RESPUESTA” ", "(ENTREVISTADOR/A: LEER)"])
+    assert text == "¿Y está Ud. viviendo?"
+    assert all(ord(c) >= 32 for c in clean_stem(["Hola , ¿qué tal ?  ."]))

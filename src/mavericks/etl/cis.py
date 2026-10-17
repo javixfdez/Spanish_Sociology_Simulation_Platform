@@ -62,8 +62,12 @@ def clean(text):
     return re.sub(r"\s+", " ", html.unescape(str(text or ""))).strip()
 
 
+_STRUCTURAL = re.compile(r"^(n\.?p\.?|no procede|no aplicable|no corresponde)\.?$")
+
+
 def _is_np(label):
-    return cat.norm(label) in ("n.p.", "np")
+    """«No procede»: categoría estructural (filtro del cuestionario), no una respuesta; se descarta."""
+    return bool(_STRUCTURAL.match(cat.norm(label).strip()))
 
 
 def parse_fieldwork(text):
@@ -216,7 +220,9 @@ def build_respondents(frame, meta, estudio_id, warnings):
 
 def _binary_codes(labels):
     """(código positivo, código negativo) si las etiquetas (sin N.P.) son un par Sí/No o Menciona/No menciona."""
-    real = {code: cat.norm(label) for code, label in labels.items() if not _is_np(label)}
+    # La agrupación en baterías mantiene el criterio histórico (solo «N.P.» es filtro): un ítem Sí/No con la
+    # categoría «No procede» sigue siendo una pregunta individual y no se funde en una multirrespuesta.
+    real = {code: cat.norm(label) for code, label in labels.items() if cat.norm(label) not in ("n.p.", "np")}
     if len(real) != 2:
         return None
     pos = [c for c, n in real.items() if n in _POSITIVE]

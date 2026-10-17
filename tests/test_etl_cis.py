@@ -66,7 +66,7 @@ def _write_study(root, n=120):
         "CCAA": {float(i): "Andalucía" if i == 1 else "Aragón" for i in range(1, 20)},
         "TAMUNI": {1.0: "Menos o igual a 2.000 habitantes"},
         "SEXO": {1.0: "Hombre", 2.0: "Mujer"},
-        "P1": {1.0: "Sí", 2.0: "No", 3.0: "N.S."},
+        "P1": {0.0: "No procede", 1.0: "Sí", 2.0: "No", 3.0: "N.S."},
         "P2_1": {1.0: "Menciona", 2.0: "No menciona"},
         "P2_2": {1.0: "Menciona", 2.0: "No menciona"},
         "P3": {0.0: "N.P.", 1.0: "Sí"},
@@ -108,7 +108,9 @@ def test_etl_cis_end_to_end(tmp_path):
     assert set(respondents.sexo.dropna()) <= {"hombre", "mujer"}
     assert set(respondents.nivel_estudios.dropna()) <= set(cat.NIVEL_ESTUDIOS) | {"otros", "nc"}
     assert respondents.respondent_uid.is_unique
-    # NS explícito conservado
+    # «No procede» es estructural: no es opción de la pregunta; NS explícito conservado
+    assert "No procede" not in questions.set_index("question_uid").loc["CIS9999_P1", "options"]
+    assert "No procede" not in set(responses.answer)
     assert "N.S." in set(responses[responses.question_uid == "CIS9999_P1"].answer)
     # El resultado es consumible por survey_distribution tal cual
     single = survey_distribution(respondents, responses, "CIS9999_P1", group_by="sexo")
