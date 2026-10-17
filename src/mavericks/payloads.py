@@ -45,14 +45,14 @@ def compact_segment(segment, total_weight):
     }
 
 
-def compact_evidence(hits, assessment, anchors=None, limit=MAX_EVIDENCE):
+def compact_evidence(hits, assessment, anchors=None, limit=MAX_EVIDENCE, keep_ids=()):
     """Hasta ``limit`` evidencias compatibles, con su evaluación y el resultado nacional empírico."""
     items = {i["evidence_id"]: i for i in assessment.get("items", [])}
     compact = []
     for hit in sorted(hits, key=lambda h: -h["retrieval_score"]):
         e = hit["evidence"]
         item = items.get(e["evidence_id"], {})
-        if item.get("relevance") == "incompatible":
+        if item.get("relevance") == "incompatible" and e["evidence_id"] not in keep_ids:
             continue
         entry = {
             "evidence_id": e["evidence_id"],

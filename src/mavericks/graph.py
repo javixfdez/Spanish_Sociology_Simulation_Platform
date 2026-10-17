@@ -193,15 +193,26 @@ def build_graph(
         }
 
     def dispatch(state):
-        return {"stages": ["dispatch_segment_agents"]}
+        spec = state.get("anchor_spec")
+        incompatible = {
+            i["evidence_id"]
+            for i in state.get("evidence_assessment", {}).get("items", [])
+            if i["relevance"] == "incompatible"
+        }
+        warnings = []
+        if spec and spec["evidence_id"] in incompatible:
+            # El ancla supera el umbral de similitud y opciones equivalentes: el evaluador LLM no puede vetarla.
+            warnings.append(
+                f"El evaluador marcó como incompatible la evidencia ancla {spec['evidence_id']}; "
+                "se mantiene por similitud de redacción y opciones equivalentes"
+            )
+        return {"warnings": warnings, "stages": ["dispatch_segment_agents"]}
 
     def route(state):
         assessment = state["evidence_assessment"]
-        evidence = compact_evidence(state["retrieved_evidence"], assessment, anchors)
-        allowed = {e["evidence_id"] for e in evidence}
         spec = state.get("anchor_spec")
-        if spec and spec["evidence_id"] not in allowed:
-            spec = None  # la evidencia ancla fue descartada por incompatible
+        keep = (spec["evidence_id"],) if spec else ()
+        evidence = compact_evidence(state["retrieved_evidence"], assessment, anchors, keep_ids=keep)
         total = sum(s["population_weight"] for s in state["segments"])
         sends = []
         for s in state["segments"]:

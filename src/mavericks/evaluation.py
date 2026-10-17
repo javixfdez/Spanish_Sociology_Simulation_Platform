@@ -68,6 +68,10 @@ async def backtest(
                 else js_divergence(predicted, observed),
                 "topic": case.get("topic"),
                 "anchor_mode": spec["mode"] if spec else "none",
+                "assessment_fallback": "interpret_evidence:fallback" in result["stages"],
+                "had_evidence": bool(result["retrieved_evidence"]),
+                "execution_time": result["execution_metadata"]["execution_time"],
+                "llm_latency": _latencies(result["execution_metadata"]["llm_calls"]),
                 "observed": observed,
                 "option_errors": [] if failed else [abs(predicted[o] - observed[o]) for o in observed],
                 "subgroup_option_errors": option_errors_of(result, case) if not failed else [],
@@ -140,3 +144,15 @@ def option_errors_of(result, case):
             if target and set(target["distribution"]) == set(distribution):
                 errors.extend(abs(distribution[o] - target["distribution"][o]) for o in distribution)
     return errors
+
+
+def _latencies(calls):
+    """Latencia media (s) y número de llamadas reales al LLM por tipo de agente."""
+    summary = {}
+    for call in calls:
+        if call.get("cache_hit"):
+            continue
+        entry = summary.setdefault(call["schema"], {"n": 0, "total": 0.0})
+        entry["n"] += 1
+        entry["total"] += call.get("latency", 0.0)
+    return {k: {"n": v["n"], "mean_s": v["total"] / v["n"]} for k, v in summary.items()}

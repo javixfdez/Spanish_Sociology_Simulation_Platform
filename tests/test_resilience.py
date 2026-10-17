@@ -95,3 +95,37 @@ def test_retry_carries_error_and_raises_temperature(tmp_path):
     retry, temperature = seen[1]
     assert retry["attempt"] == 1 and "Segmento u opciones incorrectos" in retry["previous_error"]
     assert temperature is not None and temperature > 0
+
+
+def test_strip_think_blocks():
+    from mavericks.llm import strip_think
+
+    assert strip_think('<think>razono\n\nmucho</think>{"a": 1}') == '{"a": 1}'
+    assert strip_think('{"a": 1}<think>sin cerrar') == '{"a": 1}'
+    assert strip_think('{"a": 1}') == '{"a": 1}'
+
+
+def test_provider_recovers_json_after_think_block(monkeypatch):
+    import langchain_ollama
+
+    import mavericks.llm as module
+    from mavericks.llm import StructuredProvider
+
+    monkeypatch.setattr(module, "check_ollama", lambda settings: {"available": True})
+
+    class Raw:
+        content = '<think>pensando…</think>{"summary": "Limpio"}'
+
+    class FakeChat:
+        def __init__(self, **kwargs):
+            pass
+
+        def with_structured_output(self, schema, method, include_raw):
+            return self
+
+        async def ainvoke(self, messages):
+            return {"parsed": None, "parsing_error": ValueError("json"), "raw": Raw()}
+
+    monkeypatch.setattr(langchain_ollama, "ChatOllama", FakeChat)
+    value = asyncio.run(StructuredProvider(Settings()).generate(Narrative, {}))
+    assert value.summary == "Limpio"

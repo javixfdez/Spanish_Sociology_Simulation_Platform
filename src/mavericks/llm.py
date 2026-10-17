@@ -3,6 +3,7 @@ import hashlib
 import inspect
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Protocol
@@ -21,6 +22,15 @@ No alteres cifras empíricas ni agregadas. Devuelve el esquema estructurado requ
 No propongas persuasión política individual ni microsegmentación política.
 Si el payload incluye "retry", tu respuesta anterior fue rechazada: corrige exactamente el error
 indicado en "previous_error" y respeta el esquema."""
+
+
+_THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
+
+
+def strip_think(text):
+    """Elimina bloques <think>…</think> (y un <think> sin cerrar al final) de una respuesta de modelo."""
+    text = _THINK.sub("", text or "")
+    return re.sub(r"<think>.*$", "", text, flags=re.S | re.I).strip()
 
 
 ROLES = {
@@ -142,6 +152,16 @@ class StructuredProvider:
         response = await chain.ainvoke(
             [("system", f"{SYSTEM}\n{ROLES.get(schema.__name__, '')}"), ("human", json.dumps(payload, ensure_ascii=False))]
         )
+        raw = response.get("raw")
+        content = getattr(raw, "content", None)
+        if (response.get("parsing_error") or response.get("parsed") is None) and isinstance(content, str):
+            # Defensa ante modelos que antepongan razonamiento: se limpia y se reintenta el parseo.
+            cleaned = strip_think(content)
+            if cleaned != content.strip():
+                try:
+                    return schema.model_validate_json(cleaned)
+                except ValueError:
+                    pass
         if response.get("parsing_error") or response.get("parsed") is None:
             raise ValueError(f"Salida estructurada inválida: {response.get('parsing_error')}")
         logger.info("LLM usage: %s", getattr(response.get("raw"), "usage_metadata", None))

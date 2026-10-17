@@ -212,3 +212,20 @@ def test_single_answer_sums_are_repaired_within_tolerance(tmp_path):
         asyncio.run(
             llm.call(Prediction, {"n": 2}, lambda p: p.validate_context("a", ["Y", "N"], []), repair=lambda p: p.renormalized())
         )
+
+
+def test_evaluator_cannot_veto_a_valid_anchor(tmp_path, world):
+    from mavericks.schemas import Assessment
+
+    class Strict(MockLLMProvider):
+        async def generate(self, schema, payload, temperature=None):
+            if schema is Assessment:
+                return Assessment(
+                    items=[{"evidence_id": e["evidence_id"], "relevance": "incompatible"} for e in payload["evidence"]]
+                )
+            return await super().generate(schema, payload)
+
+    result = _run(tmp_path, world, Strict())
+    assert result["execution_metadata"]["status"] == "completed"
+    assert all(p["anchor"]["mode"] == "direct" for p in result["segment_predictions"].values())
+    assert any("marcó como incompatible la evidencia ancla" in w for w in result["warnings"])
