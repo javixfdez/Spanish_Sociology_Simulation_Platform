@@ -89,6 +89,7 @@ async def backtest(
                 "subgroup_mae": float(np.mean([e["mae"] for e in subgroup_scores])) if subgroup_scores else None,
                 "subgroup_errors": subgroup_scores,
                 "predicted": predicted,
+                "predicted_subgroups": {} if failed else result["subgroup_distributions"],
                 "limitations": [
                     "Equivalencias requieren revisión humana; conocimiento preentrenado no controlable"
                 ],

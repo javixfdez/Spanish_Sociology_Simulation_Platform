@@ -41,6 +41,7 @@ def cross_validate(pairs, folds=5, seed=0, grid=GRID):
     assignment = np.empty(n, dtype=int)
     assignment[order] = np.arange(n) % min(folds, n)
     corrected = [None] * n
+    case_taus = [1.0] * n
     fold_taus = []
     for f in range(min(folds, n)):
         train = [pairs[i] for i in range(n) if assignment[i] != f]
@@ -48,6 +49,7 @@ def cross_validate(pairs, folds=5, seed=0, grid=GRID):
         fold_taus.append(tau)
         for i in np.where(assignment == f)[0]:
             corrected[i] = sharpen(pairs[i][0], tau)
+            case_taus[i] = tau
     raw = float(np.mean([_mae(p, o) for p, o in pairs]))
     cv = float(np.mean([_mae(c, o) for c, (_, o) in zip(corrected, pairs)]))
     full_tau = fit_tau(pairs, grid)
@@ -61,6 +63,7 @@ def cross_validate(pairs, folds=5, seed=0, grid=GRID):
         "mae_cv": cv,
         "fold_taus": fold_taus,
         "corrected_cv": corrected if useful else [dict(p) for p, _ in pairs],
+        "case_taus": case_taus if useful else [1.0] * n,
     }
 
 
@@ -72,8 +75,9 @@ def fit_by_mode(results, modes=("prior", "none"), min_cases=MIN_CASES, seed=0):
         pairs = [(r["predicted"], r["observed"]) for r in items]
         outcome = cross_validate(pairs, seed=seed) if len(pairs) >= min_cases else None
         report[mode] = (
-            {k: v for k, v in outcome.items() if k != "corrected_cv"} if outcome else {"tau": 1.0, "n": len(pairs), "useful": False}
+            {k: v for k, v in outcome.items() if k not in ("corrected_cv", "case_taus")} if outcome else {"tau": 1.0, "n": len(pairs), "useful": False}
         )
         if outcome:
             report[mode]["_corrected"] = dict(zip([r["evidence_id"] for r in items], outcome["corrected_cv"]))
+            report[mode]["_case_taus"] = dict(zip([r["evidence_id"] for r in items], outcome["case_taus"]))
     return report
