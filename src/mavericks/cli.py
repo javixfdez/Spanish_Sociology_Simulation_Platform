@@ -53,6 +53,12 @@ def parser():
     etl.add_argument("--catalog", default="maverick_data/catalogo.csv")
     etl.add_argument("--out", default="data/processed")
     etl.add_argument("--only", nargs="*", help="Números de estudio CIS (p. ej. 3546 3535)")
+    pop = commands.add_parser("etl-population", help="Genera la población sintética (Censo + ECP + EPA + ECV)")
+    pop.add_argument("--raw", default="maverick_data/raw")
+    pop.add_argument("--out", default="data/processed")
+    pop.add_argument("--n", type=int, default=50_000)
+    pop.add_argument("--seed", type=int, default=42)
+    pop.add_argument("--period", default="1 de enero de 2026", help="Periodo de la ECP (anterior al 30/06/2026)")
     stats = commands.add_parser("survey-stats")
     stats.add_argument("--respondents", required=True)
     stats.add_argument("--responses", required=True)
@@ -102,6 +108,10 @@ def run(args):
         from .etl.cis import run_etl
 
         return run_etl(args.raw, args.catalog, args.out, set(args.only) if args.only else None)
+    if args.command == "etl-population":
+        from .etl.population import run_population_etl
+
+        return run_population_etl(args.raw, args.out, args.n, args.seed, args.period)
     if args.command == "create-demo":
         path = create_demo("data/fixtures")
         EvidenceRepository().ingest(path.parent / "evidence.json")
