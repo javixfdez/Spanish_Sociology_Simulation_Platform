@@ -10,6 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from .anchor import constraints_of, project_to_band, question_similarity, select_anchor
+from .context import CUTOFF as CONTEXT_CUTOFF
 from .payloads import build_examples, compact_evidence, compact_segment
 from .population import build_segments
 from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
@@ -62,6 +63,7 @@ def build_graph(
     retrieval_filters=None,
     anchors=None,
     calibration=None,
+    context_store=None,
 ):
     filters = retrieval_filters or {}
     settings = service.settings
@@ -254,6 +256,13 @@ def build_graph(
             examples = build_examples(
                 state["retrieved_evidence"], anchors, settings.few_shot, exclude_ids=(spec["evidence_id"],) if spec else ()
             )
+        context = []
+        if context_store is not None:
+            # Solo hechos anteriores al inicio del trabajo de campo (el corte del backtest) o, sin él, al 30/06/2026.
+            before = filters.get("cutoff") or CONTEXT_CUTOFF.isoformat()
+            context = context_store.build(
+                state["question"]["question"], state.get("methodology", {}).get("topic"), before, anchors
+            )
         sends = []
         for s in state["segments"]:
             anchor = None
@@ -279,6 +288,7 @@ def build_graph(
                         "evidence": evidence,
                         "anchor": anchor,
                         **({"examples": examples} if examples else {}),
+                        **({"context": context} if context else {}),
                     },
                 )
             )
@@ -514,10 +524,11 @@ async def simulate(
     retrieval_filters=None,
     anchors=None,
     calibration=None,
+    context_store=None,
 ):
     started = time.monotonic()
     graph = build_graph(
-        repository, evidence_repository, service, max_segments, rag, retrieval_filters, anchors, calibration
+        repository, evidence_repository, service, max_segments, rag, retrieval_filters, anchors, calibration, context_store
     )
     state = await asyncio.wait_for(
         graph.ainvoke(

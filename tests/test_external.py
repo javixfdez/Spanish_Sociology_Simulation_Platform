@@ -99,3 +99,25 @@ def test_ess_edition_produced_after_cutoff_is_excluded(tmp_path):
     pyreadstat.write_sav(frame, str(path))
     records, report = process_ess(path, "", "general")
     assert records == [] and "posterior al 30/06/2026" in report["skipped"]
+
+
+def test_eurobarometer_without_interview_dates_uses_publication_date_and_respects_cutoff(tmp_path):
+    for version, expect_skip in (("1.0.0 (2025-02-26)", False), ("1.0.0 (2026-09-01)", True)):
+        rng = np.random.default_rng(1)
+        n = 400
+        frame = pd.DataFrame(
+            {
+                "isocntry": ["ES"] * n,
+                "version": [version] * n,
+                "w1": rng.uniform(0.5, 1.5, n),
+                "qa1": rng.choice([1.0, 2.0], n),
+            }
+        )
+        path = tmp_path / f"ZA1_{version[-5:-1]}.sav"
+        pyreadstat.write_sav(frame, str(path), variable_value_labels={"qa1": {1.0: "Good", 2.0: "Bad"}})
+        records, report = process_eurobarometer(path, "vivienda")
+        if expect_skip:
+            assert records == [] and "posterior al 30/06/2026" in report["skipped"]
+        else:
+            assert records and report.get("fieldwork_estimated") is True
+            assert records[0]["fieldwork_end"] == "2025-02-26" and records[0]["fieldwork_estimated"] is True

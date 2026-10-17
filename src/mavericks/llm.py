@@ -85,6 +85,11 @@ def _prediction_view(payload):
             if key in anchor:
                 anchor[key] = {by_option[o]: v for o, v in anchor[key].items() if o in by_option}
     view["answer_format"] = "Devuelve o1..oN con la probabilidad de cada opción, explanation y limitations."
+    if view.get("context"):
+        view["context_note"] = (
+            "context son hechos recientes anteriores al trabajo de campo de la pregunta (estado de la opinión y "
+            "la actualidad); úsalos para situar el momento, sin inventar cifras que no aparezcan en ellos."
+        )
     if view.get("examples"):
         view["examples_note"] = (
             "examples son preguntas parecidas con su distribución nacional REAL: úsalas para calibrar la escala; "

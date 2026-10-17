@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .anchor import load_anchor_store
+from .context import ContextStore
 from .evaluation import backtest, save_json, summarize_backtest
 from .evidence import EvidenceRepository, SemanticIndex, read_records, survey_distribution
 from .graph import simulate
@@ -39,6 +40,7 @@ def parser():
             sub.add_argument("--retriever", choices=["tfidf", "embed", "hybrid"], help="Recuperador de evidencia")
             sub.add_argument("--embedding-model", help="Modelo multilingüe local para embed/hybrid")
             sub.add_argument("--embedding-device", help="cpu o cuda")
+            sub.add_argument("--context", action="store_true", help="Añade contexto de actualidad fechado")
             sub.add_argument("--few-shot", type=int, help="Nº de ejemplos reales en el prompt (0 = apagado)")
             sub.add_argument("--no-llm-assessment", action="store_true", help="Evaluador de evidencia determinista (sin LLM)")
             sub.add_argument("--calibration", help="JSON de calibración (por defecto data/processed/calibration.json) u off")
@@ -86,6 +88,9 @@ def parser():
     ext.add_argument("--raw", default="maverick_data/raw")
     ext.add_argument("--out", default="data/processed_v2")
     ext.add_argument("--only", nargs="*", help="Eurobarómetros (ZA7848) o ESS (ESS11, ESS10SC) concretos")
+    ctx = commands.add_parser("etl-context", help="Indexa raw/*/contexto con fecha de publicación")
+    ctx.add_argument("--raw", default="maverick_data/raw")
+    ctx.add_argument("--out", default="data/processed_v2/context.json")
     stats = commands.add_parser("survey-stats")
     stats.add_argument("--respondents", required=True)
     stats.add_argument("--responses", required=True)
@@ -104,6 +109,8 @@ def run(args):
         updates["llm_provider"] = args.provider
     if getattr(args, "model", None):
         updates["ollama_model"] = args.model
+    if getattr(args, "context", False):
+        updates["context"] = True
     if getattr(args, "few_shot", None) is not None:
         updates["few_shot"] = args.few_shot
     for flag in ("retriever", "embedding_model", "embedding_device"):
@@ -161,6 +168,12 @@ def run(args):
         )
         save_json(args.out, built)
         return {"cases": len(built), "out": args.out, "studies": sorted({c["estudio_id"] for c in built})}
+    if args.command == "etl-context":
+        from .context import build_context_index
+
+        index = build_context_index(args.raw)
+        save_json(args.out, index)
+        return {"fragments": len(index["entries"]), "documents": len({e["doc"] for e in index["entries"]}), "skipped": index["skipped"]}
     if args.command == "etl-external":
         from .etl.external import run_external_etl
 
@@ -211,6 +224,7 @@ def run(args):
 
     evidence = evidence_repository(args.db)
     anchors = None if args.anchor == "off" else load_anchor_store(settings, args.cis_dir)
+    context_store = ContextStore.load(settings.context_path, args.cis_dir or settings.cis_dir) if settings.context else None
     calibration_path = None if args.calibration == "off" else (args.calibration or settings.calibration_path)
     calibration = load_calibration(calibration_path) if args.command == "simulate" else None
     if args.command == "simulate":
@@ -224,6 +238,7 @@ def run(args):
                 args.rag == "on",
                 anchors=anchors,
                 calibration=calibration,
+                context_store=context_store,
             )
         )
         output = args.output or f"outputs/{result['simulation_id']}.json"
@@ -255,7 +270,7 @@ def run(args):
                 f.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
 
         results = done + asyncio.run(
-            backtest(cases, repository, evidence, factory, args.segments, anchors=anchors, on_result=keep)
+            backtest(cases, repository, evidence, factory, args.segments, anchors=anchors, on_result=keep, context_store=context_store)
         )
         result = {"summary": summarize_backtest(results), "results": results}
         if calibration_path:

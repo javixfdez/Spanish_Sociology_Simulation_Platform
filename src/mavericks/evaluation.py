@@ -18,6 +18,7 @@ async def backtest(
     anchors=None,
     calibration=None,
     on_result=None,
+    context_store=None,
 ):
     results = []
     for case in cases:
@@ -47,6 +48,7 @@ async def backtest(
             retrieval_filters=filters,
             anchors=anchors,
             calibration=calibration,
+            context_store=context_store,
         )
         retrieved_ids = {e["evidence"]["evidence_id"] for e in result["retrieved_evidence"]}
         if retrieved_ids & set(excluded):

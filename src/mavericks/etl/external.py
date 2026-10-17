@@ -193,6 +193,7 @@ def _record(prefix, variable, study_id, topic, summary, text, options, qtype, na
         "topic": topic,
         "idioma": "en",
         "fieldwork_start": dates[0],
+        "fieldwork_estimated": dates[0] is None,
         "fieldwork_end": dates[1],
         "fieldwork_date": dates[1],
         "reservado_examen": False,
@@ -233,9 +234,19 @@ def process_eurobarometer(path, topic):
     spain["_grupo"] = _grupo(_num(spain, "d11").where(lambda x: x < 97))
     spain["_estudios"] = eb_education(_num(spain, "d8"))
     dates = _eb_dates(spain, meta)
+    published = _eb_published(spain)
+    report["published"] = published.isoformat() if published else None
+    if published and published > CUTOFF:
+        report["skipped"] = f"archivo publicado el {published.isoformat()}, posterior al 30/06/2026"
+        return [], report
+    if dates[1] is None and published:
+        # Sin fecha de entrevista se usa la de publicación del archivo: cota superior conservadora del campo.
+        dates = (None, published.isoformat())
+        report["warning"] = "sin fecha de entrevista: fieldwork_end estimado con la fecha de publicación del archivo"
+        report["fieldwork_estimated"] = True
     report["fieldwork"] = dates
     if dates[1] is None:
-        report["warning"] = "sin fecha de trabajo de campo: la evidencia quedará fuera de cualquier corte temporal"
+        report["warning"] = "sin fecha de trabajo de campo ni de publicación: la evidencia quedará fuera de cualquier corte"
     elif date.fromisoformat(dates[1]) > CUTOFF:
         report["skipped"] = "trabajo de campo posterior al 30/06/2026"
         return [], report
@@ -243,6 +254,14 @@ def process_eurobarometer(path, topic):
                          EB_NOTE, "eurobarometro", dates, False)
     report["n_questions"] = len(records)
     return records, report
+
+
+def _eb_published(spain):
+    """Fecha de publicación del archivo GESIS: «1.0.0 (2025-02-26)» en la variable version."""
+    if "version" not in spain or spain["version"].dropna().empty:
+        return None
+    match = re.search(r"(\d{4})-(\d{2})-(\d{2})", str(spain["version"].dropna().iloc[0]))
+    return date(int(match.group(1)), int(match.group(2)), int(match.group(3))) if match else None
 
 
 def _eb_dates(spain, meta):

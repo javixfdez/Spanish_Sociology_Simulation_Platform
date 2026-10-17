@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     stability_runs: int = Field(1, ge=1, le=10)
     llm_assessment: bool = True
     few_shot: int = Field(0, ge=0, le=8)
+    context: bool = False
+    context_path: str = "data/processed_v2/context.json"
     retriever: Literal["tfidf", "embed", "hybrid"] = "tfidf"
     embedding_model: str = "intfloat/multilingual-e5-base"
     embedding_device: str = "cpu"
