@@ -130,6 +130,7 @@ def build_graph(
                     topic=state["methodology"]["topic"],
                     # El tema lo decide el LLM y puede equivocarse: la consulta literal solo lo usa como bonificación.
                     topic_filter=query != literal,
+                    sources=set(filter(None, settings.sources.split(","))) or None,
                     **filters,
                 )
                 if query == literal:

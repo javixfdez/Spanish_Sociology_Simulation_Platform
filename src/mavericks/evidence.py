@@ -54,6 +54,11 @@ RETRIEVERS = ("tfidf", "embed", "hybrid")
 RRF_K = 60
 
 
+def source_family(e):
+    """cis | eurobarometro | ess: permite activar o desactivar familias de fuentes sin reindexar."""
+    return "cis" if str(e.source or "").upper().startswith("CIS") else str(e.source or "").lower()
+
+
 def evidence_text(e):
     """Texto que se indexa: enunciado literal más opciones (sin N.S./N.C.)."""
     options = "; ".join((e.options or [])[:8])
@@ -238,6 +243,7 @@ class EvidenceRepository:
         topic_filter=True,
         include_reserved=False,
         retriever=None,
+        sources=None,
     ):
         """Búsqueda híbrida. Con ``topic`` se filtra a ese tema y a 'general'; si no hay resultados
         se repite sin filtro y los resultados llevan ``topic_fallback=True``."""
@@ -253,6 +259,7 @@ class EvidenceRepository:
             and normalize(e.question_text) not in excluded
             and not set(e.metadata.get("equivalent_ids", [])) & set(excluded_ids)
             and (include_reserved or not e.metadata.get("original_fields", {}).get("reservado_examen"))
+            and (not sources or source_family(e) in sources)
         ]
         if cutoff:
             # Corte estricto: la evidencia debe haber terminado su trabajo de campo (fieldwork_date, fin)

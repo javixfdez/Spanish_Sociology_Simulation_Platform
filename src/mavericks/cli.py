@@ -12,6 +12,8 @@ from .evidence import EvidenceRepository, SemanticIndex, read_records, survey_di
 from .graph import simulate
 from .llm import LLMService, check_ollama, create_provider
 from .population import PopulationLoader, PopulationRepository, build_segments, create_demo
+from .report import compare, comparison_table
+from .report import report as build_report
 from .schemas import Question, Settings
 from .sharpen import apply_to_results, fit_by_mode, interval_coverage
 from .statistics import build_calibration, load_calibration
@@ -43,6 +45,7 @@ def parser():
             sub.add_argument("--embedding-device", help="cpu o cuda")
             sub.add_argument("--context", action="store_true", help="Añade contexto de actualidad fechado")
             sub.add_argument("--sharpen", action="store_true", help="Aplica el ajuste de nitidez de calibration.json")
+            sub.add_argument("--sources", help="Familias de evidencia permitidas: cis,eurobarometro,ess")
             sub.add_argument("--few-shot", type=int, help="Nº de ejemplos reales en el prompt (0 = apagado)")
             sub.add_argument("--no-llm-assessment", action="store_true", help="Evaluador de evidencia determinista (sin LLM)")
             sub.add_argument("--calibration", help="JSON de calibración (por defecto data/processed/calibration.json) u off")
@@ -102,6 +105,14 @@ def parser():
     fit.add_argument("--cases", default="data/processed/backtest_cases.json")
     fit.add_argument("--out", default="data/processed/calibration.json")
     fit.add_argument("--seed", type=int, default=0)
+    rep = commands.add_parser("report-backtest", help="Tablas por modo y tema de un backtest")
+    rep.add_argument("--results", required=True)
+    rep.add_argument("--title", default="Backtest")
+    rep.add_argument("--out")
+    cmp_ = commands.add_parser("compare-backtests", help="Compara configuraciones caso a caso contra una base")
+    cmp_.add_argument("--base", required=True)
+    cmp_.add_argument("--others", nargs="+", required=True, help="nombre=ruta.json")
+    cmp_.add_argument("--out")
     stats = commands.add_parser("survey-stats")
     stats.add_argument("--respondents", required=True)
     stats.add_argument("--responses", required=True)
@@ -114,6 +125,11 @@ def parser():
     return root
 
 
+def load_results(path):
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return raw["results"] if isinstance(raw, dict) else raw
+
+
 def run(args):
     updates = {}
     if getattr(args, "provider", None):
@@ -124,6 +140,8 @@ def run(args):
         updates["sharpen"] = True
     if getattr(args, "context", False):
         updates["context"] = True
+    if getattr(args, "sources", None):
+        updates["sources"] = args.sources
     if getattr(args, "few_shot", None) is not None:
         updates["few_shot"] = args.few_shot
     for flag in ("retriever", "embedding_model", "embedding_device"):
@@ -190,6 +208,22 @@ def run(args):
             "by_topic": dict(collections.Counter(c["topic"] for c in built)),
             "studies": sorted({c["estudio_id"] for c in built}),
         }
+    if args.command == "report-backtest":
+        raw = json.loads(Path(args.results).read_text(encoding="utf-8"))
+        text = build_report(raw["results"] if isinstance(raw, dict) else raw, args.title)
+        if args.out:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(text, encoding="utf-8")
+        print(text)
+        return {"report": args.out}
+    if args.command == "compare-backtests":
+        others = {spec.split("=", 1)[0]: load_results(spec.split("=", 1)[1]) for spec in args.others}
+        comparison = compare(load_results(args.base), others)
+        text = comparison_table(comparison)
+        if args.out:
+            Path(args.out).write_text(text, encoding="utf-8")
+        print(text)
+        return comparison
     if args.command == "fit-sharpening":
         raw = json.loads(Path(args.results).read_text(encoding="utf-8"))
         results = raw["results"] if isinstance(raw, dict) else raw

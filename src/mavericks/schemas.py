@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     stability_runs: int = Field(1, ge=1, le=10)
     llm_assessment: bool = True
     few_shot: int = Field(0, ge=0, le=8)
+    sources: str = ""
     context: bool = False
     sharpen: bool = False
     context_path: str = "data/processed_v2/context.json"
