@@ -9,8 +9,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from .population import build_segments
-from .schemas import Assessment, Methodology, Narrative, Prediction, Question
+from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
 from .statistics import aggregate, audit, subgroup_distributions
+from .topics import classify_topic
 
 
 def merge_unique(left, right):
@@ -61,14 +62,30 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
         }
 
     async def methodologist(state):
-        value = await service.call(Methodology, state["question"])
-        if value.question_type != state["question"]["question_type"]:
-            raise ValueError("El metodólogo cambió el tipo de respuesta solicitado")
-        return {
-            "methodology": value.model_dump(),
-            "warnings": value.warnings,
-            "stages": ["methodologist_agent"],
-        }
+        question = state["question"]
+        try:
+            value = await service.call(Methodology, question)
+            if value.question_type != question["question_type"]:
+                raise ValueError("El metodólogo cambió el tipo de respuesta solicitado")
+            return {
+                "methodology": value.model_dump(),
+                "warnings": value.warnings,
+                "stages": ["methodologist_agent"],
+            }
+        except Exception as exc:
+            # Sin metodólogo se continúa con una metodología determinista, avisando del fallo.
+            fallback = Methodology(
+                topic=classify_topic(question["question"]),
+                question_type=question["question_type"],
+                relevant_demographics=["grupo_edad", "sexo", "nivel_estudios"],
+                retrieval_queries=[question["question"]],
+                warnings=[f"Metodólogo LLM no disponible ({exc}); metodología determinista"],
+            )
+            return {
+                "methodology": fallback.model_dump(),
+                "warnings": fallback.warnings,
+                "stages": ["methodologist_agent:fallback"],
+            }
 
     def retrieve(state):
         found = {}
@@ -94,16 +111,37 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
         }
 
     async def interpret(state):
-        ids = {hit["evidence"]["evidence_id"] for hit in state["retrieved_evidence"]}
+        hits = state["retrieved_evidence"]
+        ids = {hit["evidence"]["evidence_id"] for hit in hits}
+        if not ids:
+            # Sin evidencia no hay nada que evaluar: preguntar al LLM invita a inventar evidencias.
+            empty = Assessment(items=[], missing_information=["Sin evidencia recuperada"])
+            return {"evidence_assessment": empty.model_dump(), "stages": ["interpret_evidence"]}
 
         def validate(value):
             returned = [item.evidence_id for item in value.items]
             if set(returned) != ids or len(returned) != len(ids):
                 raise ValueError("Assessment debe evaluar exactamente cada evidence_id recuperado")
 
-        value = await service.call(
-            Assessment, {"question": state["question"], "evidence": state["retrieved_evidence"]}, validate
-        )
+        try:
+            value = await service.call(Assessment, {"question": state["question"], "evidence": hits}, validate)
+        except Exception as exc:
+            # Evaluación conservadora: toda la evidencia se considera indirecta, con aviso explícito.
+            note = f"Evaluación automática no disponible ({exc}); evidencia tratada como indirecta"
+            value = Assessment(
+                items=[
+                    AssessmentItem(
+                        evidence_id=hit["evidence"]["evidence_id"], relevance="indirect", differences=[note]
+                    )
+                    for hit in hits
+                ],
+                missing_information=[note],
+            )
+            return {
+                "evidence_assessment": value.model_dump(),
+                "warnings": [note],
+                "stages": ["interpret_evidence:fallback"],
+            }
         return {"evidence_assessment": value.model_dump(), "stages": ["interpret_evidence"]}
 
     def segment(state):
@@ -188,16 +226,21 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
         }
 
     async def analyst(state):
-        narrative = await service.call(
-            Narrative,
-            {
-                "national_distribution": state["national_distribution"],
-                "subgroup_distributions": state["subgroup_distributions"],
-                "evidence": state["retrieved_evidence"],
-                "trust_metrics": state["trust_metrics"],
-                "warnings": state["warnings"],
-            },
-        )
+        try:
+            narrative = await service.call(
+                Narrative,
+                {
+                    "national_distribution": state["national_distribution"],
+                    "subgroup_distributions": state["subgroup_distributions"],
+                    "evidence": state["retrieved_evidence"],
+                    "trust_metrics": state["trust_metrics"],
+                    "warnings": state["warnings"],
+                },
+            )
+            stage = "analyst_agent"
+        except Exception as exc:
+            narrative = Narrative(summary=f"Narrativa no disponible ({exc}). Las cifras son las del modelo.")
+            stage = "analyst_agent:fallback"
         # Numerical results remain authoritative, separate from generated interpretation.
         return {
             "final_report": {
@@ -205,7 +248,8 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
                 "model_estimates": state["national_distribution"],
                 "synthetic_explanations": True,
             },
-            "stages": ["analyst_agent"],
+            "stages": [stage],
+            "warnings": [] if stage == "analyst_agent" else [narrative.summary],
         }
 
     graph = StateGraph(SimulationState)
