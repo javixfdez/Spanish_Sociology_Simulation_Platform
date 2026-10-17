@@ -24,6 +24,8 @@ def parser():
         sub.add_argument("--path", default="data/fixtures/population.csv")
         sub.add_argument("--metadata")
         sub.add_argument("--segments", type=int, default=5)
+        if name == "build-segments":
+            sub.add_argument("--dimensions", nargs="*", help="Dimensiones de segmentación por orden de prioridad")
         sub.add_argument("--output")
         if name in {"simulate", "backtest"}:
             sub.add_argument("--provider", choices=["ollama", "mock", "external"])
@@ -146,7 +148,7 @@ def run(args):
             else ["Sin catálogo: categorías no verificadas contra Fase 1"],
         }
     if args.command == "build-segments":
-        return build_segments(repository, args.segments)
+        return build_segments(repository, args.segments, dimensions=args.dimensions)
     provider = create_provider(settings)
 
     def factory():

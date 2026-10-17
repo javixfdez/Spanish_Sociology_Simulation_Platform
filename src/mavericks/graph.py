@@ -10,7 +10,7 @@ from langgraph.types import Send
 
 from .population import build_segments
 from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
-from .statistics import aggregate, audit, subgroup_distributions
+from .statistics import aggregate, audit, subgroup_distributions, subgroup_resolution
 from .topics import classify_topic
 
 
@@ -33,6 +33,7 @@ class SimulationState(TypedDict, total=False):
     segment_predictions: Annotated[dict, merge_unique]
     national_distribution: dict
     subgroup_distributions: dict
+    subgroup_resolution: dict
     trust_metrics: dict
     warnings: Annotated[list, operator.add]
     errors: Annotated[list, operator.add]
@@ -145,7 +146,11 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
         return {"evidence_assessment": value.model_dump(), "stages": ["interpret_evidence"]}
 
     def segment(state):
-        return {"segments": build_segments(repository, max_segments), "stages": ["segment_population"]}
+        wanted = state.get("methodology", {}).get("relevant_demographics", [])
+        return {
+            "segments": build_segments(repository, max_segments, dimensions=wanted),
+            "stages": ["segment_population"],
+        }
 
     def dispatch(state):
         return {"stages": ["dispatch_segment_agents"]}
@@ -213,6 +218,7 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
             "subgroup_distributions": subgroup_distributions(
                 state["segments"], predictions, q["options"], q["question_type"]
             ),
+            "subgroup_resolution": subgroup_resolution(state["segments"]),
             "execution_metadata": {"coverage": coverage, "status": "completed"},
             "stages": ["aggregate_predictions"],
         }

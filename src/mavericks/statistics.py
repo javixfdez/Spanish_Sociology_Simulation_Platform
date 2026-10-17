@@ -23,16 +23,54 @@ def aggregate(segments, predictions, options, question_type="single"):
     return result
 
 
-def subgroup_distributions(segments, predictions, options, question_type="single"):
+def _homogeneous(segment):
+    return set(segment.get("homogeneous_dimensions", segment["demographic_profile"]))
+
+
+def subgroup_resolution(segments):
+    """Fracción del peso en que cada dimensión distingue a los segmentos (no está mezclada)."""
+    total = sum(s["population_weight"] for s in segments)
+    dimensions = set().union(*(_homogeneous(s) for s in segments)) if segments else set()
+    return {
+        d: sum(s["population_weight"] for s in segments if d in _homogeneous(s)) / total
+        for d in sorted(dimensions)
+    }
+
+
+def _share(segment, dimension, category):
+    if dimension in _homogeneous(segment):
+        return 1.0 if segment["demographic_profile"][dimension] == category else 0.0
+    return segment.get("socioeconomic_profile", {}).get(dimension, {}).get(category, 0.0)
+
+
+def subgroup_distributions(segments, predictions, options, question_type="single", min_resolution=0.6):
+    """Estimación por subgrupo ponderando cada segmento por su composición en la dimensión.
+
+    Solo se publican dimensiones que la segmentación distingue en al menos ``min_resolution`` del peso:
+    en el resto se asumiría que todos los miembros del segmento responden igual y se inventarían diferencias.
+    """
     result = {}
-    dimensions = set.intersection(*(set(s["demographic_profile"]) for s in segments))
-    for dimension in sorted(dimensions):
+    for dimension, resolution in subgroup_resolution(segments).items():
+        if resolution < min_resolution:
+            continue
+        categories = set()
+        for s in segments:
+            if dimension in _homogeneous(s):
+                categories.add(s["demographic_profile"][dimension])
+            else:
+                categories.update(s.get("socioeconomic_profile", {}).get(dimension, {}))
         result[dimension] = {}
-        for category in sorted({s["demographic_profile"][dimension] for s in segments}):
-            subset = [s for s in segments if s["demographic_profile"][dimension] == category]
-            ids = {s["segment_id"] for s in subset}
+        for category in sorted(categories):
+            weighted = [
+                {**s, "population_weight": s["population_weight"] * _share(s, dimension, category)}
+                for s in segments
+                if _share(s, dimension, category) > 0
+            ]
+            if not weighted:
+                continue
+            ids = {s["segment_id"] for s in weighted}
             result[dimension][category] = aggregate(
-                subset, {k: v for k, v in predictions.items() if k in ids}, options, question_type
+                weighted, {k: v for k, v in predictions.items() if k in ids}, options, question_type
             )
     return result
 
