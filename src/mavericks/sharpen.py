@@ -81,3 +81,74 @@ def fit_by_mode(results, modes=("prior", "none"), min_cases=MIN_CASES, seed=0):
             report[mode]["_corrected"] = dict(zip([r["evidence_id"] for r in items], outcome["corrected_cv"]))
             report[mode]["_case_taus"] = dict(zip([r["evidence_id"] for r in items], outcome["case_taus"]))
     return report
+
+
+def apply_to_results(results, report, cases):
+    """Resultados de un backtest con las predicciones corregidas fuera de muestra (tau de cada caso).
+
+    Recalcula MAE, JSD y errores nacionales y de subgrupos; conserva la predicción original en predicted_raw.
+    ``cases`` aporta los subgrupos observados (no se guardan en los resultados).
+    """
+    from .evaluation import subgroup_errors
+    from .statistics import js_divergence
+
+    by_case = {c["evidence_id"]: c for c in cases}
+    corrected_out = []
+    for r in results:
+        row = dict(r)
+        mode_report = report.get(r.get("anchor_mode"), {})
+        case_id = r["evidence_id"]
+        if r["status"] == "completed" and case_id in mode_report.get("_corrected", {}):
+            new, tau = mode_report["_corrected"][case_id], mode_report["_case_taus"][case_id]
+            observed = r["observed"]
+            row.update(
+                predicted_raw=r["predicted"],
+                predicted=new,
+                sharpen_tau=tau,
+                option_errors=[abs(new[o] - observed[o]) for o in observed],
+                mae=_mae(new, observed),
+                js_divergence=js_divergence(new, observed),
+            )
+            sharpened = {
+                d: {c: sharpen(dist, tau) for c, dist in cats.items()}
+                for d, cats in r.get("predicted_subgroups", {}).items()
+            }
+            observed_sub = by_case.get(case_id, {}).get("observed_subgroups", {})
+            scores = subgroup_errors(sharpened, observed_sub)
+            errors = []
+            for d, cats in sharpened.items():
+                for c, dist in cats.items():
+                    target = observed_sub.get(d, {}).get(c)
+                    if target and set(target["distribution"]) == set(dist):
+                        errors.extend(abs(dist[o] - target["distribution"][o]) for o in dist)
+            row.update(
+                predicted_subgroups=sharpened,
+                subgroup_errors=scores,
+                subgroup_mae=float(np.mean([s["mae"] for s in scores])) if scores else None,
+                subgroup_option_errors=errors,
+            )
+        corrected_out.append(row)
+    return corrected_out
+
+
+def interval_coverage(results, alpha=0.1, key="anchor_mode", min_cases=MIN_CASES):
+    """Cobertura fuera de muestra (dejando un caso fuera): % de valores reales dentro del intervalo 1-alpha.
+
+    El radio de cada caso sale de los errores por opción de los demás casos de su estrato.
+    """
+    out = {}
+    done = [r for r in results if r["status"] == "completed" and r.get("option_errors")]
+    for group in sorted({str(r.get(key)) for r in done}) + ["global"]:
+        items = done if group == "global" else [r for r in done if str(r.get(key)) == group]
+        if len(items) < min_cases:
+            out[group] = {"cases": len(items), "coverage": None}
+            continue
+        inside = total = 0
+        for r in items:
+            others = np.sort([e for o in items if o is not r for e in o["option_errors"]])
+            rank = min(len(others), int(np.ceil((len(others) + 1) * (1 - alpha))))
+            radius = float(others[rank - 1])
+            inside += sum(e <= radius for e in r["option_errors"])
+            total += len(r["option_errors"])
+        out[group] = {"cases": len(items), "coverage": inside / total, "target": 1 - alpha}
+    return out

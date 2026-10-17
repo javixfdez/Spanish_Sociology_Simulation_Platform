@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     llm_assessment: bool = True
     few_shot: int = Field(0, ge=0, le=8)
     context: bool = False
+    sharpen: bool = False
     context_path: str = "data/processed_v2/context.json"
     retriever: Literal["tfidf", "embed", "hybrid"] = "tfidf"
     embedding_model: str = "intfloat/multilingual-e5-base"

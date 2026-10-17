@@ -437,3 +437,11 @@ def test_aggregate_rejects_unknown_evidence_ids():
     with pytest.raises(ValueError):
         aggregate(segments, {"a": prediction}, ["Y", "N"], evidence_ids=["real"])
     assert aggregate(segments, {"a": prediction}, ["Y", "N"], evidence_ids=["fake"]) == {"Y": 1.0, "N": 0.0}
+
+
+def test_js_divergence_never_returns_nan_for_identical_distributions():
+    same = {"A": 0.123456789, "B": 0.876543211}
+    assert js_divergence(same, dict(same)) == 0.0
+    near = {"A": 0.123456789 + 1e-17, "B": 0.876543211 - 1e-17}
+    value = js_divergence(same, near)
+    assert value == value and value < 1e-12

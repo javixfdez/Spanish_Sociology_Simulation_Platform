@@ -105,7 +105,9 @@ def js_divergence(first, second):
         or not np.isclose(sum(b), 1)
     ):
         raise ValueError("JSD requiere distribuciones de respuesta única válidas")
-    return float(jensenshannon(a, b, base=2) ** 2)
+    distance = jensenshannon(a, b, base=2)
+    # Con distribuciones idénticas scipy puede devolver NaN por ruido numérico (raíz de un negativo ínfimo).
+    return 0.0 if np.isnan(distance) else float(distance**2)
 
 
 def calibrated_intervals(prediction, historical_errors, alpha=0.1):
@@ -180,7 +182,9 @@ def stability_summary(segments, predictions, question_type="single", options=Non
     }
 
 
-def build_calibration(results, model=None, population_version=None, stability_runs=1, min_cases=20):
+def build_calibration(
+    results, model=None, population_version=None, stability_runs=1, min_cases=20, sharpening=None
+):
     """Errores históricos de un backtest, listos para calibrar la confianza."""
     done = [r for r in results if r["status"] == "completed"]
 
@@ -203,6 +207,10 @@ def build_calibration(results, model=None, population_version=None, stability_ru
         "by_anchor_mode": {m: pack([r for r in done if r["anchor_mode"] == m]) for m in sorted({r["anchor_mode"] for r in done})},
         "by_topic": {t: pack([r for r in done if str(r.get("topic")) == t]) for t in sorted({str(r.get("topic")) for r in done})},
         "synthetic": any(r.get("synthetic") for r in done),
+        "sharpening": {
+            mode: {k: v for k, v in info.items() if not k.startswith("_") and k != "corrected_cv"}
+            for mode, info in (sharpening or {}).items()
+        },
     }
 
 

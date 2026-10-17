@@ -13,6 +13,7 @@ from .graph import simulate
 from .llm import LLMService, check_ollama, create_provider
 from .population import PopulationLoader, PopulationRepository, build_segments, create_demo
 from .schemas import Question, Settings
+from .sharpen import apply_to_results, fit_by_mode, interval_coverage
 from .statistics import build_calibration, load_calibration
 
 
@@ -41,6 +42,7 @@ def parser():
             sub.add_argument("--embedding-model", help="Modelo multilingüe local para embed/hybrid")
             sub.add_argument("--embedding-device", help="cpu o cuda")
             sub.add_argument("--context", action="store_true", help="Añade contexto de actualidad fechado")
+            sub.add_argument("--sharpen", action="store_true", help="Aplica el ajuste de nitidez de calibration.json")
             sub.add_argument("--few-shot", type=int, help="Nº de ejemplos reales en el prompt (0 = apagado)")
             sub.add_argument("--no-llm-assessment", action="store_true", help="Evaluador de evidencia determinista (sin LLM)")
             sub.add_argument("--calibration", help="JSON de calibración (por defecto data/processed/calibration.json) u off")
@@ -91,6 +93,11 @@ def parser():
     ctx = commands.add_parser("etl-context", help="Indexa raw/*/contexto con fecha de publicación")
     ctx.add_argument("--raw", default="maverick_data/raw")
     ctx.add_argument("--out", default="data/processed_v2/context.json")
+    fit = commands.add_parser("fit-sharpening", help="Aprende el tau de nitidez por modo (validación cruzada) y recalibra")
+    fit.add_argument("--results", required=True, help="JSON de un backtest")
+    fit.add_argument("--cases", default="data/processed/backtest_cases.json")
+    fit.add_argument("--out", default="data/processed/calibration.json")
+    fit.add_argument("--seed", type=int, default=0)
     stats = commands.add_parser("survey-stats")
     stats.add_argument("--respondents", required=True)
     stats.add_argument("--responses", required=True)
@@ -109,6 +116,8 @@ def run(args):
         updates["llm_provider"] = args.provider
     if getattr(args, "model", None):
         updates["ollama_model"] = args.model
+    if getattr(args, "sharpen", False):
+        updates["sharpen"] = True
     if getattr(args, "context", False):
         updates["context"] = True
     if getattr(args, "few_shot", None) is not None:
@@ -168,6 +177,24 @@ def run(args):
         )
         save_json(args.out, built)
         return {"cases": len(built), "out": args.out, "studies": sorted({c["estudio_id"] for c in built})}
+    if args.command == "fit-sharpening":
+        raw = json.loads(Path(args.results).read_text(encoding="utf-8"))
+        results = raw["results"] if isinstance(raw, dict) else raw
+        cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
+        report = fit_by_mode(results, seed=args.seed)
+        corrected = apply_to_results(results, report, cases)
+        calibration = build_calibration(
+            corrected, None, None, settings.stability_runs, settings.min_calibration_cases, sharpening=report
+        )
+        save_json(args.out, calibration)
+        return {
+            "calibration": args.out,
+            "sharpening": {
+                m: {k: v for k, v in info.items() if not k.startswith("_") and k != "corrected_cv"}
+                for m, info in report.items()
+            },
+            "interval_coverage_leave_one_out": interval_coverage(corrected),
+        }
     if args.command == "etl-context":
         from .context import build_context_index
 

@@ -14,6 +14,7 @@ from .context import CUTOFF as CONTEXT_CUTOFF
 from .payloads import build_examples, compact_evidence, compact_segment
 from .population import build_segments
 from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
+from .sharpen import sharpen
 from .statistics import (
     aggregate,
     audit,
@@ -45,6 +46,8 @@ class SimulationState(TypedDict, total=False):
     segment_predictions: Annotated[dict, merge_unique]
     national_distribution: dict
     subgroup_distributions: dict
+    national_distribution_raw: dict
+    sharpening: dict
     subgroup_resolution: dict
     trust_metrics: dict
     warnings: Annotated[list, operator.add]
@@ -414,11 +417,21 @@ def build_graph(
             }
         allowed = {hit["evidence"]["evidence_id"] for hit in state["retrieved_evidence"]}
         national = aggregate(state["segments"], predictions, q["options"], q["question_type"], allowed)
+        raw = None
+        mode = (state.get("anchor_spec") or {}).get("mode", "none")
+        tau = ((calibration or {}).get("sharpening", {}).get(mode) or {}).get("tau", 1.0)
+        subgroups = subgroup_distributions(
+            state["segments"], predictions, q["options"], q["question_type"], evidence_ids=allowed
+        )
+        if settings.sharpen and tau != 1.0 and q["question_type"] == "single":
+            # Ajuste de nitidez aprendido por validación cruzada en el backtest (calibration.json)
+            raw = national
+            national = sharpen(national, tau)
+            subgroups = {d: {c: sharpen(dist, tau) for c, dist in cats.items()} for d, cats in subgroups.items()}
         return {
+            **({"national_distribution_raw": raw, "sharpening": {"tau": tau, "mode": mode}} if raw else {}),
             "national_distribution": national,
-            "subgroup_distributions": subgroup_distributions(
-                state["segments"], predictions, q["options"], q["question_type"], evidence_ids=allowed
-            ),
+            "subgroup_distributions": subgroups,
             "subgroup_resolution": subgroup_resolution(state["segments"]),
             "execution_metadata": {"coverage": coverage, "status": "completed"},
             "stages": ["aggregate_predictions"],
