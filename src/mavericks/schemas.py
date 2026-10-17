@@ -3,6 +3,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .topics import Topic
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -36,7 +38,7 @@ class Question(BaseModel):
 
 
 class Methodology(BaseModel):
-    topic: str
+    topic: Topic
     question_type: Literal["single", "multiple"]
     relevant_demographics: list[str]
     retrieval_queries: list[str]

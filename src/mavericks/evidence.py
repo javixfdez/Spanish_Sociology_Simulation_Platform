@@ -10,6 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from .schemas import Evidence
+from .topics import Topic, normalize_topic
 
 
 def read_records(path):
@@ -76,6 +77,13 @@ class EvidenceRepository:
                 )
                 extras = {k: v for k, v in record.items() if k not in Evidence.model_fields}
                 record["metadata"] = {**record.get("metadata", {}), "original_fields": extras}
+                raw_topic = record.get("topic")
+                topic = normalize_topic(
+                    raw_topic, " ".join(filter(None, [record.get("question_text"), record.get("question_summary")]))
+                )
+                if raw_topic and topic != raw_topic:
+                    record["metadata"]["original_topic"] = raw_topic
+                record["topic"] = topic or Topic.GENERAL.value
                 evidence = Evidence.model_validate(record)
                 db.execute(
                     "INSERT INTO evidence VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
@@ -151,7 +159,11 @@ class EvidenceRepository:
         target_population=None,
         options=(),
         topic=None,
+        topic_filter=True,
     ):
+        """Búsqueda híbrida. Con ``topic`` se filtra a ese tema y a 'general'; si no hay resultados
+        se repite sin filtro y los resultados llevan ``topic_fallback=True``."""
+
         def normalize(t):
             return " ".join((t or "").casefold().split())
 
@@ -168,6 +180,18 @@ class EvidenceRepository:
             records = [e for e in records if e.fieldwork_date and e.fieldwork_date[:10] <= cutoff]
         if not records:
             return []
+        topic = normalize_topic(topic) if topic else None
+        general = Topic.GENERAL.value
+        if topic and topic != general and topic_filter:
+            narrowed = [e for e in records if (e.topic or general) in (topic, general)]
+            hits = self._rank(narrowed, query, limit, target_population, options, topic) if narrowed else []
+            if hits:
+                return hits
+            hits = self._rank(records, query, limit, target_population, options, topic)
+            return [{**h, "topic_fallback": True} for h in hits]
+        return self._rank(records, query, limit, target_population, options, topic)
+
+    def _rank(self, records, query, limit, target_population, options, topic):
         texts = [" ".join(filter(None, [e.question_text, e.question_summary, e.topic])) for e in records]
         try:
             vectorizer = TfidfVectorizer(strip_accents="unicode", ngram_range=(1, 2))
@@ -186,7 +210,9 @@ class EvidenceRepository:
                 continue
             universe = float(target_population is not None and e.target_population == target_population)
             option_match = len(set(options) & set(e.options)) / max(1, len(set(options) | set(e.options)))
-            thematic = float(bool(topic) and normalize(topic) == normalize(e.topic))
+            thematic = 0.0
+            if topic:
+                thematic = 1.0 if e.topic == topic else 0.3 if e.topic == Topic.GENERAL.value else 0.0
             recency = 0.0
             if e.fieldwork_date:
                 try:

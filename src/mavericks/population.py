@@ -131,7 +131,7 @@ def create_demo(path):
             study_id="DEMO",
             question_text="¿Utiliza aplicaciones de inteligencia artificial?",
             options=["Sí", "No"],
-            topic="tecnología inteligencia artificial",
+            topic="ia_tecnologia",
             metadata={"synthetic": True},
         )
     ]

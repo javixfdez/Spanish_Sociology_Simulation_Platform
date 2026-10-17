@@ -9,6 +9,7 @@ from typing import Protocol
 import httpx
 
 from .schemas import Assessment, Methodology, Narrative, Prediction
+from .topics import classify_topic
 
 logger = logging.getLogger(__name__)
 SYSTEM = """Eres parte de una simulación distribucional, no representas ciudadanos reales.
@@ -33,7 +34,7 @@ class MockLLMProvider:
     async def generate(self, schema, payload):
         if schema is Methodology:
             return Methodology(
-                topic="DEMO / SYNTHETIC",
+                topic=classify_topic(payload["question"]),
                 question_type=payload["question_type"],
                 relevant_demographics=["grupo_edad", "sexo", "nivel_estudios"],
                 retrieval_queries=[payload["question"]],

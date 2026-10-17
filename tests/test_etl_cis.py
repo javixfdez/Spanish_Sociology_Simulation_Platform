@@ -8,6 +8,7 @@ import pyreadstat
 from mavericks import categories as cat
 from mavericks.etl.cis import parse_fieldwork, run_etl
 from mavericks.evidence import survey_distribution
+from mavericks.topics import TOPICS
 
 
 def test_parse_fieldwork_variants():
@@ -102,7 +103,7 @@ def test_etl_cis_end_to_end(tmp_path):
     studies = pd.read_parquet(out / "cis_studies.parquet")
     assert set(questions.question_uid) == {"CIS9999_P1", "CIS9999_P2"}  # P3 sin válidos suficientes, IA_* fuera
     assert questions.set_index("question_uid").loc["CIS9999_P2", "question_type"] == "multiple"
-    assert bool(questions.reservado_examen.all()) and set(questions.topic) == {"vivienda"}
+    assert bool(questions.reservado_examen.all()) and set(questions.topic) == {"vivienda"} <= set(TOPICS)
     assert studies.fieldwork_end.iloc[0] == "2026-03-03" and studies.fieldwork_source.iloc[0] == "microdatos"
     assert set(respondents.sexo.dropna()) <= {"hombre", "mujer"}
     assert set(respondents.nivel_estudios.dropna()) <= set(cat.NIVEL_ESTUDIOS) | {"otros", "nc"}
