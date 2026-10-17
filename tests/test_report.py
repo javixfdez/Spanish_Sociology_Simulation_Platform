@@ -40,6 +40,8 @@ def test_sources_filter_toggles_external_evidence(tmp_path):
     path.write_text(json.dumps(records), encoding="utf-8")
     repo = EvidenceRepository(tmp_path / "s.sqlite")
     repo.ingest(path)
-    ids = lambda **kw: {h["evidence"]["evidence_id"] for h in repo.search("vivienda alquiler", limit=5, **kw)}
+    def ids(**kw):
+        return {h["evidence"]["evidence_id"] for h in repo.search("vivienda alquiler", limit=5, **kw)}
+
     assert ids() == {"C1", "E1"} and ids(sources={"cis"}) == {"C1"} and ids(sources={"eurobarometro", "ess"}) == {"E1"}
     assert source_family(repo.all()[0]) in {"cis", "eurobarometro"}
