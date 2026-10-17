@@ -116,3 +116,16 @@ def test_etl_cis_end_to_end(tmp_path):
     assert abs(sum(single["mujer"]["distribution"].values()) - 1) < 1e-9
     multiple = survey_distribution(respondents, responses, "CIS9999_P2", question_type="multiple")
     assert set(multiple["national"]["distribution"]) == {"Opción A", "Opción B"}
+
+
+def test_duplicate_registro_falls_back_to_stable_cuestionario(tmp_path):
+    from mavericks.etl.cis import build_respondents
+
+    class Meta:
+        variable_value_labels = {}
+        column_names_to_labels = {}
+
+    frame = pd.DataFrame({"REGISTRO": [1.0, 1.0, 2.0], "CUES": [10.0, 11.0, 12.0], "PESO": [1.0, 1.0, 1.0]})
+    warnings = []
+    out, _ = build_respondents(frame, Meta(), "1", warnings)
+    assert out.respondent_uid.tolist() == ["C10", "C11", "C12"] and warnings

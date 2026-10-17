@@ -168,6 +168,9 @@ def build_respondents(frame, meta, estudio_id, warnings):
     out["estudio_id"] = estudio_id
     if "REGISTRO" in frame and frame.REGISTRO.is_unique:
         out["respondent_uid"] = frame.REGISTRO.astype(int).astype(str)
+    elif "CUES" in frame and frame.CUES.notna().all() and frame.CUES.is_unique:
+        warnings.append("REGISTRO ausente o duplicado: se usa el número de cuestionario (CUES)")
+        out["respondent_uid"] = "C" + frame.CUES.astype(int).astype(str)
     else:
         warnings.append("REGISTRO ausente o duplicado: se usa el índice de fila")
         out["respondent_uid"] = np.arange(len(frame)).astype(str)
