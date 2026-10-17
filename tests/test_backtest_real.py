@@ -104,3 +104,38 @@ def test_clean_option_and_metrics():
     ]
     summary = summarize_backtest(results)
     assert summary["overall"]["failed"] == 1 and summary["by_anchor_mode"]["direct"]["mae"] == pytest.approx(0.1)
+
+
+def test_national_baseline_and_mode_topic_summary(tmp_path):
+    import pandas as pd
+
+    from mavericks.anchor import AnchorStore
+    from mavericks.evaluation import national_baseline
+
+    rows = [dict(estudio_id="9001", respondent_uid=str(i), peso=1.0, sexo="mujer", grupo_edad="18-34") for i in range(100)]
+    answers = [
+        dict(estudio_id="9001", respondent_uid=str(i), question_uid="Q1", answer="Mucho" if i < 70 else "Poco", selected=None)
+        for i in range(100)
+    ]
+    pd.DataFrame(rows).to_parquet(tmp_path / "cis_respondents.parquet")
+    pd.DataFrame(answers).assign(selected=lambda d: d.selected.astype("boolean")).to_parquet(tmp_path / "cis_responses.parquet")
+    store = AnchorStore(tmp_path)
+    hit = {
+        "retrieval_score": 1.0,
+        "evidence": {
+            "evidence_id": "Q1", "study_id": "9001", "question_text": "Grado de preocupación por el clima",
+            "options": ["Mucho", "Poco", "N.S."], "metadata": {"original_fields": {"question_type": "single"}},
+        },
+    }
+    result = {"retrieved_evidence": [hit]}
+    by_label = national_baseline(result, {"question": "Grado de preocupación por el clima", "options": ["Mucho", "Poco"]}, store)
+    assert by_label["source"] == "etiqueta" and by_label["distribution"]["Mucho"] == pytest.approx(0.7)
+    ordinal = national_baseline(result, {"question": "Preocupación por el clima", "options": ["Bastante", "Nada"]}, store)
+    assert ordinal["source"] == "ordinal" and ordinal["distribution"]["Bastante"] == pytest.approx(0.7)
+    assert national_baseline(result, {"question": "x", "options": ["A", "B", "C"]}, store) is None
+    assert national_baseline(result, {"question": "x", "options": ["A", "B"]}, None) is None
+    done = {"status": "completed", "topic": "t", "anchor_mode": "none", "mae": 0.1, "js_divergence": 0.01, "subgroup_mae": None,
+            "mae_uniform_baseline": 0.3, "mae_national_baseline": 0.2, "assessment_fallback": False, "had_evidence": True}
+    summary = summarize_backtest([done])
+    block = summary["by_mode_and_topic"]["none | t"]
+    assert block["national_baseline"]["wins"] == 1 and block["assessment_fallback_rate"] == 0.0

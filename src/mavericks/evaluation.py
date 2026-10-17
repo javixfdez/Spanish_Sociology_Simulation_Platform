@@ -3,13 +3,21 @@ from pathlib import Path
 
 import numpy as np
 
+from .anchor import option_key, option_mapping, question_similarity
 from .graph import simulate
 from .schemas import Question
 from .statistics import js_divergence, mae
 
 
 async def backtest(
-    cases, repository, evidence_repository, service_factory, max_segments=5, anchors=None, calibration=None
+    cases,
+    repository,
+    evidence_repository,
+    service_factory,
+    max_segments=5,
+    anchors=None,
+    calibration=None,
+    on_result=None,
 ):
     results = []
     for case in cases:
@@ -73,6 +81,7 @@ async def backtest(
                 "execution_time": result["execution_metadata"]["execution_time"],
                 "llm_latency": _latencies(result["execution_metadata"]["llm_calls"]),
                 "observed": observed,
+                **baseline_fields(result, case, anchors, observed, failed),
                 "option_errors": [] if failed else [abs(predicted[o] - observed[o]) for o in observed],
                 "subgroup_option_errors": option_errors_of(result, case) if not failed else [],
                 "stability": result["trust_metrics"]["prediction_stability"] if "trust_metrics" in result else None,
@@ -85,6 +94,8 @@ async def backtest(
                 ],
             }
         )
+        if on_result:
+            on_result(results[-1])
     return results
 
 
@@ -112,13 +123,65 @@ def subgroup_errors(predicted, observed):
     return scores
 
 
+def national_baseline(result, case, anchors):
+    """Distribución nacional (sin segmentar) de la pregunta recuperada más parecida, en las opciones del caso.
+
+    Alinea por etiqueta si las opciones son equivalentes; si no, por orden cuando ambas tienen el mismo número
+    de opciones sustantivas (escalas ordinales). Devuelve None si no hay ninguna evidencia comparable.
+    """
+    if anchors is None:
+        return None
+    options = case["options"]
+    ranked = sorted(
+        (h["evidence"] for h in result["retrieved_evidence"]),
+        key=lambda e: -question_similarity(case["question"], e.get("question_text") or ""),
+    )
+    for e in ranked:
+        original = e.get("metadata", {}).get("original_fields", {})
+        if not e.get("study_id") or original.get("question_type", "single") != "single":
+            continue
+        try:
+            dist, n = anchors.national(e["study_id"], e["evidence_id"], "single")
+        except Exception:
+            continue
+        if not n:
+            continue
+        mapping = option_mapping(options, e.get("options") or [])
+        source = "etiqueta"
+        if mapping is None:
+            substantive = [o for o in (e.get("options") or []) if option_key(o) not in {"ns", "nc", "np", "no sabe", "no contesta"}]
+            if len(substantive) != len(options):
+                continue
+            mapping, source = dict(zip(options, substantive)), "ordinal"
+        values = {o: dist.get(label, 0.0) for o, label in mapping.items()}
+        mass = sum(values.values())
+        if mass <= 0:
+            continue
+        return {
+            "distribution": {o: v / mass for o, v in values.items()},
+            "source": source,
+            "evidence_id": e["evidence_id"],
+            "similarity": round(question_similarity(case["question"], e.get("question_text") or ""), 3),
+        }
+    return None
+
+
+def baseline_fields(result, case, anchors, observed, failed):
+    baseline = national_baseline(result, case, anchors)
+    return {
+        "baseline_national": baseline,
+        "mae_national_baseline": mae(baseline["distribution"], observed) if baseline else None,
+    }
+
+
 def summarize_backtest(results):
-    """Errores medios globales, por tema y por modo de ancla, junto a la línea base uniforme."""
+    """Errores medios globales, por modo de ancla, por tema y por modo x tema, con las dos líneas base."""
 
     def block(items):
         done = [r for r in items if r["status"] == "completed"]
         sub = [r["subgroup_mae"] for r in done if r.get("subgroup_mae") is not None]
         jsd = [r["js_divergence"] for r in done if r.get("js_divergence") is not None]
+        with_base = [r for r in done if r.get("mae_national_baseline") is not None]
         return {
             "cases": len(items),
             "failed": len(items) - len(done),
@@ -126,12 +189,28 @@ def summarize_backtest(results):
             "js_divergence": float(np.mean(jsd)) if jsd else None,
             "subgroup_mae": float(np.mean(sub)) if sub else None,
             "mae_uniform_baseline": float(np.mean([r["mae_uniform_baseline"] for r in done])) if done else None,
+            "national_baseline": {
+                "cases": len(with_base),
+                "mae_baseline": float(np.mean([r["mae_national_baseline"] for r in with_base])) if with_base else None,
+                "mae_model_same_cases": float(np.mean([r["mae"] for r in with_base])) if with_base else None,
+                "wins": sum(r["mae"] < r["mae_national_baseline"] for r in with_base),
+            },
+            "assessment_fallback_rate": (
+                float(np.mean([r["assessment_fallback"] for r in items if r.get("had_evidence")]))
+                if any(r.get("had_evidence") for r in items)
+                else None
+            ),
         }
 
-    summary = {"overall": block(results), "by_topic": {}, "by_anchor_mode": {}}
+    summary = {"overall": block(results), "by_topic": {}, "by_anchor_mode": {}, "by_mode_and_topic": {}}
     for key, name in [("topic", "by_topic"), ("anchor_mode", "by_anchor_mode")]:
         for value in sorted({str(r.get(key)) for r in results}):
             summary[name][value] = block([r for r in results if str(r.get(key)) == value])
+    for mode in sorted({r["anchor_mode"] for r in results}):
+        for topic in sorted({str(r.get("topic")) for r in results}):
+            items = [r for r in results if r["anchor_mode"] == mode and str(r.get("topic")) == topic]
+            if items:
+                summary["by_mode_and_topic"][f"{mode} | {topic}"] = block(items)
     return summary
 
 

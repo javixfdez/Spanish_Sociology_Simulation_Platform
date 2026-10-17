@@ -45,6 +45,7 @@ def parser():
             sub.add_argument("--rag", choices=["on", "off"], default="on")
         if name == "backtest":
             sub.add_argument("--cases", required=True)
+            sub.add_argument("--resume", action="store_true", help="Continúa desde el .partial.jsonl")
     ingest = commands.add_parser("ingest-surveys")
     ingest.add_argument("--path", required=True)
     ingest.add_argument("--db", default="data/processed/evidence.sqlite")
@@ -203,7 +204,24 @@ def run(args):
         output = args.output or f"outputs/{result['simulation_id']}.json"
     else:
         cases = json.loads(Path(args.cases).read_text(encoding="utf-8-sig"))
-        results = asyncio.run(backtest(cases, repository, evidence, factory, args.segments, anchors=anchors))
+        output = args.output or "outputs/backtest.json"
+        partial = Path(output).with_suffix(".partial.jsonl")
+        done = []
+        if args.resume and partial.exists():
+            done = [json.loads(line) for line in partial.read_text(encoding="utf-8").splitlines() if line.strip()]
+            finished = {r["evidence_id"] for r in done}
+            cases = [c for c in cases if c["evidence_id"] not in finished]
+        elif partial.exists():
+            partial.unlink()
+        partial.parent.mkdir(parents=True, exist_ok=True)
+
+        def keep(row):
+            with partial.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
+
+        results = done + asyncio.run(
+            backtest(cases, repository, evidence, factory, args.segments, anchors=anchors, on_result=keep)
+        )
         result = {"summary": summarize_backtest(results), "results": results}
         if calibration_path:
             built = build_calibration(
@@ -211,7 +229,6 @@ def run(args):
             )
             save_json(calibration_path, built)
             result["calibration"] = {"path": str(calibration_path), "n_cases": built["overall"]["n_cases"]}
-        output = args.output or "outputs/backtest.json"
     save_json(output, result)
     print(f"Resultado guardado: {output}", file=sys.stderr)
     return result
