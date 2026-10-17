@@ -23,6 +23,7 @@ import pyarrow.parquet as pq
 import pyreadstat
 
 from .. import categories as cat
+from .questionnaire import compose_text, extract_stems, read_pdf_text, stem_for
 
 logger = logging.getLogger(__name__)
 
@@ -374,8 +375,25 @@ def process_study(path, folder, catalog_row, include_reserved=True):
     for q, responses in build_questions(frame, meta, estudio_id, uids, used, folder, common):
         questions.append(q)
         chunks.append(responses)
+    stems = extract_stems(read_pdf_text(path))
+    shared = {}
+    for q in questions:
+        stem = next((x for x in (stem_for(v, stems) for v in q["variables"]) if x), None)
+        if stem and q["question_type"] == "single":
+            shared[stem] = shared.get(stem, 0) + 1
+    with_stem = 0
+    for q in questions:
+        label = q["question_text"]
+        text = compose_text(label, q["variables"], stems, shared)
+        q["question_summary"] = label if text else None
+        q["question_text"] = text or label
+        q["text_source"] = "cuestionario" if text else "etiqueta"
+        with_stem += bool(text)
+    if not stems:
+        warnings.append("Sin enunciados del cuestionario: question_text es la etiqueta de la variable")
     study = {
         "estudio_id": estudio_id,
+        "n_questions_with_stem": with_stem,
         "titulo": clean(Path(path).stem),
         "topic": folder,
         "fecha_publicacion": common["fecha_publicacion"],
