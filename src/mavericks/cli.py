@@ -72,6 +72,9 @@ def parser():
     cases.add_argument("--seed", type=int, default=42)
     cases.add_argument("--mode", choices=["temporal", "strict"], default="temporal")
     cases.add_argument("--studies", nargs="*")
+    cases.add_argument("--split", choices=["test", "dev"], default="test", help="test = reservados; dev = no reservados recientes")
+    cases.add_argument("--topics", nargs="*", help="Solo con --split dev")
+    cases.add_argument("--since", help="Solo con --split dev: inicio de campo mínimo (AAAA-MM-DD)")
     search = commands.add_parser("search-evidence")
     search.add_argument("--query", required=True)
     search.add_argument("--db", default="data/processed/evidence.sqlite")
@@ -173,10 +176,19 @@ def run(args):
         from .backtest_cases import build_cases
 
         built = build_cases(
-            args.cis_dir, args.max_per_study, args.min_n, args.seed, args.mode == "temporal", args.studies
+            args.cis_dir, args.max_per_study, args.min_n, args.seed, args.mode == "temporal", args.studies,
+            args.split, args.topics, args.since,
         )
         save_json(args.out, built)
-        return {"cases": len(built), "out": args.out, "studies": sorted({c["estudio_id"] for c in built})}
+        import collections
+
+        return {
+            "cases": len(built),
+            "out": args.out,
+            "split": args.split,
+            "by_topic": dict(collections.Counter(c["topic"] for c in built)),
+            "studies": sorted({c["estudio_id"] for c in built}),
+        }
     if args.command == "fit-sharpening":
         raw = json.loads(Path(args.results).read_text(encoding="utf-8"))
         results = raw["results"] if isinstance(raw, dict) else raw

@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from mavericks.backtest_cases import build_cases, clean_option
@@ -174,3 +175,21 @@ def test_widened_literal_pool_keeps_leak_protections(tmp_path):
     # Misma garantía directamente sobre la búsqueda con el tamaño de pool que usa el grafo
     pool = [h["evidence"]["evidence_id"] for h in evidence.search(TEXT, limit=30, excluded_ids=["HELD"], cutoff=cutoff)]
     assert "HELD" not in pool and "RESERVED" not in pool and all(dates[i] < cutoff for i in pool)
+
+
+def test_dev_split_uses_only_nonreserved_recent_studies_of_requested_topics(tmp_path):
+    catalog = _write_study(tmp_path, n=1200)
+    out = tmp_path / "out"
+    run_etl(tmp_path / "raw", catalog, out)
+    test_cases = build_cases(out, max_per_study=3, min_n=100)
+    assert test_cases and all(c["split"] == "test" for c in test_cases)
+    assert build_cases(out, min_n=100, split="dev") == []  # el único estudio es reservado: no es de desarrollo
+    studies = pd.read_parquet(out / "cis_studies.parquet")
+    studies["reservado_examen"] = False  # lo tratamos como no reservado
+    studies.to_parquet(out / "cis_studies.parquet")
+    dev = build_cases(out, max_per_study=3, min_n=100, split="dev", topics=["vivienda"], since="2026-01-01")
+    assert dev and all(c["split"] == "dev" and c["topic"] == "vivienda" for c in dev)
+    assert build_cases(out, min_n=100, split="dev", topics=["salud"]) == []
+    assert build_cases(out, min_n=100, split="dev", since="2027-01-01") == []
+    with pytest.raises(ValueError):
+        build_cases(out, split="otro")

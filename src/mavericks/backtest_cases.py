@@ -38,7 +38,17 @@ def _weighted(frame, options):
     return {clean_option(o): float(v / mass) for o, v in chosen.items()}, float(1 - mass / total), len(persons)
 
 
-def build_cases(cis_dir="data/processed", max_per_study=8, min_n=500, seed=42, previous_waves=True, studies=None):
+def build_cases(
+    cis_dir="data/processed",
+    max_per_study=8,
+    min_n=500,
+    seed=42,
+    previous_waves=True,
+    studies=None,
+    split="test",
+    topics=None,
+    since=None,
+):
     """Casos de backtest de los estudios reservados.
 
     ``previous_waves=True`` (modo temporal): se permite recuperar la misma pregunta de oleadas anteriores,
@@ -48,7 +58,17 @@ def build_cases(cis_dir="data/processed", max_per_study=8, min_n=500, seed=42, p
     questions = pd.read_parquet(cis_dir / "cis_questions.parquet")
     respondents = pd.read_parquet(cis_dir / "cis_respondents.parquet")
     studies_table = pd.read_parquet(cis_dir / "cis_studies.parquet")
-    reserved = studies_table[studies_table.reservado_examen]
+    if split == "test":
+        reserved = studies_table[studies_table.reservado_examen]
+    elif split == "dev":
+        # Desarrollo (rolling-origin): estudios NO reservados recientes; se informan siempre aparte del examen.
+        reserved = studies_table[~studies_table.reservado_examen]
+        if topics:
+            reserved = reserved[reserved.topic.isin(topics)]
+        if since:
+            reserved = reserved[reserved.fieldwork_start >= since]
+    else:
+        raise ValueError("split debe ser 'test' o 'dev'")
     if studies:
         reserved = reserved[reserved.estudio_id.isin([str(s) for s in studies])]
     rng = np.random.default_rng(seed)
@@ -104,6 +124,7 @@ def build_cases(cis_dir="data/processed", max_per_study=8, min_n=500, seed=42, p
                     "ns_nc_share": ns_nc_share,
                     "n_valid": int(n),
                     "allow_previous_waves": previous_waves,
+                    "split": split,
                     "weight": "peso",
                 }
             )
