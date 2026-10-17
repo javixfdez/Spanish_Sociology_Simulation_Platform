@@ -348,11 +348,12 @@ def build_graph(
                 "execution_metadata": {"coverage": coverage, "status": "failed"},
                 "stages": ["aggregate_predictions"],
             }
-        national = aggregate(state["segments"], predictions, q["options"], q["question_type"])
+        allowed = {hit["evidence"]["evidence_id"] for hit in state["retrieved_evidence"]}
+        national = aggregate(state["segments"], predictions, q["options"], q["question_type"], allowed)
         return {
             "national_distribution": national,
             "subgroup_distributions": subgroup_distributions(
-                state["segments"], predictions, q["options"], q["question_type"]
+                state["segments"], predictions, q["options"], q["question_type"], evidence_ids=allowed
             ),
             "subgroup_resolution": subgroup_resolution(state["segments"]),
             "execution_metadata": {"coverage": coverage, "status": "completed"},

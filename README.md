@@ -1,111 +1,139 @@
-# GenAI Mavericks · Fase 2
+# GenAI Mavericks · población sintética de España con agentes LLM
 
-MVP de simulación distribucional de adultos de España: LangGraph, agentes por segmento, evidencia trazable, agregación ponderada y auditoría metodológica. Las ejecuciones Mock y las fixtures se identifican como **DEMO / SYNTHETIC** y no tienen validez sociológica.
+Simulación distribucional de adultos residentes en España: una población sintética (Fase 1) se segmenta por peso, cada
+segmento recibe una estimación anclada en los microdatos reales del CIS y un grafo de LangGraph agrega el resultado
+nacional y por subgrupos junto con una estimación de cuánto fiarse. Las ejecuciones con Mock y las fixtures se
+identifican como **DEMO / SYNTHETIC** y no tienen validez sociológica.
 
-## Arranque con uv
+## Flujo de trabajo
 
-Requiere Python 3.11+ y [uv](https://docs.astral.sh/uv/). `uv sync` crea `.venv` e instala las versiones reproducibles de `uv.lock`. El entorno creado durante la implementación usa Python 3.13.
+```mermaid
+flowchart LR
+    A[maverick_data/raw] -->|etl-population| P[synthetic_population.parquet]
+    A -->|etl-cis| C[cis_* parquet]
+    C -->|ingest-surveys| E[(evidence.sqlite, sin reservados)]
+    P --> S[simulate]
+    E --> S
+    C --> S
+    C -->|make-backtest-cases| B[backtest_cases.json]
+    B -->|backtest| K[calibration.json]
+    K --> S
+```
 
-Windows PowerShell y Linux/macOS:
+Los datos **no se suben a git**: `maverick_data/` y `data/processed/` están ignorados (solo `catalogo.csv` y
+`README.md` de `maverick_data/`). Reglas del reto: ningún dato publicado después del 30/06/2026 y los estudios con
+`reservado_examen = si` (publicados desde el 01/04/2026) no se usan para desarrollar ni para el RAG, solo para el
+backtest.
+
+## Arranque
+
+Requiere Python 3.11+ y [uv](https://docs.astral.sh/uv/) (`pip install uv`; si hay un error de certificado TLS al
+descargar Python, `UV_SYSTEM_CERTS=1`).
 
 ```sh
 uv sync
-uv run python main.py create-demo
-uv run python main.py simulate --provider mock --question "¿Pagarías por una aplicación con IA?" --options "Sí" "No" "No estoy seguro" --segments 5 --output outputs/demo.json
-uv run streamlit run app.py
 uv run pytest -q
 uv run ruff check src tests app.py main.py
 ```
 
-No es necesario activar el entorno al usar `uv run`. Activación manual opcional:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+Demo sin datos reales (todo marcado como sintético):
 
 ```sh
-source .venv/bin/activate
+uv run python main.py create-demo
+uv run python main.py simulate --provider mock --question "¿Pagarías por una aplicación con IA?" --options "Sí" "No" "No estoy seguro" --segments 5
+uv run streamlit run app.py
 ```
 
-Copia `.env.example` a `.env` (`Copy-Item .env.example .env` en PowerShell; `cp .env.example .env` en Linux). No incluyas credenciales en git. El proveedor predeterminado es Ollama; el modo demo siempre se solicita explícitamente.
-
-## Ollama
-
-Ollama no estaba instalado en el PATH ni accesible durante el desarrollo. No se han descargado modelos. Instala Ollama y elige un modelo compatible con tu memoria. GPU y rendimiento no verificados.
+## Pipeline con datos reales
 
 ```sh
-ollama serve
-ollama pull qwen3:8b
-ollama list
-uv run python main.py check-model --model qwen3:8b
-uv run python main.py simulate --provider ollama --model qwen3:8b --path data/raw/synthetic_population_sample.parquet --question "¿Pagarías por una aplicación con IA?" --options "Sí" "No" "No estoy seguro" --segments 5
+# 1. Población (Censo 2021 + Cifras de Población + EPA 2T26 + ECV 2025), n y semilla configurables
+uv run python main.py etl-population --n 50000 --seed 42
+# 2. Microdatos del CIS -> cis_studies / cis_questions / cis_respondents / cis_responses
+uv run python main.py etl-cis
+# 3. Evidencia para el RAG (omite los estudios reservados)
+uv run python main.py ingest-surveys --path data/processed/cis_questions.parquet
+# 4. Simulación
+uv run python main.py simulate --provider ollama --model llama3:latest \
+  --path data/processed/synthetic_population.parquet --segments 20 \
+  --question "Grado de acuerdo con permitir la venta de coches de combustión después de 2035" \
+  --options "Muy de acuerdo" "Bastante de acuerdo" "Regular" "Poco de acuerdo" "Nada de acuerdo"
+# 5. Backtest con los estudios reservados y calibración de la confianza
+uv run python main.py make-backtest-cases
+uv run python main.py backtest --provider ollama --model llama3:latest \
+  --path data/processed/synthetic_population.parquet --cases data/processed/backtest_cases.json --segments 20
 ```
 
-Alternativa de menor tamaño: configura `OLLAMA_MODEL=gemma3:4b` y descarga solo ese modelo. Concurrencia inicial 1; aumenta mediante `--concurrency 2` o `LLM_MAX_CONCURRENCY`. Timeout por llamada, límite total, reintentos, validación contextual, caché en `outputs/cache` y registros de latencia. `reasoning=False` solicita respuestas sin razonamiento para Ollama. Comprueba compatibilidad al cambiar de modelo. No se cambia a Mock si falla Ollama.
+El formato de los ficheros está en [docs/phase1-contract.md](docs/phase1-contract.md).
 
-API externa compatible con OpenAI: `uv sync --extra external`, configura `LLM_PROVIDER=external`, `EXTERNAL_MODEL`, `EXTERNAL_BASE_URL`, `EXTERNAL_API_KEY`. No se ha probado con una API real. `LLMProvider` permite implementar otros proveedores.
+### Comandos
 
-## CLI
+| Comando | Para qué |
+|---|---|
+| `etl-population` | Población sintética con IPF y categorías del CIS (`--n`, `--seed`, `--period`) |
+| `etl-cis` | Convierte los zips del CIS (`--only 3546 3535` para un subconjunto) |
+| `ingest-surveys` | Ingesta evidencia (JSON/CSV/Parquet/XLSX/PDF); `--include-reserved` solo para pruebas |
+| `simulate` | Simulación; `--segments`, `--anchor off`, `--stability-runs k`, `--calibration` (ruta u `off`), `--rag off` |
+| `make-backtest-cases` | Casos desde los estudios reservados (`--mode temporal` o `strict`, `--max-per-study`) |
+| `backtest` | Ejecuta los casos, resume MAE/JSD por tema y modo y escribe `calibration.json` |
+| `build-segments`, `inspect-population`, `search-evidence`, `survey-stats`, `check-model` | Utilidades |
 
-```sh
-uv run python main.py inspect-population --path data/fixtures/population.csv
-uv run python main.py build-segments --path data/fixtures/population.csv --segments 24 --output outputs/segments.json
-uv run python main.py ingest-surveys --path data/fixtures/evidence.json
-uv run python main.py search-evidence --query "inteligencia artificial"
-uv run python main.py simulate --provider mock --rag off --question "¿Usas IA?" --options "Sí" "No" --segments 5
-uv run python main.py backtest --provider mock --cases data/fixtures/backtest_cases.json
-```
-
-Las salidas de `simulate` se guardan en `outputs/<simulation_id>.json`, con pregunta, modelo, población, evidencia, predicciones, advertencias, etapas, cobertura, fecha UTC y duración. Código de salida 2 si faltan segmentos; 1 ante error de entrada/proveedor. Los resultados nacionales se omiten si hay fallos. Las opciones se conservan literalmente como claves.
-
-## Flujo y módulos
+## Cómo funciona
 
 ```mermaid
 flowchart TD
-    A[Validar entrada y población] --> B[Metodólogo LLM]
-    B --> C[Recuperación SQLite + TF-IDF / embeddings]
-    C --> D[Intérprete de evidencia LLM]
-    D --> E[Segmentación determinista]
-    E --> F[Send: agente LLM por segmento]
-    F --> G[Agregación ponderada]
-    G --> H[Auditor de confianza]
+    A[Validar entrada y población] --> B[Metodólogo LLM: tema y dimensiones relevantes]
+    B --> C[Recuperación: tema, fecha, universo, opciones, TF-IDF]
+    C --> D[Evaluador de evidencia LLM]
+    D --> E[Segmentación jerárquica por pesos]
+    E --> F[Send: un agente por segmento]
+    F --> G[Agregación ponderada y subgrupos]
+    G --> H[Auditor: estabilidad, intervalos calibrados]
     H --> I{¿Predicciones completas?}
     I -->|Sí| J[Analista LLM]
     I -->|No| K[Resultado fallido sin estimación nacional]
 ```
 
-- `src/mavericks/population.py`: carga CSV/Parquet, metadatos, validación y perfiles ponderados.
-- `schemas.py`: contratos Pydantic y configuración de entorno.
-- `llm.py`: protocolo, Mock, Ollama/API externa, structured output, reintentos y caché.
-- `evidence.py`: ingesta idempotente, SQLite, recuperación híbrida, índice semántico opcional y estadísticas CIS.
-- `graph.py`: StateGraph, estado tipado, Send y reducer que rechaza duplicados.
-- `statistics.py`: agregación, subgrupos, MAE, JSD, auditor e intervalos experimentales.
-- `evaluation.py`: backtesting con exclusiones, corte temporal y persistencia.
-- `cli.py`, `main.py`, `app.py`: CLI e interfaz Streamlit.
+- **Temas** (`topics.py`): enum cerrado `general, vivienda, salud, ia_tecnologia, consumo, medio_ambiente, soledad`, igual
+  que las carpetas de datos. La búsqueda filtra por tema (más `general`) y amplía marcando `topic_fallback` si no hay
+  resultados; la pregunta literal siempre se busca sin filtro de tema.
+- **Segmentación** (`population.py`): parte de un segmento y divide siempre el de mayor peso por la siguiente dimensión
+  (primero las que pide el metodólogo: edad, sexo, estudios, CCAA, hábitat, ingresos). Las celdas pequeñas se agrupan
+  en «Otros». Devuelve `--segments` segmentos (≥ 10 personas cada uno).
+- **Ancla empírica** (`anchor.py`): para cada segmento se calcula la distribución CIS ponderada de la pregunta con
+  contracción jerárquica hacia niveles superiores.
+  - Misma pregunta (similitud ≥ 0,90, opciones equivalentes): **estadística directa**, sin LLM por segmento.
+  - Pregunta parecida (≥ 0,55): el LLM recibe el prior y su salida se proyecta a ±0,15 de él.
+  - Sin pregunta comparable: el LLM usa la evidencia y declara incertidumbre.
+- **Subgrupos**: se calculan por composición del segmento y solo se publican las dimensiones que la segmentación
+  distingue en ≥ 60 % del peso (`subgroup_resolution`). No se inventan diferencias que la segmentación no resuelve.
+- **Fallos del LLM**: los reintentos llevan el error previo y suben la temperatura; el evaluador, el metodólogo y el
+  analista tienen alternativa determinista con aviso. Un segmento fallido sigue bloqueando la estimación nacional.
+- **Confianza**: `trust_metrics` incluye estabilidad (k repeticiones, JSD), error histórico del backtest, skill frente a
+  la distribución uniforme e intervalos (`calibrated_intervals`) por modo de ancla. Sin ≥ 20 casos de backtest se
+  mantiene «Fiabilidad predictiva todavía no calibrada».
+- **Backtest**: la evidencia debe haber terminado su trabajo de campo antes del inicio del estudio objetivo; modo
+  `temporal` (oleadas anteriores permitidas, como en el uso real) o `strict` (texto idéntico excluido).
 
-Las poblaciones completas permanecen fuera del estado. Cada segmento conserva distribuciones internas ponderadas y hasta tres perfiles ilustrativos sin `person_id`. Se reduce resolución retirando dimensiones completas si se supera el máximo de segmentos: por eso `--segments 5` puede producir 3, no exactamente 5. Solo se publican subgrupos distinguibles con las dimensiones retenidas. No se inventan diferencias autonómicas.
+## LLM
 
-## Evidencia y microdatos
+Ollama por defecto (`ollama serve`; `ollama list`). `num_ctx` se fija en 8192 (`OLLAMA_NUM_CTX`); concurrencia 1
+(`--concurrency`). `check-model` comprueba que el modelo existe. No hay fallback silencioso a Mock. API externa
+compatible con OpenAI: `uv sync --extra external` y variables `EXTERNAL_*`.
 
-Consulta [docs/phase1-contract.md](docs/phase1-contract.md) antes de conectar la Fase 1. `Accenture.md` y los datasets reales no estaban presentes; se usa un contrato provisional explícito, sin inferir categorías ni joins.
+Medido en este equipo (RTX 4060 Laptop 8 GB, Ollama, `llama3:latest`, prompt compacto de < 3,5 KB por segmento):
+≈ 4-13 s por segmento con prior (estimación: 20 segmentos ≈ 2-4 min; 80 ≈ 8-17 min), y ≈ 0 s por segmento con estadística
+directa. `mistral:latest` fue más lento y falló más a menudo. `qwen3:8b` no estaba instalado y no se ha probado.
 
-```sh
-uv run python main.py ingest-surveys --path data/raw/cis_questions.parquet --respondents data/raw/cis_respondents.parquet --responses data/raw/cis_responses.parquet --answer-column answer --weight peso
-uv run python main.py survey-stats --respondents data/raw/cis_respondents.parquet --responses data/raw/cis_responses.parquet --question-uid CIS3546_P1 --weight peso --group-by grupo_edad --output outputs/cis_stats.json
-```
+## Interfaz
 
-Se calculan estadísticas en Python y se adjuntan a cada evidencia antes del RAG; nunca se calculan porcentajes leyendo tablas con el LLM. Los joins exigen `(estudio_id, respondent_uid)`. `peso_ccaa` solo se utiliza si se solicita explícitamente. NS/NC se mantiene. Respuesta múltiple exige una fila por opción/entrevistado y `selected` booleano, incluidos ceros; el denominador cuenta personas una vez.
+`uv run streamlit run app.py`: pregunta, opciones, tipo de respuesta, proveedor, segmentos (hasta 80), repeticiones,
+población, base de evidencia, ancla y calibración; muestra la estimación con intervalos si hay calibración, subgrupos,
+evidencia y la confianza.
 
-Formatos: CSV, Parquet, JSON, XLSX y PDF con texto extraíble. PDFs sin texto se marcan `requires_ocr`; no se ejecuta OCR. SAV opcional: `uv sync --extra spss` (no instalado ni verificado). Ficheros antiguos XLS requieren un motor adicional, no incluido.
+## Estructura
 
-Por defecto la búsqueda combina TF-IDF con metadatos de tema, fecha, universo y opciones. El score es de **recuperación**, no confianza predictiva. Embeddings multilingües/Chroma: `uv sync --extra semantic`, configura `EMBEDDING_MODEL_PATH` a un modelo local previamente obtenido (p. ej. multilingual MiniLM) y `CHROMA_PATH`; vuelve a ingerir para indexarlo. No se descarga ningún modelo automáticamente. Esta ruta está implementada, pero no se ha ejecutado con un modelo real. Los filtros de backtesting se aplican antes de combinar candidatos, también cuando hay índice semántico.
+`src/mavericks/`: `etl/` (cis, population), `categories.py`, `topics.py`, `population.py`, `evidence.py`, `anchor.py`,
+`payloads.py`, `graph.py`, `llm.py`, `statistics.py`, `evaluation.py`, `backtest_cases.py`, `schemas.py`, `cli.py`.
 
-## Fiabilidad y límites
-
-El auditor separa calidad de evidencia, estabilidad y exactitud histórica. Devuelve **«Fiabilidad predictiva todavía no calibrada»**; no inventa Trust Score, precisión ni intervalos. MAE y Jensen-Shannon están probados con fixtures. El backtesting excluye IDs, textos duplicados, familias equivalentes declaradas y evidencia posterior al corte temporal; fechas desconocidas se excluyen en pruebas temporales. Es necesario revisar equivalencias humanas: no se garantiza identificar toda paráfrasis. Tampoco se controla que el preentrenamiento contenga preguntas históricas.
-
-`calibrated_intervals` es una utilidad experimental con errores históricos externos y mínimo de 20 casos; no se conecta automáticamente al auditor y no constituye garantía bajo cambio de dominio. El auditor no mide estabilidad a partir de una única ejecución. Las narrativas son interpretaciones sintéticas; las cifras autoritativas están separadas en el JSON. Los LLM pueden cometer errores interpretativos incluso con salidas estructuradas.
-
-Ver [docs/status.md](docs/status.md) para el estado y verificaciones. Próximos pasos: adaptar al `Accenture.md` definitivo, cargar datos reales, probar Ollama con 3-5 segmentos, revisar evidencia, y después ejecutar validación histórica por tema y segmento. La interfaz para un futuro focus group puede consumir el informe de simulación; no se implementan conversaciones ni testimonios sintéticos en esta fase.
-
-Referencias de API consultadas: [LangGraph Send](https://reference.langchain.com/python/langgraph/types/Send), [ChatOllama structured output](https://reference.langchain.com/python/langchain-ollama/chat_models/ChatOllama/with_structured_output).
+Más detalle del estado y de lo pendiente en [docs/status.md](docs/status.md).

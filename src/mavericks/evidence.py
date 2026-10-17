@@ -39,10 +39,11 @@ def read_records(path):
         ".xls": pd.read_excel,
     }
     if suffix == ".sav":
-        import pyreadstat
-
-        frame, _ = pyreadstat.read_sav(str(path))
-    elif suffix in readers:
+        raise ValueError(
+            "Los .sav del CIS no se ingieren directamente (un registro por entrevistado no es evidencia): "
+            "use el comando etl-cis y luego ingest-surveys sobre cis_questions.parquet"
+        )
+    if suffix in readers:
         frame = readers[suffix](path)
     else:
         raise ValueError(f"Formato no soportado: {suffix}")
@@ -52,6 +53,7 @@ def read_records(path):
 class EvidenceRepository:
     def __init__(self, path="data/processed/evidence.sqlite", semantic_index=None):
         self.semantic_index = semantic_index
+        self._cache = None
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.path = str(path)
         with sqlite3.connect(self.path) as db:
@@ -112,9 +114,10 @@ class EvidenceRepository:
         respondents = pd.DataFrame(read_records(respondents_path))
         responses = pd.DataFrame(read_records(responses_path))
         updated = 0
+        answered = set(responses.question_uid)
         with sqlite3.connect(self.path) as db:
             for evidence in self.all():
-                if evidence.evidence_id not in set(responses.question_uid):
+                if evidence.evidence_id not in answered:
                     continue
                 stats = {
                     "national": survey_distribution(
@@ -148,12 +151,34 @@ class EvidenceRepository:
                 updated += 1
         return updated
 
+    def _index(self):
+        """Registros y matriz TF-IDF en memoria; se recalculan solo si cambia el fichero SQLite."""
+        stat = Path(self.path).stat()
+        signature = (stat.st_mtime_ns, stat.st_size)
+        if self._cache is None or self._cache["signature"] != signature:
+            with sqlite3.connect(self.path) as db:
+                records = [
+                    Evidence.model_validate_json(row[0])
+                    for row in db.execute("SELECT payload FROM evidence ORDER BY id")
+                ]
+            texts = [" ".join(filter(None, [e.question_text, e.question_summary, e.topic])) for e in records]
+            vectorizer = matrix = None
+            try:
+                vectorizer = TfidfVectorizer(strip_accents="unicode", ngram_range=(1, 2))
+                matrix = vectorizer.fit_transform(texts)
+            except ValueError:  # vocabulario vacío
+                vectorizer = matrix = None
+            self._cache = {
+                "signature": signature,
+                "records": records,
+                "vectorizer": vectorizer,
+                "matrix": matrix,
+                "position": {e.evidence_id: i for i, e in enumerate(records)},
+            }
+        return self._cache
+
     def all(self):
-        with sqlite3.connect(self.path) as db:
-            return [
-                Evidence.model_validate_json(row[0])
-                for row in db.execute("SELECT payload FROM evidence ORDER BY id")
-            ]
+        return list(self._index()["records"])
 
     def search(
         self,
@@ -189,25 +214,24 @@ class EvidenceRepository:
             records = [e for e in records if e.fieldwork_date and e.fieldwork_date[:10] < cutoff]
         if not records:
             return []
+        as_of = date.fromisoformat(cutoff[:10]) if cutoff else date.today()
         topic = normalize_topic(topic) if topic else None
         general = Topic.GENERAL.value
         if topic and topic != general and topic_filter:
             narrowed = [e for e in records if (e.topic or general) in (topic, general)]
-            hits = self._rank(narrowed, query, limit, target_population, options, topic) if narrowed else []
+            hits = self._rank(narrowed, query, limit, target_population, options, topic, as_of) if narrowed else []
             if hits:
                 return hits
-            hits = self._rank(records, query, limit, target_population, options, topic)
+            hits = self._rank(records, query, limit, target_population, options, topic, as_of)
             return [{**h, "topic_fallback": True} for h in hits]
-        return self._rank(records, query, limit, target_population, options, topic)
+        return self._rank(records, query, limit, target_population, options, topic, as_of)
 
-    def _rank(self, records, query, limit, target_population, options, topic):
-        texts = [" ".join(filter(None, [e.question_text, e.question_summary, e.topic])) for e in records]
-        try:
-            vectorizer = TfidfVectorizer(strip_accents="unicode", ngram_range=(1, 2))
-            matrix = vectorizer.fit_transform(texts)
-            similarities = cosine_similarity(vectorizer.transform([query]), matrix)[0]
-        except ValueError:
+    def _rank(self, records, query, limit, target_population, options, topic, as_of):
+        index = self._index()
+        if index["matrix"] is None:
             return []
+        rows = [index["position"][e.evidence_id] for e in records]
+        similarities = cosine_similarity(index["vectorizer"].transform([query]), index["matrix"][rows])[0]
         semantic_ranks = {}
         if self.semantic_index is not None:
             hits = self.semantic_index.search(query, limit=max(limit * 4, 20))
@@ -226,7 +250,7 @@ class EvidenceRepository:
             if e.fieldwork_date:
                 try:
                     recency = 1 / (
-                        1 + max(0, (date.today() - date.fromisoformat(e.fieldwork_date[:10])).days) / 365
+                        1 + max(0, (as_of - date.fromisoformat(e.fieldwork_date[:10])).days) / 365
                     )
                 except ValueError:
                     pass

@@ -8,7 +8,8 @@ from scipy.spatial.distance import jensenshannon
 from .schemas import Prediction
 
 
-def aggregate(segments, predictions, options, question_type="single"):
+def aggregate(segments, predictions, options, question_type="single", evidence_ids=None):
+    """Agregación ponderada. Con ``evidence_ids`` se valida que cada predicción cite solo evidencia permitida."""
     expected = {s["segment_id"] for s in segments}
     if len(expected) != len(segments) or set(predictions) != expected:
         raise ValueError("Segmentos incompletos o duplicados: se aborta la estimación nacional")
@@ -21,7 +22,8 @@ def aggregate(segments, predictions, options, question_type="single"):
         if not np.isfinite(weight) or weight <= 0:
             raise ValueError("Peso de segmento inválido")
         prediction = predictions[segment["segment_id"]]
-        prediction.validate_context(segment["segment_id"], options, prediction.evidence_ids, question_type)
+        allowed = prediction.evidence_ids if evidence_ids is None else evidence_ids
+        prediction.validate_context(segment["segment_id"], options, allowed, question_type)
         for option in options:
             result[option] += weight * prediction.probabilities[option] / total
     if question_type == "single" and not np.isclose(sum(result.values()), 1, atol=1e-6):
@@ -49,7 +51,9 @@ def _share(segment, dimension, category):
     return segment.get("socioeconomic_profile", {}).get(dimension, {}).get(category, 0.0)
 
 
-def subgroup_distributions(segments, predictions, options, question_type="single", min_resolution=0.6):
+def subgroup_distributions(
+    segments, predictions, options, question_type="single", min_resolution=0.6, evidence_ids=None
+):
     """Estimación por subgrupo ponderando cada segmento por su composición en la dimensión.
 
     Solo se publican dimensiones que la segmentación distingue en al menos ``min_resolution`` del peso:
@@ -76,7 +80,11 @@ def subgroup_distributions(segments, predictions, options, question_type="single
                 continue
             ids = {s["segment_id"] for s in weighted}
             result[dimension][category] = aggregate(
-                weighted, {k: v for k, v in predictions.items() if k in ids}, options, question_type
+                weighted,
+                {k: v for k, v in predictions.items() if k in ids},
+                options,
+                question_type,
+                evidence_ids,
             )
     return result
 
@@ -111,6 +119,15 @@ def calibrated_intervals(prediction, historical_errors, alpha=0.1):
     rank = min(len(errors), int(np.ceil((len(errors) + 1) * (1 - alpha))))
     radius = float(np.sort(errors)[rank - 1])
     return {k: [max(0, p - radius), min(1, p + radius)] for k, p in prediction.items()}
+
+
+def _methods(predictions):
+    """Cuántos segmentos se estimaron por estadística directa, prior acotado o solo con el LLM."""
+    counts = {"direct": 0, "prior": 0, "llm_only": 0}
+    for p in predictions.values():
+        mode = (p.get("anchor") or {}).get("mode") if isinstance(p, dict) else None
+        counts[mode if mode in counts else "llm_only"] += 1
+    return counts
 
 
 def pairwise_divergence(distributions, question_type="single"):
@@ -271,6 +288,7 @@ def audit(
             "sample_sizes": [e["evidence"].get("sample_size") for e in evidence],
             "variable_provenance": metadata.variable_provenance,
             "anchor_mode": anchor_mode,
+            "segments_by_method": _methods(predictions),
         },
         "prediction_stability": stability or {"measured": False, "js_divergence": None},
         "historical_accuracy": accuracy,
