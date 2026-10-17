@@ -23,6 +23,21 @@ Si el payload incluye "retry", tu respuesta anterior fue rechazada: corrige exac
 indicado en "previous_error" y respeta el esquema."""
 
 
+ROLES = {
+    "Methodology": "Rol: metodólogo. Clasifica la pregunta en uno de los temas permitidos, propón consultas de "
+    "recuperación en español y ordena en relevant_demographics las variables que más deberían diferenciar "
+    "a los grupos (grupo_edad, sexo, nivel_estudios, ccaa, tamuni, ingresos_hogar_tramo).",
+    "Assessment": "Rol: evaluador de evidencia. Evalúa exactamente cada evidence_id recibido; si no hay ninguno "
+    "devuelve items vacío. Nunca inventes evidence_ids.",
+    "Prediction": "Rol: agente de un segmento. Estima la distribución de respuestas del SEGMENTO, no de un individuo. "
+    'Si existe "anchor", anchor.prior es la distribución empírica real (CIS) de personas con el perfil del '
+    "segmento: parte de ella y desvíate como máximo anchor.max_shift por opción solo si la evidencia lo justifica. "
+    'Sin ancla, apóyate en "empirical_national" de la evidencia y declara incertidumbre en limitations. '
+    "Diferencia al segmento solo cuando la evidencia lo respalde; evita estereotipos.",
+    "Narrative": "Rol: analista. Interpreta sin alterar ninguna cifra; señala límites y advertencias.",
+}
+
+
 class LLMProvider(Protocol):
     name: str
     synthetic: bool
@@ -47,7 +62,7 @@ class MockLLMProvider:
             return Assessment(
                 items=[
                     {
-                        "evidence_id": e["evidence"]["evidence_id"],
+                        "evidence_id": e["evidence_id"],
                         "relevance": "indirect",
                         "differences": ["DEMO / SYNTHETIC; no equivalencia empírica"],
                     }
@@ -102,6 +117,7 @@ class StructuredProvider:
                 base_url=settings.ollama_base_url,
                 temperature=settings.llm_temperature,
                 client_kwargs={"timeout": settings.llm_timeout},
+                num_ctx=settings.ollama_num_ctx,
                 reasoning=False,
             )
             self.name = settings.ollama_model
@@ -124,7 +140,7 @@ class StructuredProvider:
         model = self.model if temperature is None else self.model.model_copy(update={"temperature": temperature})
         chain = model.with_structured_output(schema, method="json_schema", include_raw=True)
         response = await chain.ainvoke(
-            [("system", SYSTEM), ("human", json.dumps(payload, ensure_ascii=False))]
+            [("system", f"{SYSTEM}\n{ROLES.get(schema.__name__, '')}"), ("human", json.dumps(payload, ensure_ascii=False))]
         )
         if response.get("parsing_error") or response.get("parsed") is None:
             raise ValueError(f"Salida estructurada inválida: {response.get('parsing_error')}")
@@ -140,7 +156,7 @@ class LLMService:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.calls = []
 
-    async def call(self, schema, payload, validator=None):
+    async def call(self, schema, payload, validator=None, repair=None):
         key = hashlib.sha256(
             json.dumps(
                 {
@@ -148,6 +164,7 @@ class LLMService:
                     "payload": payload,
                     "provider": self.provider.name,
                     "system": SYSTEM,
+                    "roles": ROLES,
                     "temperature": self.settings.llm_temperature,
                     "base_url": self.settings.ollama_base_url
                     if self.settings.llm_provider == "ollama"
@@ -180,6 +197,8 @@ class LLMService:
                         self.provider.generate(schema, sent, **kwargs), self.settings.llm_timeout
                     )
                     value = schema.model_validate(value)
+                    if repair:
+                        value = repair(value)
                     if validator:
                         validator(value)
                     path.write_text(value.model_dump_json(), encoding="utf-8")

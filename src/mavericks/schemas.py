@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     llm_provider: Literal["ollama", "mock", "external"] = "ollama"
     ollama_model: str = "qwen3:8b"
     ollama_base_url: str = "http://localhost:11434"
+    ollama_num_ctx: int = Field(8192, ge=1024)
+    anchor_max_shift: float = Field(0.15, gt=0, le=1)
+    anchor_shrinkage: float = Field(25.0, ge=0)
+    anchor_direct_similarity: float = Field(0.9, gt=0, le=1)
+    anchor_prior_similarity: float = Field(0.55, gt=0, le=1)
+    cis_dir: str = "data/processed"
     llm_temperature: float = Field(0, ge=0, le=2)
     llm_timeout: float = Field(120, gt=0)
     llm_max_concurrency: int = Field(1, ge=1, le=32)
@@ -73,6 +79,14 @@ class Prediction(BaseModel):
             not math.isfinite(p) or not 0 <= p <= 1 for p in self.probabilities.values()
         ):
             raise ValueError("Probabilidades inválidas")
+        return self
+
+    def renormalized(self, tolerance=0.15):
+        """Corrige errores de redondeo del LLM en respuestas únicas: si la suma está dentro de la
+        tolerancia se reescala a 1; fuera de ella se deja intacta para que la validación falle."""
+        total = sum(self.probabilities.values())
+        if total > 0 and abs(total - 1) <= tolerance and abs(total - 1) > 1e-9:
+            return self.model_copy(update={"probabilities": {k: v / total for k, v in self.probabilities.items()}})
         return self
 
     def validate_context(self, segment_id, options, evidence_ids, question_type="single"):

@@ -5,6 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
+from .anchor import load_anchor_store
 from .evaluation import backtest, save_json
 from .evidence import EvidenceRepository, SemanticIndex, read_records, survey_distribution
 from .graph import simulate
@@ -32,6 +33,8 @@ def parser():
             sub.add_argument("--model")
             sub.add_argument("--db", default="data/processed/evidence.sqlite")
             sub.add_argument("--concurrency", type=int)
+            sub.add_argument("--anchor", choices=["auto", "off"], default="auto", help="Ancla empírica CIS")
+            sub.add_argument("--cis-dir", help="Carpeta con cis_respondents/cis_responses (por defecto data/processed)")
         if name == "simulate":
             sub.add_argument("--question", required=True)
             sub.add_argument("--options", nargs="+", required=True)
@@ -155,6 +158,7 @@ def run(args):
         return LLMService(provider, settings)
 
     evidence = evidence_repository(args.db)
+    anchors = None if args.anchor == "off" else load_anchor_store(settings, args.cis_dir)
     if args.command == "simulate":
         result = asyncio.run(
             simulate(
@@ -164,12 +168,13 @@ def run(args):
                 factory(),
                 args.segments,
                 args.rag == "on",
+                anchors=anchors,
             )
         )
         output = args.output or f"outputs/{result['simulation_id']}.json"
     else:
         cases = json.loads(Path(args.cases).read_text(encoding="utf-8-sig"))
-        result = asyncio.run(backtest(cases, repository, evidence, factory, args.segments))
+        result = asyncio.run(backtest(cases, repository, evidence, factory, args.segments, anchors=anchors))
         output = args.output or "outputs/backtest.json"
     save_json(output, result)
     print(f"Resultado guardado: {output}", file=sys.stderr)

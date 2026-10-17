@@ -190,6 +190,7 @@ def build_segments(repository, max_segments=24, min_size=10, dimensions=None):
                 "population_weight": float(total),
                 "n_synthetic": len(group),
                 "demographic_profile": profile,
+                "constraints": {d: [str(c) for c in cats] for d, cats in node["constraints"].items()},
                 "homogeneous_dimensions": homogeneous,
                 "merged_categories": merged,
                 "socioeconomic_profile": distributions,

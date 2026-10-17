@@ -6,7 +6,7 @@ from .schemas import Question
 from .statistics import js_divergence, mae
 
 
-async def backtest(cases, repository, evidence_repository, service_factory, max_segments=5):
+async def backtest(cases, repository, evidence_repository, service_factory, max_segments=5, anchors=None):
     results = []
     for case in cases:
         # Human-reviewed equivalence families complement exact text and ID exclusion.
@@ -28,6 +28,7 @@ async def backtest(cases, repository, evidence_repository, service_factory, max_
             service_factory(),
             max_segments,
             retrieval_filters=filters,
+            anchors=anchors,
         )
         retrieved_ids = {e["evidence"]["evidence_id"] for e in result["retrieved_evidence"]}
         if retrieved_ids & set(excluded):

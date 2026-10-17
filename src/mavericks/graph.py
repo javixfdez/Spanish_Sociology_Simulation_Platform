@@ -5,9 +5,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, TypedDict
 
+import numpy as np
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from .anchor import constraints_of, project_to_band, select_anchor
+from .payloads import compact_evidence, compact_segment
 from .population import build_segments
 from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
 from .statistics import aggregate, audit, subgroup_distributions, subgroup_resolution
@@ -28,6 +31,7 @@ class SimulationState(TypedDict, total=False):
     population_version: str
     population_metadata: dict
     retrieved_evidence: list
+    anchor_spec: dict
     evidence_assessment: dict
     segments: list
     segment_predictions: Annotated[dict, merge_unique]
@@ -42,8 +46,17 @@ class SimulationState(TypedDict, total=False):
     execution_metadata: dict
 
 
-def build_graph(repository, evidence_repository, service, max_segments=5, rag=True, retrieval_filters=None):
+def build_graph(
+    repository,
+    evidence_repository,
+    service,
+    max_segments=5,
+    rag=True,
+    retrieval_filters=None,
+    anchors=None,
+):
     filters = retrieval_filters or {}
+    settings = service.settings
 
     def validate_input(state):
         question = Question.model_validate(state["question"])
@@ -103,8 +116,17 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
                     if e.get("metadata", {}).get("synthetic") and not repository.metadata.synthetic:
                         continue
                     found[e["evidence_id"]] = hit
+        spec = None
+        if anchors is not None and found:
+            spec = select_anchor(
+                list(found.values()),
+                state["question"],
+                settings.anchor_direct_similarity,
+                settings.anchor_prior_similarity,
+            )
         return {
             "retrieved_evidence": list(found.values()),
+            "anchor_spec": spec,
             "stages": ["retrieve_sociological_evidence"],
             "warnings": []
             if found
@@ -125,7 +147,11 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
                 raise ValueError("Assessment debe evaluar exactamente cada evidence_id recuperado")
 
         try:
-            value = await service.call(Assessment, {"question": state["question"], "evidence": hits}, validate)
+            value = await service.call(
+                Assessment,
+                {"question": state["question"], "evidence": compact_evidence(hits, {}, anchors, limit=None)},
+                validate,
+            )
         except Exception as exc:
             # Evaluación conservadora: toda la evidencia se considera indirecta, con aviso explícito.
             note = f"Evaluación automática no disponible ({exc}); evidencia tratada como indirecta"
@@ -156,39 +182,98 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
         return {"stages": ["dispatch_segment_agents"]}
 
     def route(state):
-        allowed = {
-            item["evidence_id"]
-            for item in state["evidence_assessment"]["items"]
-            if item["relevance"] != "incompatible"
-        }
-        evidence = [hit for hit in state["retrieved_evidence"] if hit["evidence"]["evidence_id"] in allowed]
-        return [
-            Send(
-                "respondent_agent",
-                {
-                    "segment": s,
-                    "question": state["question"],
-                    "evidence": evidence,
-                    "assessment": state["evidence_assessment"],
-                    "population_metadata": state["population_metadata"],
-                },
+        assessment = state["evidence_assessment"]
+        evidence = compact_evidence(state["retrieved_evidence"], assessment, anchors)
+        allowed = {e["evidence_id"] for e in evidence}
+        spec = state.get("anchor_spec")
+        if spec and spec["evidence_id"] not in allowed:
+            spec = None  # la evidencia ancla fue descartada por incompatible
+        total = sum(s["population_weight"] for s in state["segments"])
+        sends = []
+        for s in state["segments"]:
+            anchor = None
+            if spec:
+                estimate = anchors.segment_distribution(spec, constraints_of(s))
+                anchor = {
+                    "mode": spec["mode"],
+                    "evidence_id": spec["evidence_id"],
+                    "study_id": spec["study_id"],
+                    "question_similarity": spec["similarity"],
+                    "prior": {k: round(v, 4) for k, v in estimate["probabilities"].items()},
+                    "national": {k: round(v, 4) for k, v in estimate["national"].items()},
+                    "basis": estimate["finest"],
+                    "levels": estimate["levels"],
+                    "max_shift": settings.anchor_max_shift,
+                }
+            sends.append(
+                Send(
+                    "respondent_agent",
+                    {
+                        "segment": compact_segment(s, total),
+                        "question": state["question"],
+                        "evidence": evidence,
+                        "anchor": anchor,
+                    },
+                )
             )
-            for s in state["segments"]
-        ]
+        return sends
 
     async def respondent(state):
         segment_id = state["segment"]["segment_id"]
         question = state["question"]
-        ids = [hit["evidence"]["evidence_id"] for hit in state["evidence"]]
+        ids = [e["evidence_id"] for e in state["evidence"]]
+        anchor = state.get("anchor")
         try:
+            if anchor and anchor["mode"] == "direct":
+                # Misma pregunta en el CIS: estadística directa del segmento, sin intervención del LLM.
+                basis = anchor["basis"]
+                value = Prediction(
+                    segment_id=segment_id,
+                    probabilities=anchor["prior"],
+                    explanation=f"Estadística directa del CIS (estudio {anchor['study_id']}, pregunta "
+                    f"{anchor['evidence_id']}) para el perfil del segmento: nivel {basis['level']}, "
+                    f"n={basis['n']}, n efectivo={basis['n_eff']}.",
+                    evidence_ids=[anchor["evidence_id"]],
+                    limitations=["Sin ajuste por cambios desde el trabajo de campo", "Contracción jerárquica hacia niveles superiores"],
+                )
+                if question["question_type"] == "single":
+                    total = sum(value.probabilities.values())
+                    value = value.model_copy(update={"probabilities": {k: v / total for k, v in value.probabilities.items()}})
+                value.validate_context(segment_id, question["options"], ids, question["question_type"])
+                dump = value.model_dump()
+                dump["anchor"] = {"mode": "direct", "basis": basis, "evidence_id": anchor["evidence_id"], "prior": anchor["prior"]}
+                return {"segment_predictions": {segment_id: dump}, "stages": [f"respondent_agent:{segment_id}:direct"]}
             payload = {**state, "options": question["options"]}
             value = await service.call(
                 Prediction,
                 payload,
                 lambda p: p.validate_context(segment_id, question["options"], ids, question["question_type"]),
+                repair=(lambda p: p.renormalized()) if question["question_type"] == "single" else None,
             )
+            dump = value.model_dump()
+            if anchor and anchor["mode"] == "prior":
+                options = question["options"]
+                prior = np.array([anchor["prior"][o] for o in options])
+                raw = np.array([value.probabilities[o] for o in options])
+                low, high = np.clip(prior - anchor["max_shift"], 0, 1), np.clip(prior + anchor["max_shift"], 0, 1)
+                if question["question_type"] == "single":
+                    final = project_to_band(raw, low, high)
+                else:
+                    final = np.clip(raw, low, high)
+                dump["llm_probabilities"] = dict(value.probabilities)
+                dump["probabilities"] = {o: float(p) for o, p in zip(options, final)}
+                dump["anchor"] = {
+                    "mode": "prior",
+                    "basis": anchor["basis"],
+                    "evidence_id": anchor["evidence_id"],
+                    "prior": anchor["prior"],
+                    "max_shift": anchor["max_shift"],
+                }
+                Prediction.model_validate(dump).validate_context(
+                    segment_id, options, ids, question["question_type"]
+                )
             return {
-                "segment_predictions": {segment_id: value.model_dump()},
+                "segment_predictions": {segment_id: dump},
                 "stages": [f"respondent_agent:{segment_id}"],
             }
         except Exception as exc:
@@ -238,7 +323,7 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
                 {
                     "national_distribution": state["national_distribution"],
                     "subgroup_distributions": state["subgroup_distributions"],
-                    "evidence": state["retrieved_evidence"],
+                    "evidence": compact_evidence(state["retrieved_evidence"], state["evidence_assessment"], anchors),
                     "trust_metrics": state["trust_metrics"],
                     "warnings": state["warnings"],
                 },
@@ -297,10 +382,17 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
 
 
 async def simulate(
-    question, repository, evidence_repository, service, max_segments=5, rag=True, retrieval_filters=None
+    question,
+    repository,
+    evidence_repository,
+    service,
+    max_segments=5,
+    rag=True,
+    retrieval_filters=None,
+    anchors=None,
 ):
     started = time.monotonic()
-    graph = build_graph(repository, evidence_repository, service, max_segments, rag, retrieval_filters)
+    graph = build_graph(repository, evidence_repository, service, max_segments, rag, retrieval_filters, anchors)
     state = await asyncio.wait_for(
         graph.ainvoke(
             {
@@ -323,6 +415,7 @@ async def simulate(
             "synthetic": service.provider.synthetic or repository.metadata.synthetic,
             "llm_calls": service.calls,
             "rag": rag,
+            "anchors": anchors is not None,
         }
     )
     return state
