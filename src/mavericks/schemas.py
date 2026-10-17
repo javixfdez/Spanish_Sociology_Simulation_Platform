@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     anchor_direct_similarity: float = Field(0.9, gt=0, le=1)
     anchor_prior_similarity: float = Field(0.55, gt=0, le=1)
     cis_dir: str = "data/processed"
+    stability_runs: int = Field(1, ge=1, le=10)
+    stability_temperature: float = Field(0.7, ge=0, le=2)
+    calibration_path: str = "data/processed/calibration.json"
+    interval_alpha: float = Field(0.1, gt=0, lt=1)
+    min_calibration_cases: int = Field(20, ge=1)
     llm_temperature: float = Field(0, ge=0, le=2)
     llm_timeout: float = Field(120, gt=0)
     llm_max_concurrency: int = Field(1, ge=1, le=32)

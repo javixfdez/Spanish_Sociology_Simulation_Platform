@@ -13,7 +13,14 @@ from .anchor import constraints_of, project_to_band, select_anchor
 from .payloads import compact_evidence, compact_segment
 from .population import build_segments
 from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
-from .statistics import aggregate, audit, subgroup_distributions, subgroup_resolution
+from .statistics import (
+    aggregate,
+    audit,
+    pairwise_divergence,
+    stability_summary,
+    subgroup_distributions,
+    subgroup_resolution,
+)
 from .topics import classify_topic
 
 
@@ -54,6 +61,7 @@ def build_graph(
     rag=True,
     retrieval_filters=None,
     anchors=None,
+    calibration=None,
 ):
     filters = retrieval_filters or {}
     settings = service.settings
@@ -227,8 +235,14 @@ def build_graph(
     async def respondent(state):
         segment_id = state["segment"]["segment_id"]
         question = state["question"]
+        options, qtype = question["options"], question["question_type"]
         ids = [e["evidence_id"] for e in state["evidence"]]
         anchor = state.get("anchor")
+        runs = settings.stability_runs
+
+        def check(p):
+            p.validate_context(segment_id, options, ids, qtype)
+
         try:
             if anchor and anchor["mode"] == "direct":
                 # Misma pregunta en el CIS: estadística directa del segmento, sin intervención del LLM.
@@ -240,34 +254,71 @@ def build_graph(
                     f"{anchor['evidence_id']}) para el perfil del segmento: nivel {basis['level']}, "
                     f"n={basis['n']}, n efectivo={basis['n_eff']}.",
                     evidence_ids=[anchor["evidence_id"]],
-                    limitations=["Sin ajuste por cambios desde el trabajo de campo", "Contracción jerárquica hacia niveles superiores"],
+                    limitations=[
+                        "Sin ajuste por cambios desde el trabajo de campo",
+                        "Contracción jerárquica hacia niveles superiores",
+                    ],
                 )
-                if question["question_type"] == "single":
-                    total = sum(value.probabilities.values())
-                    value = value.model_copy(update={"probabilities": {k: v / total for k, v in value.probabilities.items()}})
-                value.validate_context(segment_id, question["options"], ids, question["question_type"])
+                if qtype == "single":
+                    value = value.renormalized()
+                check(value)
                 dump = value.model_dump()
-                dump["anchor"] = {"mode": "direct", "basis": basis, "evidence_id": anchor["evidence_id"], "prior": anchor["prior"]}
+                dump["anchor"] = {
+                    "mode": "direct",
+                    "basis": basis,
+                    "evidence_id": anchor["evidence_id"],
+                    "prior": anchor["prior"],
+                }
+                dump["stability"] = {"runs": 1, "mean_pairwise_divergence": None, "deterministic": True}
                 return {"segment_predictions": {segment_id: dump}, "stages": [f"respondent_agent:{segment_id}:direct"]}
-            payload = {**state, "options": question["options"]}
-            value = await service.call(
-                Prediction,
-                payload,
-                lambda p: p.validate_context(segment_id, question["options"], ids, question["question_type"]),
-                repair=(lambda p: p.renormalized()) if question["question_type"] == "single" else None,
+
+            async def sample(i):
+                payload = {**state, "options": options}
+                if runs > 1:
+                    payload["sample"] = i
+                value = await service.call(
+                    Prediction,
+                    payload,
+                    check,
+                    repair=(lambda p: p.renormalized()) if qtype == "single" else None,
+                    temperature=settings.stability_temperature if runs > 1 else None,
+                )
+                raw = dict(value.probabilities)
+                if anchor and anchor["mode"] == "prior":
+                    prior = np.array([anchor["prior"][o] for o in options])
+                    low = np.clip(prior - anchor["max_shift"], 0, 1)
+                    high = np.clip(prior + anchor["max_shift"], 0, 1)
+                    values = np.array([raw[o] for o in options])
+                    final = project_to_band(values, low, high) if qtype == "single" else np.clip(values, low, high)
+                    value = value.model_copy(update={"probabilities": {o: float(p) for o, p in zip(options, final)}})
+                    check(value)
+                return value, raw
+
+            results = await asyncio.gather(*[sample(i) for i in range(runs)], return_exceptions=True)
+            good = [r for r in results if not isinstance(r, Exception)]
+            if not good:
+                raise results[0]
+            values = [v for v, _ in good]
+            mean = {o: float(np.mean([v.probabilities[o] for v in values])) for o in options}
+            first = values[0]
+            merged = first.model_copy(
+                update={
+                    "probabilities": mean,
+                    "evidence_ids": sorted({e for v in values for e in v.evidence_ids}),
+                    "limitations": list(dict.fromkeys(item for v in values for item in v.limitations)),
+                }
             )
-            dump = value.model_dump()
+            check(merged)
+            dump = merged.model_dump()
+            dump["stability"] = {
+                "runs": len(values),
+                "requested_runs": runs,
+                "mean_pairwise_divergence": pairwise_divergence([v.probabilities for v in values], qtype),
+            }
+            if runs > 1:
+                dump["repetitions"] = [v.probabilities for v in values]
             if anchor and anchor["mode"] == "prior":
-                options = question["options"]
-                prior = np.array([anchor["prior"][o] for o in options])
-                raw = np.array([value.probabilities[o] for o in options])
-                low, high = np.clip(prior - anchor["max_shift"], 0, 1), np.clip(prior + anchor["max_shift"], 0, 1)
-                if question["question_type"] == "single":
-                    final = project_to_band(raw, low, high)
-                else:
-                    final = np.clip(raw, low, high)
-                dump["llm_probabilities"] = dict(value.probabilities)
-                dump["probabilities"] = {o: float(p) for o, p in zip(options, final)}
+                dump["llm_probabilities"] = good[0][1]
                 dump["anchor"] = {
                     "mode": "prior",
                     "basis": anchor["basis"],
@@ -275,13 +326,7 @@ def build_graph(
                     "prior": anchor["prior"],
                     "max_shift": anchor["max_shift"],
                 }
-                Prediction.model_validate(dump).validate_context(
-                    segment_id, options, ids, question["question_type"]
-                )
-            return {
-                "segment_predictions": {segment_id: dump},
-                "stages": [f"respondent_agent:{segment_id}"],
-            }
+            return {"segment_predictions": {segment_id: dump}, "stages": [f"respondent_agent:{segment_id}"]}
         except Exception as exc:
             return {
                 "errors": [{"segment_id": segment_id, "error": str(exc)}],
@@ -315,9 +360,26 @@ def build_graph(
         }
 
     def auditing(state):
+        q = state["question"]
+        predictions = state["segment_predictions"]
+        spec = state.get("anchor_spec")
+        try:
+            stability = stability_summary(state["segments"], predictions, q["question_type"], q["options"])
+        except Exception:  # la estabilidad es diagnóstica: nunca debe tumbar la simulación
+            stability = {"measured": False, "js_divergence": None}
         return {
             "trust_metrics": audit(
-                state["retrieved_evidence"], repository.metadata, state["segment_predictions"]
+                state["retrieved_evidence"],
+                repository.metadata,
+                predictions,
+                stability=stability,
+                calibration=calibration,
+                national=state.get("national_distribution") or None,
+                anchor_mode=spec["mode"] if spec else "none",
+                topic=state.get("methodology", {}).get("topic"),
+                model=service.provider.name,
+                alpha=settings.interval_alpha,
+                min_cases=settings.min_calibration_cases,
             ),
             "stages": ["audit_confidence"],
         }
@@ -396,9 +458,12 @@ async def simulate(
     rag=True,
     retrieval_filters=None,
     anchors=None,
+    calibration=None,
 ):
     started = time.monotonic()
-    graph = build_graph(repository, evidence_repository, service, max_segments, rag, retrieval_filters, anchors)
+    graph = build_graph(
+        repository, evidence_repository, service, max_segments, rag, retrieval_filters, anchors, calibration
+    )
     state = await asyncio.wait_for(
         graph.ainvoke(
             {

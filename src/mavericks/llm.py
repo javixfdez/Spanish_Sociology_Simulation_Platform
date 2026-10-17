@@ -156,7 +156,7 @@ class LLMService:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.calls = []
 
-    async def call(self, schema, payload, validator=None, repair=None):
+    async def call(self, schema, payload, validator=None, repair=None, temperature=None):
         key = hashlib.sha256(
             json.dumps(
                 {
@@ -165,7 +165,7 @@ class LLMService:
                     "provider": self.provider.name,
                     "system": SYSTEM,
                     "roles": ROLES,
-                    "temperature": self.settings.llm_temperature,
+                    "temperature": self.settings.llm_temperature if temperature is None else temperature,
                     "base_url": self.settings.ollama_base_url
                     if self.settings.llm_provider == "ollama"
                     else self.settings.external_base_url,
@@ -187,12 +187,15 @@ class LLMService:
                 started = time.monotonic()
                 try:
                     kwargs, sent = {}, payload
+                    base = self.settings.llm_temperature if temperature is None else temperature
+                    if attempt == 0 and temperature is not None and accepts_temperature:
+                        kwargs["temperature"] = temperature
                     if attempt:
                         # Reintento informado: el error previo viaja en el payload y se sube la temperatura,
                         # porque repetir la misma petición determinista devolvería el mismo fallo.
                         sent = {**payload, "retry": {"attempt": attempt, "previous_error": previous_error}}
                         if accepts_temperature:
-                            kwargs["temperature"] = min(1.0, self.settings.llm_temperature + 0.3 * attempt)
+                            kwargs["temperature"] = min(1.0, base + 0.3 * attempt)
                     value = await asyncio.wait_for(
                         self.provider.generate(schema, sent, **kwargs), self.settings.llm_timeout
                     )

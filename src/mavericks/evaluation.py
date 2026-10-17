@@ -8,7 +8,9 @@ from .schemas import Question
 from .statistics import js_divergence, mae
 
 
-async def backtest(cases, repository, evidence_repository, service_factory, max_segments=5, anchors=None):
+async def backtest(
+    cases, repository, evidence_repository, service_factory, max_segments=5, anchors=None, calibration=None
+):
     results = []
     for case in cases:
         # Human-reviewed equivalence families complement exact text and ID exclusion.
@@ -36,6 +38,7 @@ async def backtest(cases, repository, evidence_repository, service_factory, max_
             max_segments,
             retrieval_filters=filters,
             anchors=anchors,
+            calibration=calibration,
         )
         retrieved_ids = {e["evidence"]["evidence_id"] for e in result["retrieved_evidence"]}
         if retrieved_ids & set(excluded):
@@ -66,6 +69,9 @@ async def backtest(cases, repository, evidence_repository, service_factory, max_
                 "topic": case.get("topic"),
                 "anchor_mode": spec["mode"] if spec else "none",
                 "observed": observed,
+                "option_errors": [] if failed else [abs(predicted[o] - observed[o]) for o in observed],
+                "subgroup_option_errors": option_errors_of(result, case) if not failed else [],
+                "stability": result["trust_metrics"]["prediction_stability"] if "trust_metrics" in result else None,
                 "mae_uniform_baseline": mae(dict.fromkeys(observed, 1 / len(observed)), observed),
                 "subgroup_mae": float(np.mean([e["mae"] for e in subgroup_scores])) if subgroup_scores else None,
                 "subgroup_errors": subgroup_scores,
@@ -123,3 +129,14 @@ def summarize_backtest(results):
         for value in sorted({str(r.get(key)) for r in results}):
             summary[name][value] = block([r for r in results if str(r.get(key)) == value])
     return summary
+
+
+def option_errors_of(result, case):
+    """Errores absolutos por opción de los subgrupos comparables (para calibrar subgrupos)."""
+    errors = []
+    for dimension, categories in result["subgroup_distributions"].items():
+        for category, distribution in categories.items():
+            target = case.get("observed_subgroups", {}).get(dimension, {}).get(category)
+            if target and set(target["distribution"]) == set(distribution):
+                errors.extend(abs(distribution[o] - target["distribution"][o]) for o in distribution)
+    return errors

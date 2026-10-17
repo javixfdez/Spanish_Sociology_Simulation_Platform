@@ -12,6 +12,7 @@ from .graph import simulate
 from .llm import LLMService, check_ollama, create_provider
 from .population import PopulationLoader, PopulationRepository, build_segments, create_demo
 from .schemas import Question, Settings
+from .statistics import build_calibration, load_calibration
 
 
 def parser():
@@ -34,6 +35,8 @@ def parser():
             sub.add_argument("--db", default="data/processed/evidence.sqlite")
             sub.add_argument("--concurrency", type=int)
             sub.add_argument("--anchor", choices=["auto", "off"], default="auto", help="Ancla empírica CIS")
+            sub.add_argument("--stability-runs", type=int, help="Repeticiones por segmento para medir estabilidad")
+            sub.add_argument("--calibration", help="JSON de calibración (por defecto data/processed/calibration.json) u off")
             sub.add_argument("--cis-dir", help="Carpeta con cis_respondents/cis_responses (por defecto data/processed)")
         if name == "simulate":
             sub.add_argument("--question", required=True)
@@ -91,6 +94,8 @@ def run(args):
         updates["llm_provider"] = args.provider
     if getattr(args, "model", None):
         updates["ollama_model"] = args.model
+    if getattr(args, "stability_runs", None):
+        updates["stability_runs"] = args.stability_runs
     if getattr(args, "concurrency", None) is not None:
         updates["llm_max_concurrency"] = args.concurrency
     settings = Settings(**updates)
@@ -180,6 +185,8 @@ def run(args):
 
     evidence = evidence_repository(args.db)
     anchors = None if args.anchor == "off" else load_anchor_store(settings, args.cis_dir)
+    calibration_path = None if args.calibration == "off" else (args.calibration or settings.calibration_path)
+    calibration = load_calibration(calibration_path) if args.command == "simulate" else None
     if args.command == "simulate":
         result = asyncio.run(
             simulate(
@@ -190,6 +197,7 @@ def run(args):
                 args.segments,
                 args.rag == "on",
                 anchors=anchors,
+                calibration=calibration,
             )
         )
         output = args.output or f"outputs/{result['simulation_id']}.json"
@@ -197,6 +205,12 @@ def run(args):
         cases = json.loads(Path(args.cases).read_text(encoding="utf-8-sig"))
         results = asyncio.run(backtest(cases, repository, evidence, factory, args.segments, anchors=anchors))
         result = {"summary": summarize_backtest(results), "results": results}
+        if calibration_path:
+            built = build_calibration(
+                results, provider.name, repository.metadata.population_version, settings.stability_runs, settings.min_calibration_cases
+            )
+            save_json(calibration_path, built)
+            result["calibration"] = {"path": str(calibration_path), "n_cases": built["overall"]["n_cases"]}
         output = args.output or "outputs/backtest.json"
     save_json(output, result)
     print(f"Resultado guardado: {output}", file=sys.stderr)
