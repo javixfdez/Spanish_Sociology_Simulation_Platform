@@ -85,6 +85,11 @@ def _prediction_view(payload):
             if key in anchor:
                 anchor[key] = {by_option[o]: v for o, v in anchor[key].items() if o in by_option}
     view["answer_format"] = "Devuelve o1..oN con la probabilidad de cada opción, explanation y limitations."
+    if view.get("examples"):
+        view["examples_note"] = (
+            "examples son preguntas parecidas con su distribución nacional REAL: úsalas para calibrar la escala; "
+            "las respuestas reales suelen estar más concentradas en una o dos opciones de lo que se tiende a predecir."
+        )
     return view
 
 

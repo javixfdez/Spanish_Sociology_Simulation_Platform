@@ -10,7 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from .anchor import constraints_of, project_to_band, question_similarity, select_anchor
-from .payloads import compact_evidence, compact_segment
+from .payloads import build_examples, compact_evidence, compact_segment
 from .population import build_segments
 from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
 from .statistics import (
@@ -249,6 +249,11 @@ def build_graph(
         keep = (spec["evidence_id"],) if spec else ()
         evidence = compact_evidence(state["retrieved_evidence"], assessment, anchors, keep_ids=keep)
         total = sum(s["population_weight"] for s in state["segments"])
+        examples = []
+        if settings.few_shot and not (spec and spec["mode"] == "direct"):
+            examples = build_examples(
+                state["retrieved_evidence"], anchors, settings.few_shot, exclude_ids=(spec["evidence_id"],) if spec else ()
+            )
         sends = []
         for s in state["segments"]:
             anchor = None
@@ -273,6 +278,7 @@ def build_graph(
                         "question": state["question"],
                         "evidence": evidence,
                         "anchor": anchor,
+                        **({"examples": examples} if examples else {}),
                     },
                 )
             )

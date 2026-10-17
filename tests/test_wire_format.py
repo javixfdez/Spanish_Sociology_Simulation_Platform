@@ -94,3 +94,15 @@ def test_answer_model_bounds():
     model = prediction_answer_model(2)
     with pytest.raises(ValueError):
         model(o1=1.5, o2=0.0, explanation="x")
+
+
+def test_examples_note_is_added_only_with_examples(monkeypatch):
+    def answers(schema):
+        return {"parsed": schema(o1=0.4, o2=0.3, o3=0.3, explanation="x"), "raw": Raw()}
+
+    provider, sent = _provider(monkeypatch, answers)
+    payload = {**PAYLOAD, "anchor": None, "examples": [{"question": "q", "distribution": {"Sí": 0.8, "No": 0.2}}]}
+    asyncio.run(provider.generate(Prediction, payload))
+    assert "examples_note" in next(v for k, v in sent if k == "human") and "REAL" in next(v for k, v in sent if k == "human")
+    asyncio.run(provider.generate(Prediction, {**PAYLOAD, "anchor": None}))
+    assert "examples_note" not in [v for k, v in sent if k == "human"][-1]

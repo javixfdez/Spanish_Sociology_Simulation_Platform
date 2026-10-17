@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     cis_dir: str = "data/processed"
     stability_runs: int = Field(1, ge=1, le=10)
     llm_assessment: bool = True
+    few_shot: int = Field(0, ge=0, le=8)
     retriever: Literal["tfidf", "embed", "hybrid"] = "tfidf"
     embedding_model: str = "intfloat/multilingual-e5-base"
     embedding_device: str = "cpu"

@@ -34,6 +34,48 @@ def _summary(distribution, top=6):
     return {_clip(k, 60): round(v, 2) for k, v in items}
 
 
+_SOURCE_NAMES = {"eurobarometro": "Eurobarómetro (muestra española)", "ess": "ESS (muestra española)"}
+
+
+def build_examples(hits, anchors=None, n=3, exclude_ids=()):
+    """Ejemplos reales (few-shot): preguntas recuperadas parecidas con su distribución nacional observada.
+
+    Una por enunciado distinto (la oleada más reciente), para que el modelo vea la escala real de las respuestas.
+    """
+    chosen, seen = [], set()
+    for hit in sorted(hits, key=lambda h: -h["retrieval_score"]):
+        e = hit["evidence"]
+        key = " ".join((e.get("question_text") or "").lower().split())
+        if e["evidence_id"] in exclude_ids or not key or key in seen:
+            continue
+        stats = e.get("metadata", {}).get("empirical_statistics", {}).get("national")
+        distribution, size = (stats["distribution"], stats.get("n_respondents")) if stats else (None, None)
+        if distribution is None and anchors is not None and e.get("study_id"):
+            original = e.get("metadata", {}).get("original_fields", {})
+            try:
+                dist, count = anchors.national(e["study_id"], e["evidence_id"], original.get("question_type", "single"))
+            except Exception:
+                continue
+            ns = {k: v for k, v in dist.items() if k.lower().replace(".", "") not in {"ns", "nc", "no procede"}}
+            mass = sum(ns.values())
+            distribution, size = ({k: v / mass for k, v in ns.items()} if mass > 0 else None), count
+        if not distribution or len(distribution) < 2:
+            continue
+        seen.add(key)
+        chosen.append(
+            {
+                "question": _clip(e.get("question_text"), 220),
+                "distribution": _summary(distribution),
+                "n": size,
+                "source": _SOURCE_NAMES.get(e.get("source"), "CIS"),
+                "fieldwork": e.get("fieldwork_date"),
+            }
+        )
+        if len(chosen) == n:
+            break
+    return chosen
+
+
 def compact_segment(segment, total_weight):
     homogeneous = set(segment.get("homogeneous_dimensions", segment["demographic_profile"]))
     composition = {}

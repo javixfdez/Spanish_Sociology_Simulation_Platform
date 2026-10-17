@@ -320,3 +320,41 @@ def test_select_anchor_prefers_exact_text_then_most_recent_wave():
     old["evidence"]["fieldwork_date"], new["evidence"]["fieldwork_date"] = "2024-01-01", "2025-06-01"
     chosen = select_anchor([near, old, new], q)
     assert chosen["evidence_id"] == "NEW" and chosen["mode"] == "direct"
+
+
+def _run_with_settings(tmp_path, world, question, **settings):
+    population, evidence, store = world
+    seen = []
+
+    class Spy(MockLLMProvider):
+        async def generate(self, schema, payload, temperature=None):
+            if schema is Prediction:
+                seen.append(payload)
+            return await super().generate(schema, payload)
+
+    llm = LLMService(Spy(), Settings(llm_provider="mock", llm_retries=0, **settings), tmp_path / "cfs")
+    result = asyncio.run(
+        simulate(Question(question=question, options=["Sí", "No"]), population, evidence, llm, 4, anchors=store)
+    )
+    return result, seen
+
+
+def test_few_shot_adds_real_examples_only_when_enabled_and_not_for_direct(tmp_path, world):
+    population, evidence, store = world
+    records = [
+        dict(evidence_id=f"F{i}", source="CIS", study_id=str(70 + i), question_text=f"Pregunta distinta número {i} sobre inteligencia artificial",
+             options=["Sí", "No"], topic="ia_tecnologia", question_type="single", fieldwork_date="2025-02-01",
+             metadata={"empirical_statistics": {"national": {"distribution": {"Sí": 0.8, "No": 0.2}, "n_respondents": 1000}}})
+        for i in range(4)
+    ]
+    (tmp_path / "f.json").write_text(json.dumps(records), encoding="utf-8")
+    evidence.ingest(tmp_path / "f.json")
+    novel = "¿Cree que la inteligencia artificial cambiará su trabajo?"
+    _, off = _run_with_settings(tmp_path, world, novel)
+    assert off and all("examples" not in p for p in off)
+    _, on = _run_with_settings(tmp_path, world, novel, few_shot=3)
+    assert on and all(len(p["examples"]) == 3 for p in on)
+    example = on[0]["examples"][0]
+    assert example["distribution"]["Sí"] == 0.8 and example["n"] == 1000 and example["source"] == "CIS"
+    direct_result, direct_payloads = _run_with_settings(tmp_path, world, QUESTION, few_shot=3)
+    assert direct_payloads == [] and direct_result["anchor_spec"]["mode"] == "direct"

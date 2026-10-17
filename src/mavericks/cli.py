@@ -39,6 +39,7 @@ def parser():
             sub.add_argument("--retriever", choices=["tfidf", "embed", "hybrid"], help="Recuperador de evidencia")
             sub.add_argument("--embedding-model", help="Modelo multilingüe local para embed/hybrid")
             sub.add_argument("--embedding-device", help="cpu o cuda")
+            sub.add_argument("--few-shot", type=int, help="Nº de ejemplos reales en el prompt (0 = apagado)")
             sub.add_argument("--no-llm-assessment", action="store_true", help="Evaluador de evidencia determinista (sin LLM)")
             sub.add_argument("--calibration", help="JSON de calibración (por defecto data/processed/calibration.json) u off")
             sub.add_argument("--cis-dir", help="Carpeta con cis_respondents/cis_responses (por defecto data/processed)")
@@ -103,6 +104,8 @@ def run(args):
         updates["llm_provider"] = args.provider
     if getattr(args, "model", None):
         updates["ollama_model"] = args.model
+    if getattr(args, "few_shot", None) is not None:
+        updates["few_shot"] = args.few_shot
     for flag in ("retriever", "embedding_model", "embedding_device"):
         if getattr(args, flag, None):
             updates[flag] = getattr(args, flag)
