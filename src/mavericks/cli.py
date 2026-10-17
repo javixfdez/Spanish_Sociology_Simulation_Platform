@@ -36,6 +36,9 @@ def parser():
             sub.add_argument("--concurrency", type=int)
             sub.add_argument("--anchor", choices=["auto", "off"], default="auto", help="Ancla empírica CIS")
             sub.add_argument("--stability-runs", type=int, help="Repeticiones por segmento para medir estabilidad")
+            sub.add_argument("--retriever", choices=["tfidf", "embed", "hybrid"], help="Recuperador de evidencia")
+            sub.add_argument("--embedding-model", help="Modelo multilingüe local para embed/hybrid")
+            sub.add_argument("--embedding-device", help="cpu o cuda")
             sub.add_argument("--no-llm-assessment", action="store_true", help="Evaluador de evidencia determinista (sin LLM)")
             sub.add_argument("--calibration", help="JSON de calibración (por defecto data/processed/calibration.json) u off")
             sub.add_argument("--cis-dir", help="Carpeta con cis_respondents/cis_responses (por defecto data/processed)")
@@ -100,6 +103,9 @@ def run(args):
         updates["llm_provider"] = args.provider
     if getattr(args, "model", None):
         updates["ollama_model"] = args.model
+    for flag in ("retriever", "embedding_model", "embedding_device"):
+        if getattr(args, flag, None):
+            updates[flag] = getattr(args, flag)
     if getattr(args, "no_llm_assessment", False):
         updates["llm_assessment"] = False
     if getattr(args, "stability_runs", None):
@@ -114,7 +120,12 @@ def run(args):
             if settings.embedding_model_path
             else None
         )
-        return EvidenceRepository(path, index)
+        embedder = None
+        if settings.retriever != "tfidf":
+            from .embeddings import SentenceTransformerEmbedder
+
+            embedder = SentenceTransformerEmbedder(settings.embedding_model, settings.embedding_device)
+        return EvidenceRepository(path, index, embedder=embedder, retriever=settings.retriever)
 
     if args.command == "survey-stats":
         import pandas as pd

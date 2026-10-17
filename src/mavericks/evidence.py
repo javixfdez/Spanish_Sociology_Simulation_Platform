@@ -50,9 +50,31 @@ def read_records(path):
     return json.loads(frame.to_json(orient="records", date_format="iso"))
 
 
+RETRIEVERS = ("tfidf", "embed", "hybrid")
+RRF_K = 60
+
+
+def evidence_text(e):
+    """Texto que se indexa: enunciado literal más opciones (sin N.S./N.C.)."""
+    options = "; ".join((e.options or [])[:8])
+    return f"{e.question_text or e.question_summary or ''} | {options}"[:900]
+
+
 class EvidenceRepository:
-    def __init__(self, path="data/processed/evidence.sqlite", semantic_index=None):
+    """Almacén de evidencia con recuperación TF-IDF, por embeddings multilingües o híbrida (RRF).
+
+    Las tres rutas comparten el filtrado previo (excluded_ids, excluded_texts, corte temporal estricto y
+    exclusión de reservados): solo cambia cómo se ordenan los candidatos que lo superan.
+    """
+
+    def __init__(self, path="data/processed/evidence.sqlite", semantic_index=None, embedder=None, retriever="tfidf"):
+        if retriever not in RETRIEVERS:
+            raise ValueError(f"retriever debe ser uno de {RETRIEVERS}")
+        if retriever != "tfidf" and embedder is None:
+            raise ValueError("Los recuperadores embed/hybrid necesitan un embedder")
         self.semantic_index = semantic_index
+        self.embedder = embedder
+        self.retriever = retriever
         self._cache = None
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.path = str(path)
@@ -174,8 +196,28 @@ class EvidenceRepository:
                 "vectorizer": vectorizer,
                 "matrix": matrix,
                 "position": {e.evidence_id: i for i, e in enumerate(records)},
+                "embeddings": None,
             }
+        if self.embedder is not None and self.retriever != "tfidf" and self._cache["embeddings"] is None:
+            self._cache["embeddings"] = self._embeddings(self._cache["records"])
         return self._cache
+
+    def _embeddings(self, records):
+        """Matriz de embeddings normalizados, con caché en disco ligada al modelo y al texto indexado."""
+        texts = [evidence_text(e) for e in records]
+        digest = hashlib.sha256(
+            (getattr(self.embedder, "name", "embedder") + "\n" + "\n".join(texts)).encode("utf-8")
+        ).hexdigest()[:16]
+        cache = Path(self.path).with_suffix(f".emb-{digest}.npy")
+        if cache.exists():
+            return np.load(cache)
+        matrix = np.asarray(self.embedder.encode_passages(texts), dtype=np.float32)
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        matrix = matrix / np.maximum(norms, 1e-9)
+        for old in cache.parent.glob(cache.stem.split(".emb-")[0] + ".emb-*.npy"):
+            old.unlink()
+        np.save(cache, matrix)
+        return matrix
 
     def all(self):
         return list(self._index()["records"])
@@ -192,6 +234,7 @@ class EvidenceRepository:
         topic=None,
         topic_filter=True,
         include_reserved=False,
+        retriever=None,
     ):
         """Búsqueda híbrida. Con ``topic`` se filtra a ese tema y a 'general'; si no hay resultados
         se repite sin filtro y los resultados llevan ``topic_fallback=True``."""
@@ -215,31 +258,51 @@ class EvidenceRepository:
         if not records:
             return []
         as_of = date.fromisoformat(cutoff[:10]) if cutoff else date.today()
+        mode = retriever or self.retriever
         topic = normalize_topic(topic) if topic else None
         general = Topic.GENERAL.value
         if topic and topic != general and topic_filter:
             narrowed = [e for e in records if (e.topic or general) in (topic, general)]
-            hits = self._rank(narrowed, query, limit, target_population, options, topic, as_of) if narrowed else []
+            hits = self._rank(narrowed, query, limit, target_population, options, topic, as_of, mode) if narrowed else []
             if hits:
                 return hits
-            hits = self._rank(records, query, limit, target_population, options, topic, as_of)
+            hits = self._rank(records, query, limit, target_population, options, topic, as_of, mode)
             return [{**h, "topic_fallback": True} for h in hits]
-        return self._rank(records, query, limit, target_population, options, topic, as_of)
+        return self._rank(records, query, limit, target_population, options, topic, as_of, mode)
 
-    def _rank(self, records, query, limit, target_population, options, topic, as_of):
+    def _rank(self, records, query, limit, target_population, options, topic, as_of, mode="tfidf"):
         index = self._index()
-        if index["matrix"] is None:
-            return []
         rows = [index["position"][e.evidence_id] for e in records]
-        similarities = cosine_similarity(index["vectorizer"].transform([query]), index["matrix"][rows])[0]
+        if index["matrix"] is None:
+            tfidf = np.zeros(len(records))
+        else:
+            tfidf = cosine_similarity(index["vectorizer"].transform([query]), index["matrix"][rows])[0]
+        embedded = None
+        if mode != "tfidf":
+            q = np.asarray(self.embedder.encode_queries([query]), dtype=np.float32)
+            q = q / np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-9)
+            embedded = (index["embeddings"][rows] @ q[0]).astype(float)
+        if mode == "tfidf":
+            similarities = tfidf
+        elif mode == "embed":
+            low, high = float(embedded.min()), float(embedded.max())
+            similarities = (embedded - low) / (high - low) if high > low else np.ones_like(embedded)
+        else:  # hybrid: fusión por rango recíproco de TF-IDF y embeddings
+            fused = np.zeros(len(records))
+            for values in (tfidf, embedded):
+                order = np.argsort(-values, kind="stable")
+                ranks = np.empty(len(values), dtype=int)
+                ranks[order] = np.arange(len(values))
+                fused += 1.0 / (RRF_K + ranks + 1)
+            similarities = fused / fused.max() if fused.max() > 0 else fused
         semantic_ranks = {}
         if self.semantic_index is not None:
             hits = self.semantic_index.search(query, limit=max(limit * 4, 20))
             if hits:
                 semantic_ranks = {e_id: rank for rank, e_id in enumerate(hits["ids"][0])}
         results = []
-        for e, similarity in zip(records, similarities):
-            if similarity <= 0 and e.evidence_id not in semantic_ranks:
+        for position, (e, similarity) in enumerate(zip(records, similarities)):
+            if mode == "tfidf" and similarity <= 0 and e.evidence_id not in semantic_ranks:
                 continue
             universe = float(target_population is not None and e.target_population == target_population)
             option_match = len(set(options) & set(e.options)) / max(1, len(set(options) | set(e.options)))
@@ -263,9 +326,10 @@ class EvidenceRepository:
             )
             if e.evidence_id in semantic_ranks:
                 score = 0.7 * score + 0.3 / (1 + semantic_ranks[e.evidence_id])
-            results.append(
-                {"evidence": e.model_dump(), "retrieval_score": score, "cosine_similarity": float(similarity)}
-            )
+            hit = {"evidence": e.model_dump(), "retrieval_score": score, "cosine_similarity": float(tfidf[position])}
+            if embedded is not None:
+                hit["embedding_similarity"] = float(embedded[position])
+            results.append(hit)
         return sorted(results, key=lambda r: (-r["retrieval_score"], r["evidence"]["evidence_id"]))[:limit]
 
 
