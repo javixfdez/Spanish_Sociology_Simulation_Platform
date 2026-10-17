@@ -282,8 +282,10 @@ def build_graph(
         segment_id = state["segment"]["segment_id"]
         question = state["question"]
         options, qtype = question["options"], question["question_type"]
-        ids = [e["evidence_id"] for e in state["evidence"]]
         anchor = state.get("anchor")
+        ids = [e["evidence_id"] for e in state["evidence"]]
+        if anchor and anchor["evidence_id"] not in ids:
+            ids.append(anchor["evidence_id"])  # la ancla es siempre una evidencia citable
         runs = settings.stability_runs
 
         def check(p):

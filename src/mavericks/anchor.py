@@ -53,8 +53,10 @@ def option_mapping(question_options, evidence_options):
 
 
 def select_anchor(hits, question, direct_similarity=0.9, prior_similarity=0.55):
-    """Elige la evidencia que ancla la predicción. Devuelve dict o None."""
-    for hit in sorted(hits, key=lambda h: -h["retrieval_score"]):
+    """Elige la evidencia que ancla la predicción: la de mayor parecido de redacción con opciones equivalentes
+    y, a igualdad, la oleada más reciente (después la mejor puntuación de recuperación). Devuelve dict o None."""
+    candidates = []
+    for hit in hits:
         e = hit["evidence"]
         original = e.get("metadata", {}).get("original_fields", {})
         qtype = original.get("question_type", e.get("metadata", {}).get("question_type"))
@@ -65,17 +67,21 @@ def select_anchor(hits, question, direct_similarity=0.9, prior_similarity=0.55):
             continue
         similarity = question_similarity(question["question"], e["question_text"])
         if similarity >= prior_similarity:
-            return {
-                "mode": "direct" if similarity >= direct_similarity else "prior",
-                "evidence_id": e["evidence_id"],
-                "study_id": str(e["study_id"]),
-                "question_type": qtype,
-                "similarity": round(similarity, 3),
-                "mapping": mapping,
-                "evidence_options": e["options"],
-                "fieldwork_date": e.get("fieldwork_date"),
-            }
-    return None
+            candidates.append((round(similarity, 3), e.get("fieldwork_date") or "", hit["retrieval_score"], hit, mapping, qtype))
+    if not candidates:
+        return None
+    similarity, _, _, hit, mapping, qtype = max(candidates, key=lambda c: (c[0], c[1], c[2]))
+    e = hit["evidence"]
+    return {
+        "mode": "direct" if similarity >= direct_similarity else "prior",
+        "evidence_id": e["evidence_id"],
+        "study_id": str(e["study_id"]),
+        "question_type": qtype,
+        "similarity": similarity,
+        "mapping": mapping,
+        "evidence_options": e["options"],
+        "fieldwork_date": e.get("fieldwork_date"),
+    }
 
 
 def project_to_band(values, low, high, total=1.0):

@@ -60,7 +60,9 @@ def compact_evidence(hits, assessment, anchors=None, limit=MAX_EVIDENCE, keep_id
     """Hasta ``limit`` evidencias compatibles, con su evaluación y el resultado nacional empírico."""
     items = {i["evidence_id"]: i for i in assessment.get("items", [])}
     compact = []
-    for hit in sorted(hits, key=lambda h: -h["retrieval_score"]):
+    # Las evidencias protegidas (la ancla) van siempre primero y no cuentan para el límite de contexto.
+    ordered = sorted(hits, key=lambda h: (h["evidence"]["evidence_id"] not in keep_ids, -h["retrieval_score"]))
+    for hit in ordered:
         e = hit["evidence"]
         item = items.get(e["evidence_id"], {})
         if item.get("relevance") == "incompatible" and e["evidence_id"] not in keep_ids:
@@ -86,6 +88,6 @@ def compact_evidence(hits, assessment, anchors=None, limit=MAX_EVIDENCE, keep_id
             except Exception:  # sin microdatos para esta evidencia: se omite la cifra
                 pass
         compact.append(entry)
-        if limit and len(compact) == limit:
+        if limit and len([c for c in compact if c["evidence_id"] not in keep_ids]) >= limit:
             break
     return compact

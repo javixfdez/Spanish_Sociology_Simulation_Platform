@@ -270,3 +270,53 @@ def test_retrieved_evidence_is_capped_and_keeps_the_anchor(tmp_path, world):
     result = asyncio.run(simulate(Question(question=QUESTION, options=["Sí", "No"]), population, evidence, llm, 4, anchors=store))
     ids = [h["evidence"]["evidence_id"] for h in result["retrieved_evidence"]]
     assert len(ids) <= 4 and "CIS9001_P1" in ids
+
+
+def test_anchor_is_always_in_the_payload_even_if_outranked(tmp_path, world):
+    """Regresión: con muchas preguntas parecidas la ancla quedaba fuera de las 3 evidencias y los segmentos fallaban."""
+    population, evidence, store = world
+    extra = [
+        dict(evidence_id=f"Y{i}", source="t", question_text=f"{QUESTION} variante {i}", options=["Sí", "No"],
+             topic="ia_tecnologia", question_type="single", study_id=str(50 + i), fieldwork_date="2025-02-01")
+        for i in range(8)
+    ]
+    (tmp_path / "y.json").write_text(json.dumps(extra), encoding="utf-8")
+    evidence.ingest(tmp_path / "y.json")
+    seen = []
+
+    class Spy(MockLLMProvider):
+        async def generate(self, schema, payload, temperature=None):
+            if schema is Prediction:
+                seen.append(payload)
+            return await super().generate(schema, payload)
+
+    llm = LLMService(Spy(), Settings(llm_provider="mock", llm_retries=0), tmp_path / "c3")
+    from mavericks import payloads
+
+    original = payloads.compact_evidence
+
+    def outrank(hits, assessment, anchors=None, limit=3, keep_ids=()):
+        # Simula que las variantes superan a la ancla en puntuación
+        boosted = [{**h, "retrieval_score": h["retrieval_score"] + (5 if h["evidence"]["evidence_id"].startswith("Y") else 0)} for h in hits]
+        return original(boosted, assessment, anchors, limit, keep_ids)
+
+    import mavericks.graph as graph_module
+
+    graph_module.compact_evidence = outrank
+    try:
+        result = asyncio.run(simulate(Question(question=QUESTION, options=["Sí", "No"]), population, evidence, llm, 4, anchors=store))
+    finally:
+        graph_module.compact_evidence = original
+    assert result["execution_metadata"]["status"] == "completed", result.get("errors")
+    assert result["anchor_spec"]["mode"] == "direct"
+    assert all(p["anchor"]["mode"] == "direct" for p in result["segment_predictions"].values())
+
+
+def test_select_anchor_prefers_exact_text_then_most_recent_wave():
+    q = {"question": QUESTION, "options": ["Sí", "No"], "question_type": "single"}
+    near = _hit(QUESTION + " variante", ["Sí", "No"], score=9.0, eid="NEAR")
+    old = _hit(QUESTION, ["Sí", "No"], score=1.0, eid="OLD")
+    new = _hit(QUESTION, ["Sí", "No"], score=0.5, eid="NEW")
+    old["evidence"]["fieldwork_date"], new["evidence"]["fieldwork_date"] = "2024-01-01", "2025-06-01"
+    chosen = select_anchor([near, old, new], q)
+    assert chosen["evidence_id"] == "NEW" and chosen["mode"] == "direct"
