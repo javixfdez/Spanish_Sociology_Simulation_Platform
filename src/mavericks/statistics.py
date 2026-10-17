@@ -105,7 +105,8 @@ def js_divergence(first, second):
         or not np.isclose(sum(b), 1)
     ):
         raise ValueError("JSD requiere distribuciones de respuesta única válidas")
-    distance = jensenshannon(a, b, base=2)
+    with np.errstate(invalid="ignore"):
+        distance = jensenshannon(a, b, base=2)
     # Con distribuciones idénticas scipy puede devolver NaN por ruido numérico (raíz de un negativo ínfimo).
     return 0.0 if np.isnan(distance) else float(distance**2)
 
