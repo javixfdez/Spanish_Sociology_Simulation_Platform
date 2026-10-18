@@ -9,7 +9,9 @@ import numpy as np
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from .analog import AnalogConfig, analog_for_question, load_national_table
 from .anchor import constraints_of, project_to_band, question_similarity, select_anchor
+from .calibrate import Blend
 from .context import CUTOFF as CONTEXT_CUTOFF
 from .payloads import build_examples, compact_evidence, compact_segment
 from .population import build_segments
@@ -41,6 +43,7 @@ class SimulationState(TypedDict, total=False):
     population_metadata: dict
     retrieved_evidence: list
     anchor_spec: dict
+    analog_result: dict
     evidence_assessment: dict
     segments: list
     segment_predictions: Annotated[dict, merge_unique]
@@ -70,6 +73,14 @@ def build_graph(
 ):
     filters = retrieval_filters or {}
     settings = service.settings
+    analog_config = AnalogConfig(
+        settings.analog_k, settings.analog_power, settings.analog_min_sim, settings.analog_shrink, settings.analog_sim_mode
+    )
+    national_table = load_national_table(settings.analog_table) if settings.analog else {}
+    blend_model = None
+    blend_info = (calibration or {}).get("blend")
+    if settings.blend and blend_info:
+        blend_model = Blend(tuple(blend_info["edges"]), [tuple(p) for p in blend_info["params"]])
 
     def validate_input(state):
         question = Question.model_validate(state["question"])
@@ -154,12 +165,20 @@ def build_graph(
                 settings.anchor_direct_similarity,
                 settings.anchor_prior_similarity,
             )
+        analog = None
+        if settings.analog and rag:
+            analog = analog_for_question(
+                state["question"], evidence_repository, national_table, analog_config, filters,
+                sources=set(filter(None, settings.sources.split(","))) or None,
+            )
+            analog = {k: v for k, v in analog.items() if k != "weighted"}
         ranked = sorted(found.values(), key=lambda h: -h["retrieval_score"])[: settings.max_evidence_hits]
         if spec and spec["evidence_id"] not in {h["evidence"]["evidence_id"] for h in ranked}:
             ranked = [*ranked[:-1], found[spec["evidence_id"]]]  # el ancla siempre se conserva
         return {
             "retrieved_evidence": ranked,
             "anchor_spec": spec,
+            **({"analog_result": analog} if analog else {}),
             "stages": ["retrieve_sociological_evidence"],
             "warnings": []
             if found
@@ -256,7 +275,19 @@ def build_graph(
         evidence = compact_evidence(state["retrieved_evidence"], assessment, anchors, keep_ids=keep)
         total = sum(s["population_weight"] for s in state["segments"])
         examples = []
-        if settings.few_shot and not (spec and spec["mode"] == "direct"):
+        analog_payload = None
+        analog_state = state.get("analog_result")
+        if analog_state and not (spec and spec["mode"] == "direct"):
+            n_examples = settings.few_shot or 3
+            analog_payload = {
+                "prior": {k: round(v, 4) for k, v in analog_state["prior"].items()},
+                "best_similarity": round(analog_state["best_similarity"], 3),
+                "examples": [
+                    {"question": a.get("question", a["evidence_id"]), "similarity": a["similarity"], "distribution": a.get("distribution")}
+                    for a in analog_state["analogs"][:n_examples]
+                ],
+            }
+        if settings.few_shot and not analog_payload and not (spec and spec["mode"] == "direct"):
             examples = build_examples(
                 state["retrieved_evidence"], anchors, settings.few_shot, exclude_ids=(spec["evidence_id"],) if spec else ()
             )
@@ -292,6 +323,7 @@ def build_graph(
                         "evidence": evidence,
                         "anchor": anchor,
                         **({"examples": examples} if examples else {}),
+                        **({"analog": analog_payload} if analog_payload else {}),
                         **({"context": context} if context else {}),
                     },
                 )
@@ -368,6 +400,14 @@ def build_graph(
                 raise results[0]
             values = [v for v, _ in good]
             mean = {o: float(np.mean([v.probabilities[o] for v in values])) for o in options}
+            blend_info = None
+            analog_in = state.get("analog")
+            if blend_model is not None and analog_in and qtype == "single":
+                # Mezcla calibrada: afilar(w·p_LLM + (1−w)·p_prior, α) con (w, α) según la similitud de la mejor análoga
+                row = {"sim": analog_in["best_similarity"], "p_llm": mean, "p_prior": analog_in["prior"]}
+                w, alpha = blend_model.params[blend_model.bin(row["sim"])]
+                blend_info = {"w": w, "alpha": alpha, "similarity": row["sim"], "llm_mean": mean}
+                mean = blend_model.apply(row)
             first = values[0]
             merged = first.model_copy(
                 update={
@@ -378,6 +418,8 @@ def build_graph(
             )
             check(merged)
             dump = merged.model_dump()
+            if blend_info:
+                dump["blend"] = blend_info
             dump["stability"] = {
                 "runs": len(values),
                 "requested_runs": runs,

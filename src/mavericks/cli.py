@@ -45,6 +45,9 @@ def parser():
             sub.add_argument("--embedding-device", help="cpu o cuda")
             sub.add_argument("--context", action="store_true", help="Añade contexto de actualidad fechado")
             sub.add_argument("--sharpen", action="store_true", help="Aplica el ajuste de nitidez de calibration.json")
+            sub.add_argument("--analog", action="store_true", help="Prior por analogía (y sus ejemplos) en el prompt")
+            sub.add_argument("--blend", action="store_true", help="Mezcla calibrada LLM+prior de calibration.json")
+            sub.add_argument("--calibration-in", help="calibration.json a LEER en backtest (--calibration es de escritura)")
             sub.add_argument("--sources", help="Familias de evidencia permitidas: cis,eurobarometro,ess")
             sub.add_argument("--few-shot", type=int, help="Nº de ejemplos reales en el prompt (0 = apagado)")
             sub.add_argument("--no-llm-assessment", action="store_true", help="Evaluador de evidencia determinista (sin LLM)")
@@ -143,6 +146,7 @@ def parser():
     blend_.add_argument("--shrink", type=float, default=0.0)
     blend_.add_argument("--sim-mode", default="lex")
     blend_.add_argument("--objective", choices=["jsd", "logloss", "mae"], default="jsd")
+    blend_.add_argument("--out", help="Escribe/actualiza la sección blend de este calibration.json")
     rep = commands.add_parser("report-backtest", help="Tablas por modo y tema de un backtest")
     rep.add_argument("--results", required=True)
     rep.add_argument("--title", default="Backtest")
@@ -174,6 +178,10 @@ def run(args):
         updates["llm_provider"] = args.provider
     if getattr(args, "model", None):
         updates["ollama_model"] = args.model
+    if getattr(args, "analog", False):
+        updates["analog"] = True
+    if getattr(args, "blend", False):
+        updates["blend"] = True
     if getattr(args, "sharpen", False):
         updates["sharpen"] = True
     if getattr(args, "context", False):
@@ -317,6 +325,22 @@ def run(args):
         out["official_only"] = compare_variants(official, args.objective)
         if dev:
             out["official_plus_dev_cv"] = compare_variants(official + dev, args.objective)
+        if args.out:
+            from .calibrate import fit as fit_blend_model
+
+            edges = (0.0, 0.5, 1.01)
+            model = fit_blend_model(official + dev, edges, args.objective)
+            target = Path(args.out)
+            calibration = json.loads(target.read_text(encoding="utf-8")) if target.exists() else {}
+            calibration["blend"] = {
+                "edges": list(edges),
+                "params": [list(p) for p in model.params],
+                "objective": args.objective,
+                "fitted_on": {"official": len(official), "dev": len(dev)},
+                "analog_config": {"k": args.k, "power": args.power, "min_sim": args.min_sim, "shrink": args.shrink, "sim_mode": args.sim_mode},
+            }
+            save_json(target, calibration)
+            out["blend_written"] = {"path": str(target), "params": calibration["blend"]["params"]}
         return out
     if args.command == "build-national":
         from .analog import build_national_table
@@ -461,7 +485,10 @@ def run(args):
     anchors = None if args.anchor == "off" else load_anchor_store(settings, args.cis_dir)
     context_store = ContextStore.load(settings.context_path, args.cis_dir or settings.cis_dir) if settings.context else None
     calibration_path = None if args.calibration == "off" else (args.calibration or settings.calibration_path)
-    calibration = load_calibration(calibration_path) if args.command == "simulate" else None
+    if args.command == "simulate":
+        calibration = load_calibration(calibration_path)
+    else:
+        calibration = load_calibration(getattr(args, "calibration_in", None))
     if args.command == "simulate":
         result = asyncio.run(
             simulate(
@@ -505,7 +532,7 @@ def run(args):
                 f.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
 
         results = done + asyncio.run(
-            backtest(cases, repository, evidence, factory, args.segments, anchors=anchors, on_result=keep, context_store=context_store)
+            backtest(cases, repository, evidence, factory, args.segments, anchors=anchors, calibration=calibration, on_result=keep, context_store=context_store)
         )
         result = {"summary": summarize_backtest(results), "results": results}
         if calibration_path:

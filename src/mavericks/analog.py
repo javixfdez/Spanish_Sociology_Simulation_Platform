@@ -123,6 +123,7 @@ def candidates(hits, question_text, options, table, embedder=None):
         out.append(
             {
                 "evidence_id": e["evidence_id"],
+                "question": " ".join(str(e.get("question_text") or "").split())[:220],
                 "source": str(e.get("source", ""))[:20],
                 "date": e.get("fieldwork_date"),
                 "lex": question_similarity(question_text, e.get("question_text") or ""),
@@ -174,11 +175,22 @@ def combine(cands, options, config):
         "weight": total,
         "used": len(scored),
         "best_kind": best[2]["kind"],
-        "analogs": [{"evidence_id": c["evidence_id"], "similarity": round(s, 3), "kind": c["kind"], "source": c["source"]}
+        "analogs": [{"evidence_id": c["evidence_id"], "similarity": round(s, 3), "kind": c["kind"], "source": c["source"],
+                     "question": c.get("question"), "distribution": {k: round(v, 3) for k, v in c["dist"].items()}}
                     for _, s, c in scored],
         "trust": trust,
         "weighted": [(w, c) for w, _, c in scored],
     }
+
+
+def analog_for_question(question, repository, table, config, filters=None, sources=None, pool=40):
+    """Prior por analogía de una pregunta con los mismos filtros de fuga que usa el grafo."""
+    filters = dict(filters or {})
+    options = question["options"]
+    query = f"{question['question']} | " + "; ".join(options[:8])
+    hits = repository.search(query, limit=pool, options=options, topic_filter=False, sources=sources, **filters)
+    cands = candidates(hits, question["question"], options, table, repository.embedder)
+    return combine(cands, options, config)
 
 
 def collect_case(case, repository, table, embedder=None, strict=True, retriever=None, sources=None, pool=40):

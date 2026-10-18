@@ -79,12 +79,20 @@ def _prediction_view(payload):
     view["options"] = keyed
     if isinstance(view.get("question"), dict):
         view["question"]["options"] = keyed
+    analog = view.get("analog")
+    if isinstance(analog, dict) and "prior" in analog:
+        analog["prior"] = {by_option[o]: v for o, v in analog["prior"].items() if o in by_option}
     anchor = view.get("anchor")
     if isinstance(anchor, dict):
         for key in ("prior", "national"):
             if key in anchor:
                 anchor[key] = {by_option[o]: v for o, v in anchor[key].items() if o in by_option}
     view["answer_format"] = "Devuelve o1..oN con la probabilidad de cada opción, explanation y limitations."
+    if view.get("analog"):
+        view["analog_note"] = (
+            "analog.prior es la media de las distribuciones nacionales REALES de las preguntas parecidas (analog.examples), "
+            "ponderada por similitud: parte de ella y desvíate solo si el perfil del segmento o la actualidad lo justifican."
+        )
     if view.get("context"):
         view["context_note"] = (
             "context son hechos recientes anteriores al trabajo de campo de la pregunta (estado de la opinión y "
