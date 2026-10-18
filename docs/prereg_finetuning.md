@@ -19,3 +19,10 @@ Se adopta si la mejora es ≥ 0,5 puntos con el IC 95 % bootstrap POR ESTUDIO en
 **Métricas:** MAE en puntos, IC por estudio, mejoran/empeoran, Wilcoxon, desglose 2 frente a 3 o más opciones y segundos por pregunta.
 **Descriptivo:** error por subgrupo del LLM ajustado frente al método actual de subgrupos (desviaciones empíricas contraídas) en las mismas preguntas.
 Si algo mejora más de 4 puntos sobre el prior, se busca primero una fuga. Los 88 oficiales no se tocan; si se adopta, tendrá su propia evaluación única.
+
+## Anexo (2026-10-18): modelo B y Kaggle
+El modelo B (corte < 2026-04-01) se prepara en paralelo en Kaggle (2×T4, fp16 porque la T4 no admite bf16; resto de la configuración idéntico a a1:
+mismo modelo base y revisión `cdbee75f…`, QLoRA nf4 r=8, alpha=32, lr 1e-4, KL ponderada, barajado al vuelo, máx. 6 subgrupos por pregunta y dimensión, semilla 0).
+**Solo se usará si a1 cumple el criterio prerregistrado arriba.** Si a1 no lo cumple, B se descarta sin evaluarse. Si a1 lo cumple, B tendrá su única evaluación
+prerregistrada sobre los 88 casos oficiales. Diferencias declaradas: fp16 en lugar de bf16, y si las 9,5 h de presupuesto no bastan, se submuestrean solo subgrupos
+(la cifra queda en el status.log de Kaggle). El dataset del paquete se comprueba con assert: sin estudios reservados, sin ESS11, fecha de campo < 2026-04-01.
