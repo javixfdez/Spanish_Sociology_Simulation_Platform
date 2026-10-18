@@ -159,6 +159,8 @@ def combine(cands, options, config):
         s = similarity(c, config.sim_mode)
         if s >= config.min_sim:
             scored.append((s**config.power * weights[c["kind"]], s, c))
+    # A igualdad de peso (p. ej. la misma pregunta en varias oleadas) manda la más reciente
+    scored.sort(key=lambda t: t[2].get("date") or "", reverse=True)
     scored.sort(key=lambda t: -t[0])
     scored = scored[: config.k]
     total = sum(w for w, _, _ in scored)

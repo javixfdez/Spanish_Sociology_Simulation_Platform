@@ -137,6 +137,16 @@ def parser():
     full.add_argument("--min-sim", type=float, default=0.0)
     full.add_argument("--shrink", type=float, default=0.0)
     full.add_argument("--sim-mode", default="lex")
+    nz = commands.add_parser("noise-floor", help="Suelo de ruido de los subgrupos frente a plano, desviaciones empíricas y LLM")
+    nz.add_argument("--cases", nargs="+", required=True)
+    nz.add_argument("--baseline", nargs="+", required=True, help="backtest.json de la línea base (oficial y, si existe, desarrollo)")
+    nz.add_argument("--db", default="data/processed_v2/evidence_v2.sqlite")
+    nz.add_argument("--table", default="data/processed_v2/cis_national.json")
+    nz.add_argument("--cis-dir", default="data/processed")
+    nz.add_argument("--draws", type=int, default=200)
+    nz.add_argument("--direct-k", type=int, default=1, help="Oleadas de la misma pregunta a mezclar en los directos")
+    nz.add_argument("--sources", default="cis")
+    nz.add_argument("--out", required=True)
     blend_ = commands.add_parser("fit-blend", help="Mezcla LLM+prior y nitidez conjuntas, validadas dejando un tema fuera")
     blend_.add_argument("--results", nargs="+", required=True, help="backtest.json oficial (primero) y de desarrollo")
     blend_.add_argument("--analog-cache", nargs="+", required=True)
@@ -254,6 +264,69 @@ def run(args):
             "by_topic": dict(collections.Counter(c["topic"] for c in built)),
             "studies": sorted({c["estudio_id"] for c in built}),
         }
+    if args.command == "noise-floor":
+        import numpy as np
+
+        from .analog import AnalogConfig, collect_case, combine, load_national_table
+        from .anchor import AnchorStore
+        from .noise import subgroup_rows
+        from .noise import summarize as summarize_rows
+
+        configs = {"hard": AnalogConfig(5, 4.0, 0.0, 0.0, "lex"), "direct": AnalogConfig(args.direct_k, 4.0, 0.0, 0.0, "lex")}
+        repo = evidence_repository(args.db)
+        table = load_national_table(args.table)
+        anchors = AnchorStore(args.cis_dir)
+        sources = set(args.sources.split(",")) if args.sources else None
+        base = {r["evidence_id"]: r for path in args.baseline for r in load_results(path) if r["status"] == "completed"}
+        rng = np.random.default_rng(0)
+        rows = []
+        for case in (c for path in args.cases for c in json.loads(Path(path).read_text(encoding="utf-8-sig"))):
+            result_base = base.get(case["evidence_id"])
+            if result_base is None:
+                continue
+            group = "direct" if result_base["anchor_mode"] == "direct" else "hard"
+            # difíciles: modo estricto (texto idéntico excluido); directos: oleadas anteriores de la misma pregunta
+            collected = collect_case(case, repo, table, repo.embedder, group == "hard", sources=sources)
+            result = combine(collected["candidates"], collected["options"], configs[group])
+            options = collected["options"]
+
+            def empirical(dimension, category, result=result, options=options):
+                uniform = np.full(len(options), 1 / len(options))
+                acc, total = np.zeros(len(options)), 0.0
+                for weight, c in result["weighted"]:
+                    dist = c["dist"]
+                    if c.get("microdata") and c.get("study_id"):
+                        spec = {"study_id": c["study_id"], "evidence_id": c["evidence_id"], "mapping": c["mapping"], "question_type": "single"}
+                        try:
+                            dist = anchors.segment_distribution(spec, {dimension: [category]})["probabilities"]
+                        except Exception:
+                            dist = c["dist"]
+                    vector = np.array([dist[o] for o in options], dtype=float)
+                    acc += weight * vector / max(vector.sum(), 1e-12)
+                    total += weight
+                if total <= 0:
+                    return dict(zip(options, uniform))
+                mix = acc / total
+                return dict(zip(options, (result["trust"] * mix + (1 - result["trust"]) * uniform).tolist()))
+
+            llm = result_base.get("predicted_subgroups") or {}
+            predictors = {
+                "flat": lambda d, c, result=result: result["prior"],
+                "empirical": empirical,
+                "llm": lambda d, c, llm=llm: (llm.get(d) or {}).get(c),
+            }
+            for row in subgroup_rows(case, anchors, predictors, rng, args.draws):
+                rows.append({**row, "group": group, "split": case.get("split", "test")})
+        output = {}
+        for group in ("hard", "direct"):
+            part = [r for r in rows if r["group"] == group]
+            with_llm = [r for r in part if r["llm"] is not None]
+            output[group] = {
+                "all_subgroups": summarize_rows(part, ["flat", "empirical"]),
+                "subgroups_the_llm_published": summarize_rows(with_llm, ["flat", "empirical", "llm"]),
+            }
+        save_json(args.out, {"summary": output, "rows": rows})
+        return output
     if args.command == "analog-full":
         import time
 
