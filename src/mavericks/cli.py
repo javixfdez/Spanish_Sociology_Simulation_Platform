@@ -105,6 +105,20 @@ def parser():
     fit.add_argument("--cases", default="data/processed/backtest_cases.json")
     fit.add_argument("--out", default="data/processed/calibration.json")
     fit.add_argument("--seed", type=int, default=0)
+    nat = commands.add_parser("build-national", help="Tabla de distribuciones nacionales del CIS (para análogas)")
+    nat.add_argument("--cis-dir", default="data/processed")
+    nat.add_argument("--out", default="data/processed_v2/cis_national.json")
+    ana = commands.add_parser("analog-eval", help="Prior por analogía sin LLM: calidad por similitud y ajuste por validación cruzada")
+    ana.add_argument("--cases", nargs="+", required=True)
+    ana.add_argument("--db", default="data/processed_v2/evidence_v2.sqlite")
+    ana.add_argument("--table", default="data/processed_v2/cis_national.json")
+    ana.add_argument("--out", required=True, help="Caché de candidatas (JSON)")
+    ana.add_argument("--retriever", choices=["tfidf", "embed", "hybrid"], default="tfidf")
+    ana.add_argument("--embedding-model")
+    ana.add_argument("--sources", help="cis,eurobarometro,ess")
+    ana.add_argument("--previous-waves", action="store_true", help="No excluir el texto idéntico (modo temporal)")
+    ana.add_argument("--reuse", action="store_true", help="Reutilizar la caché de candidatas de --out")
+    ana.add_argument("--tune", action="store_true")
     rep = commands.add_parser("report-backtest", help="Tablas por modo y tema de un backtest")
     rep.add_argument("--results", required=True)
     rep.add_argument("--title", default="Backtest")
@@ -208,6 +222,57 @@ def run(args):
             "by_topic": dict(collections.Counter(c["topic"] for c in built)),
             "studies": sorted({c["estudio_id"] for c in built}),
         }
+    if args.command == "build-national":
+        from .analog import build_national_table
+
+        return {"questions": build_national_table(args.cis_dir, args.out), "out": args.out}
+    if args.command == "analog-eval":
+        from .analog import (
+            AnalogConfig,
+            by_kind,
+            by_similarity,
+            collect_case,
+            default_grid,
+            evaluate,
+            load_national_table,
+            summarize,
+            tune,
+        )
+
+        if args.reuse and Path(args.out).exists():
+            collected = json.loads(Path(args.out).read_text(encoding="utf-8"))
+        else:
+            cases = [c for path in args.cases for c in json.loads(Path(path).read_text(encoding="utf-8-sig"))]
+            repo = evidence_repository(args.db)
+            table = load_national_table(args.table)
+            sources = set(args.sources.split(",")) if args.sources else None
+            collected = [
+                collect_case(c, repo, table, repo.embedder, not args.previous_waves, sources=sources) for c in cases
+            ]
+            save_json(args.out, collected)
+        output = {"cases": len(collected), "by_split": {}}
+        for split in sorted({c["split"] for c in collected}):
+            part = [c for c in collected if c["split"] == split]
+            rows = evaluate(part, AnalogConfig())
+            output["by_split"][split] = {
+                "default": summarize(rows),
+                "by_best_similarity": by_similarity(rows),
+                "by_alignment": {str(k): v for k, v in by_kind(rows).items()},
+                "without_any_analog": sum(1 for c in part if not c["candidates"]),
+            }
+        if args.tune:
+            result = tune(collected, default_grid())
+            output["tuned"] = {
+                "final_config": vars(result["final"]),
+                "cv": result["cv"],
+                "default": result["default"],
+                "in_sample_best": result["in_sample_best"],
+                "by_split_cv": {
+                    s: summarize([r for r in result["held_rows"] if r["split"] == s]) for s in sorted({c["split"] for c in collected})
+                },
+                "cv_by_best_similarity": by_similarity(result["held_rows"]),
+            }
+        return output
     if args.command == "report-backtest":
         raw = json.loads(Path(args.results).read_text(encoding="utf-8"))
         text = build_report(raw["results"] if isinstance(raw, dict) else raw, args.title)
