@@ -49,12 +49,27 @@ def split_validation(frame, share=0.02, seed=0):
     np.random.RandomState(seed).shuffle(studies)
     chosen, count = [], 0
     for s in studies:
+        size = int((frame.study == s).sum())
         if count >= share * len(frame):
             break
+        if chosen and count + size > 1.5 * share * len(frame):
+            continue  # no pasarse mucho del 2 %: se prueba con otro estudio más pequeño
         chosen.append(s)
-        count += int((frame.study == s).sum())
+        count += size
     val = frame.study.isin(chosen)
     return frame[~val].reset_index(drop=True), frame[val].reset_index(drop=True)
+
+
+def fit_budget(train, max_examples, seed=0):
+    """Submuestrea SUBGRUPOS (nunca los nacionales), estratificado por fuente, dimensión y nº de opciones, hasta ``max_examples``."""
+    if len(train) <= max_examples:
+        return train
+    national = train[train.scope == "nacional"]
+    groups = train[train.scope != "nacional"]
+    fraction = max(0.0, (max_examples - len(national)) / len(groups))
+    key = groups.source + "|" + groups.dim.astype(str) + "|" + groups.options.map(len).astype(str)
+    parts = [g.sample(frac=fraction, random_state=seed) for _, g in groups.groupby(key)]
+    return pd.concat([national, *parts]).sort_values("id").reset_index(drop=True)
 
 
 def load_model(adapter=None, trainable=True):
@@ -139,6 +154,8 @@ def main():
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--no-checkpoints", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--target-hours", type=float, default=5.8, help="Si una época no cabe, submuestrea subgrupos hasta que quepa")
+    parser.add_argument("--seconds-per-step", type=float, default=6.3, help="Medido en la prueba corta (micro-lote 8, 4060 portátil)")
     args = parser.parse_args()
     torch.manual_seed(args.seed)
     run = Path("outputs/ft/runs") / args.name
@@ -148,9 +165,12 @@ def main():
     train, val = split_validation(frame, seed=args.seed)
     if args.max_train:
         train = train.sample(min(args.max_train, len(train)), random_state=args.seed).reset_index(drop=True)
+    budget = int(args.target_hours * 3600 / args.seconds_per_step * EFFECTIVE_BATCH)
+    before = len(train)
+    train = fit_budget(train, budget, args.seed)
     total_steps = math.ceil(len(train) / EFFECTIVE_BATCH)
     ckpt_every = max(1, round(0.2 * total_steps))
-    log(status, f"INICIO {args.name} corte {args.cut}: {len(train)} ejemplos de entrenamiento, {len(val)} de validación (por estudio), {total_steps} pasos, micro-lote {args.micro}")
+    log(status, f"INICIO {args.name} corte {args.cut}: {len(train)} ejemplos de entrenamiento (de {before} disponibles; presupuesto {budget}), {len(val)} de validación (por estudio), {total_steps} pasos, micro-lote {args.micro}")
     assert args.cut != "A" or train.date.max() < "2025-07-01"
 
     state_file = run / "state.json"
