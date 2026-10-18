@@ -118,6 +118,7 @@ def main():
         held, chosen = knn.nested_grouped(matrix[rows], studies)
         picked = [predictions[names[rows[chosen[i]]]][ids[i]] for i in range(len(ids))]
         nested[kind] = {"held": held, "chosen": [names[rows[j]] for j in chosen], "pred": picked}
+    data.save(OUT / "task2_preds.pkl", {"ids": ids, "studies": studies, "observed": observed, "knn_now": knn_now, "knn_cand": knn_cand, "mlp": nested["mlp"]["pred"], "ridge": nested["ridge"]["pred"], "n_opts": n_opts})
     best_kind = min(nested, key=lambda k: nested[k]["held"].mean())
     average = [0.5 * np.asarray(a) + 0.5 * np.asarray(b) for a, b in zip(knn_cand, nested[best_kind]["pred"], strict=True)]
     e_avg = errors_of(average)

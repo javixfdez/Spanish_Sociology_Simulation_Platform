@@ -37,3 +37,22 @@ def test_compare_counts_and_table_have_all_columns():
     text = ablation.table({"baseline_v1": reference, "mejor": better})
     assert "mejoran / empeoran" in text and "30 / 0 / 0" in text
     assert "general" in ablation.topic_table({"baseline_v1": reference})
+
+
+def test_wilcoxon_p_value_in_comparison_and_table():
+    # 12 casos que mejoran todos en la misma dirección: p exacto bilateral = 2 / 2**12
+    bases = {f"C{i}": base(i) for i in range(12)}
+    ids = list(bases)
+    reference = ablation.from_results(list(bases.values()), bases, ids)
+    deltas = [0.001 * (i + 1) for i in range(12)]
+    better = ablation.from_results(
+        [{**b, "predicted": {"a": 0.4 + d, "b": 0.4 - d / 2, "c": 0.2 - d / 2}} for b, d in zip(bases.values(), deltas, strict=True)],
+        bases, ids,
+    )
+    cmp_ = ablation.compare_rows(reference, better)
+    assert cmp_["p_value"] == pytest.approx(2 / 2**12)
+    text = ablation.table({"baseline_v1": reference, "mejor": better})
+    assert "Wilcoxon p" in text and "<0,001" in text
+    few = ablation.compare_rows(reference[:5], better[:5])
+    assert few["p_value"] is None
+    assert "n insuficiente" in ablation.table({"baseline_v1": reference[:5], "mejor": better[:5]})

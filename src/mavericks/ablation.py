@@ -16,6 +16,7 @@ from .report import bootstrap_ci, row
 from .sharpen import interval_coverage
 
 TIE = 0.005
+MIN_WILCOXON = 10  # con menos casos pareados el contraste no tiene sentido
 FAST_SECONDS = 2.0  # el modo rápido tarda unos 2 s por pregunta (medido en la interfaz)
 
 
@@ -109,7 +110,13 @@ def compare_rows(base_rows, rows):
     if not len(deltas):
         return None
     low, high = bootstrap_ci(deltas)
+    p_value = None
+    if len(deltas) >= MIN_WILCOXON and np.any(deltas != 0):
+        from scipy.stats import wilcoxon
+
+        p_value = float(wilcoxon(deltas).pvalue)  # contraste pareado sobre el MAE por caso
     return {
+        "p_value": p_value,
         "cases": len(deltas),
         "mean_delta": float(deltas.mean()),
         "ci": (low, high),
@@ -127,7 +134,7 @@ def table(configs, reference="baseline_v1", floors=None):
     """Tabla markdown: error por modo y total (puntos), cobertura IC, s/caso y mejoran/empeoran frente a ``reference``."""
     header = (
         "| Configuración | casos | sin ancla (pp) | prior (pp) | total (pp) | suelo ruido (pp) | cobertura IC 90 % | s/caso "
-        "| mejoran / empeoran / empatan | Δ medio [IC 95 %] (pp) |\n|---|---|---|---|---|---|---|---|---|---|\n"
+        "| mejoran / empeoran / empatan | Δ medio [IC 95 %] (pp) | Wilcoxon p |\n|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     base = configs.get(reference)
@@ -140,11 +147,17 @@ def table(configs, reference="baseline_v1", floors=None):
         cmp_ = compare_rows(base, rows) if base and name != reference else None
         better = f"{cmp_['better']} / {cmp_['worse']} / {cmp_['ties']}" if cmp_ else "—"
         delta = f"{_pp(cmp_['mean_delta'])} [{_pp(cmp_['ci'][0])}, {_pp(cmp_['ci'][1])}]" if cmp_ and cmp_["ci"][0] is not None else "—"
+        if not cmp_:
+            wilcoxon_p = "—"
+        elif cmp_["p_value"] is None:
+            wilcoxon_p = "n insuficiente"
+        else:
+            wilcoxon_p = "<0,001" if cmp_["p_value"] < 0.001 else f"{cmp_['p_value']:.3f}"
         seconds = total["seconds"]
         lines.append(
             f"| {name} | {len(rows)} | {_pp(by_mode['none']['mae'])} (n={by_mode['none']['n']}) | "
             f"{_pp(by_mode['prior']['mae'])} (n={by_mode['prior']['n']}) | {_pp(total['mae'])} | {_pp(total['floor'])} | "
-            f"{'—' if cov is None else f'{100 * cov:.1f} %'} | {'—' if seconds is None else f'{seconds:.0f}'} | {better} | {delta} |"
+            f"{'—' if cov is None else f'{100 * cov:.1f} %'} | {'—' if seconds is None else f'{seconds:.0f}'} | {better} | {delta} | {wilcoxon_p} |"
         )
     return header + "\n".join(lines)
 
