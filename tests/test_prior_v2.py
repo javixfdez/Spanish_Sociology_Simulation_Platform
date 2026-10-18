@@ -93,3 +93,33 @@ def test_featurizer_is_fitted_only_with_training_data():
     assert np.allclose(x.mean(axis=0), 0, atol=1e-6)
     new = f.transform(q[:3], o[:3], extras[:3])
     assert new.shape == (3, 20)
+
+
+def test_study_bootstrap_resamples_studies_not_questions():
+    from mavericks.prior_v2 import bigdev_eval as B
+
+    delta = np.array([-0.02] * 30 + [0.05] * 30)  # un estudio muy a favor y otro muy en contra
+    studies = ["A"] * 30 + ["B"] * 30
+    low, high = B.study_bootstrap(delta, studies, draws=2000)
+    assert low == pytest.approx(-0.02) and high == pytest.approx(0.05)  # con 2 estudios el IC es todo el rango
+    many = [f"S{i}" for i in range(20) for _ in range(3)]
+    low2, high2 = B.study_bootstrap(np.full(60, -0.01), many, draws=500)
+    assert low2 == pytest.approx(-0.01) and high2 == pytest.approx(-0.01)
+
+
+def test_mondrian_bins_merge_and_conformal_radius():
+    from mavericks.prior_v2 import task3
+
+    sims = np.concatenate([np.full(5, 0.1), np.full(40, 0.5), np.full(40, 0.9)])
+    edges = task3.merge_small([0.3, 0.7], sims, minimum=15)
+    assert len(edges) == 1  # el tramo de 5 preguntas se une al contiguo
+    rng = np.random.default_rng(0)
+    rows = [
+        {"study": f"S{i % 5}", "best_sim": float(sims[i % len(sims)]), "n_options": 2,
+         "observed": np.array([0.5, 0.5]) + rng.normal(0, 0.05, 2) * np.array([1, -1])}
+        for i in range(120)
+    ]
+    predictor = lambda r: np.array([0.5, 0.5])  # noqa: E731
+    stats, per_study = task3.leave_one_study_out(rows, predictor, 2)
+    s = task3.summarize(stats)
+    assert 0.8 <= s["global"]["coverage"] <= 1.0 and set(per_study) == {f"S{i}" for i in range(5)}

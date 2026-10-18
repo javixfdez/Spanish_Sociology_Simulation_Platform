@@ -39,7 +39,7 @@ def load_dev_cases(path=DEV_CASES):
 POOL = 40  # tamaño del conjunto de candidatas de cada método de recuperación (como en producción)
 
 
-def collect(cases, repository, table, emb, case_vectors, sources=("cis",), progress=None):
+def collect(cases, repository, table, emb, case_vectors, sources=("cis",), progress=None, strict=True, full_text=None):
     """Candidatas de cada caso con los filtros anti-fuga de ``search`` (corte temporal, sin la propia pregunta, sin reservados).
 
     ``search(keep_zero=True)`` devuelve TODO el almacén ya filtrado. Sobre él se definen tres conjuntos de candidatas:
@@ -54,7 +54,7 @@ def collect(cases, repository, table, emb, case_vectors, sources=("cis",), progr
             f"{case['question']} | " + "; ".join(options[:8]),
             limit=1_000_000,
             excluded_ids=[case["evidence_id"]],
-            excluded_texts=[case["question"]],
+            excluded_texts=[case["question"]] if strict else [],
             cutoff=case["fieldwork_date"],
             options=options,
             topic=case["topic"],  # como en producción: el tema solo bonifica el orden, no filtra
@@ -82,8 +82,17 @@ def collect(cases, repository, table, emb, case_vectors, sources=("cis",), progr
             )
         assert_no_reserved([c["evidence_id"] for c in cands], f"candidatas de {case['evidence_id']}", reserved)
         assert all((c["date"] or "")[:10] < case["fieldwork_date"][:10] for c in cands), "candidata posterior al caso"
+        repeated = None
+        if full_text is not None:  # ¿existe en el pasado la misma pregunta (similitud léxica ≥ 0,90, escala equivalente, mismo ítem)?
+            from ..anchor import same_item
+
+            repeated = any(
+                c["kind"] == "label" and c["lex"] >= 0.90 and same_item(case["question"], full_text.get(c["evidence_id"], ""))
+                for c in cands
+            )
         out.append(
             {
+                "repeated": repeated,
                 **{k: case[k] for k in ("evidence_id", "estudio_id", "topic", "fieldwork_date", "question", "options")},
                 "observed": case["observed_distribution"],
                 "candidates": cands,
