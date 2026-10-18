@@ -208,5 +208,5 @@
 "raw/soledad/eurobarometro/ZA8841_v1-0-0.sav","soledad","encuesta_eurobarometro","EB 101.1 Europa social (campo 07/02-03/03/2024)","2025-03-12","no","22715915"
 "raw/vivienda/eurobarometro/ZA9018_v1-0-0.sav","vivienda","encuesta_eurobarometro","Flash EB 561 Retos urbanos e inversion en ciudades (campo 26/03-08/04/2025)","2026-06-09","no","22607346"
 "raw/general/ess/ESS10SC_e03_2_spss.zip","general","encuesta_ess","ESS ronda 10 autocumplimentado (incluye Espana; campo 2022) ed. 3.2","2025-12-09","no","5228646"
-"raw/general/ess/ESS11_e04_2_stata.zip","general","encuesta_ess","ESS ronda 11 ed. 4.2 Stata (Espana campo 2023). NOTA: ed. 4.2 publicada 2026-07-02; datos de Espana identicos a ed. 4.1 (2026-01-13), unico cambio en Ucrania","2026-01-13","no","12965571"
-"raw/general/ess/ESS11_e04_2_csv.zip","general","encuesta_ess","ESS ronda 11 ed. 4.2 CSV (duplicado del anterior en otro formato)","2026-01-13","no","15071516"
+"raw/general/ess/ESS11_e04_2_stata.zip","general","encuesta_ess","ESS ronda 11 ed. 4.2 (fichero local). EXCLUIDO por regla 30/06/2026: ed. 4.2 publicada 2026-07-02; la fecha 2026-01-13 era de la ed. 4.1, que no tenemos","2026-07-02","no","12965571"
+"raw/general/ess/ESS11_e04_2_csv.zip","general","encuesta_ess","ESS ronda 11 ed. 4.2 (fichero local). EXCLUIDO por regla 30/06/2026: ed. 4.2 publicada 2026-07-02; la fecha 2026-01-13 era de la ed. 4.1, que no tenemos","2026-07-02","no","15071516"

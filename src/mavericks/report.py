@@ -13,6 +13,33 @@ def _mean(values):
     return float(np.mean(values)) if values else None
 
 
+def tvd(p, q):
+    return 0.5 * sum(abs(p[k] - q[k]) for k in q)
+
+
+def entropy(p):
+    values = np.array([max(v, 1e-12) for v in p.values()])
+    values = values / values.sum()
+    return float(-(values * np.log(values)).sum())
+
+
+def simbench(items):
+    """100·(1 − TVD_modelo/TVD_uniforme), con la TVD media de los casos completados."""
+    done = [r for r in items if r["status"] == "completed" and r.get("predicted") and r.get("observed")]
+    if not done:
+        return None
+    model = np.mean([tvd(r["predicted"], r["observed"]) for r in done])
+    uniform = np.mean([tvd(dict.fromkeys(r["observed"], 1 / len(r["observed"])), r["observed"]) for r in done])
+    return float(100 * (1 - model / uniform)) if uniform > 0 else None
+
+
+def entropy_ratio(items):
+    """Entropía media de lo predicho / entropía de lo real (< 1: el modelo concentra más; > 1: reparte de más)."""
+    done = [r for r in items if r["status"] == "completed" and r.get("predicted") and r.get("observed")]
+    ratios = [entropy(r["predicted"]) / entropy(r["observed"]) for r in done if entropy(r["observed"]) > 0]
+    return float(np.mean(ratios)) if ratios else None
+
+
 def row(items):
     done = [r for r in items if r["status"] == "completed"]
     base = [r for r in done if r.get("mae_national_baseline") is not None]
@@ -28,6 +55,8 @@ def row(items):
         "seconds": _mean([r.get("execution_time") for r in items]),
         "beats_uniform": sum(r["mae"] < r["mae_uniform_baseline"] for r in done),
         "beats_national": sum(r["mae"] < r["mae_national_baseline"] for r in base),
+        "simbench": simbench(items),
+        "entropy_ratio": entropy_ratio(items),
     }
 
 
@@ -38,7 +67,8 @@ def _fmt(value, digits=3):
 def markdown_table(results, by="anchor_mode"):
     header = (
         "| Grupo | casos | fallidos | MAE modelo | uniforme | nacional* | modelo en esos | gana a uniforme | "
-        "gana a nacional* | MAE subgrupos | s/caso |\n|---|---|---|---|---|---|---|---|---|---|---|\n"
+        "gana a nacional* | MAE subgrupos | SimBench | H pred/real | s/caso |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     keys = [(k, label) for k, label in MODES] if by == "anchor_mode" else [(t, t) for t in sorted({str(r["topic"]) for r in results})]
@@ -50,20 +80,25 @@ def markdown_table(results, by="anchor_mode"):
         lines.append(
             f"| {label} | {s['n']} | {s['failed']} | {_fmt(s['mae'])} | {_fmt(s['uniform'])} | {_fmt(s['national'])} "
             f"(n={s['national_n']}) | {_fmt(s['model_on_national'])} | {s['beats_uniform']}/{s['n'] - s['failed']} | "
-            f"{s['beats_national']}/{s['national_n']} | {_fmt(s['subgroup_mae'])} | {_fmt(s['seconds'], 0)} |"
+            f"{s['beats_national']}/{s['national_n']} | {_fmt(s['subgroup_mae'])} | {_fmt(s['simbench'], 1)} | "
+            f"{_fmt(s['entropy_ratio'], 2)} | {_fmt(s['seconds'], 0)} |"
         )
     return header + "\n".join(lines)
 
 
 def mode_topic_table(results):
-    header = "| Modo · tema | casos | MAE | uniforme | nacional* | modelo en esos | s/caso |\n|---|---|---|---|---|---|---|\n"
+    header = (
+        "| Modo · tema | casos | MAE | uniforme | nacional* | modelo en esos | SimBench | H pred/real | s/caso |\n"
+        "|---|---|---|---|---|---|---|---|---|\n"
+    )
     lines = []
     for key, label in MODES:
         for topic in sorted({str(r["topic"]) for r in results if r["anchor_mode"] == key}):
             s = row([r for r in results if r["anchor_mode"] == key and str(r["topic"]) == topic])
             lines.append(
                 f"| {label.split(' ')[0]} · {topic} | {s['n']} | {_fmt(s['mae'])} | {_fmt(s['uniform'])} | "
-                f"{_fmt(s['national'])} (n={s['national_n']}) | {_fmt(s['model_on_national'])} | {_fmt(s['seconds'], 0)} |"
+                f"{_fmt(s['national'])} (n={s['national_n']}) | {_fmt(s['model_on_national'])} | {_fmt(s['simbench'], 1)} | "
+                f"{_fmt(s['entropy_ratio'], 2)} | {_fmt(s['seconds'], 0)} |"
             )
     return header + "\n".join(lines)
 

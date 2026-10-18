@@ -45,3 +45,14 @@ def test_sources_filter_toggles_external_evidence(tmp_path):
 
     assert ids() == {"C1", "E1"} and ids(sources={"cis"}) == {"C1"} and ids(sources={"eurobarometro", "ess"}) == {"E1"}
     assert source_family(repo.all()[0]) in {"cis", "eurobarometro"}
+
+
+def test_simbench_and_entropy_ratio():
+    from mavericks.report import entropy_ratio, simbench
+
+    exact = {"status": "completed", "predicted": {"A": 0.7, "B": 0.3}, "observed": {"A": 0.7, "B": 0.3}}
+    uniform = {"status": "completed", "predicted": {"A": 0.5, "B": 0.5}, "observed": {"A": 0.9, "B": 0.1}}
+    assert simbench([exact]) == 100.0 and abs(simbench([uniform])) < 1e-9
+    flat = {"status": "completed", "predicted": {"A": 0.5, "B": 0.5}, "observed": {"A": 0.9, "B": 0.1}}
+    assert entropy_ratio([flat]) > 1.5  # reparte de más
+    assert entropy_ratio([exact]) == 1.0 and simbench([]) is None
