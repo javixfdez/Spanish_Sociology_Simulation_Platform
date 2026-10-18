@@ -78,6 +78,8 @@ def load_model(adapter=None, trainable=True):
     quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)
     model = AutoModelForCausalLM.from_pretrained(BASE, quantization_config=quant, device_map={"": 0}, dtype=torch.bfloat16)
     if adapter is not None:
+        if trainable:
+            model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
         model = PeftModel.from_pretrained(model, adapter, is_trainable=trainable)
     elif trainable:
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
@@ -138,11 +140,52 @@ def gpu_temperature():
         return "?"
 
 
+HOT, HOT_MINUTES, PAUSE_SECONDS = 87, 5, 600
+
+
+def gpu_temp_value():
+    try:
+        return int(subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader"], capture_output=True, text=True).stdout.strip())
+    except (OSError, ValueError):
+        return None
+
+
+class ThermalWatch:
+    """Cada minuto anota la temperatura en status.log; con más de 87 °C durante 5 minutos seguidos pide una pausa de 10 minutos."""
+
+    def __init__(self, status, interval=60):
+        import threading
+
+        self.status, self.interval, self.hot, self.pause_requested = status, interval, 0, threading.Event()
+        self._stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        while not self._stop.wait(self.interval):
+            temp = gpu_temp_value()
+            self.hot = self.hot + 1 if temp is not None and temp > HOT else 0
+            log(self.status, f"TEMP GPU {temp} °C" + (f" (más de {HOT} °C durante {self.hot} min)" if self.hot else ""))
+            if self.hot >= HOT_MINUTES:
+                self.pause_requested.set()
+
+
 def log(path, text):
     line = f"{time.strftime('%H:%M:%S')} {text}"
     print(line, flush=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+def save_state(model, optimizer, run, step, total):
+    model.save_pretrained(run / "adapter")
+    torch.save(optimizer.state_dict(), run / "optimizer.pt")
+    (run / "state.json").write_text(json.dumps({"step": step, "total": total}))
 
 
 def main():
@@ -194,6 +237,9 @@ def main():
     accumulate = EFFECTIVE_BATCH // args.micro
     torch.cuda.reset_peak_memory_stats()
     started, window, window_n = time.time(), 0.0, 0
+    history = []
+    watch = ThermalWatch(status)
+    watch.start()
     for step in range(start_step, total_steps):
         batch = train.iloc[order[step * EFFECTIVE_BATCH : (step + 1) * EFFECTIVE_BATCH]]
         step_loss = 0.0
@@ -208,6 +254,7 @@ def main():
         scheduler.step()
         optimizer.zero_grad(set_to_none=True)
         window, window_n = window + step_loss, window_n + 1
+        history.append(step_loss)
         done = step + 1
         if done % 10 == 0 or done == total_steps:
             per_step = (time.time() - started) / (done - start_step)
@@ -215,14 +262,25 @@ def main():
                         f"VRAM máx {torch.cuda.max_memory_allocated() / 2**30:.2f} GB temp {gpu_temperature()}°C {per_step:.2f} s/paso "
                         f"(época completa ≈ {per_step * total_steps / 3600:.1f} h)")
             window, window_n = 0.0, 0
+        if watch.pause_requested.is_set():
+            save_state(model, optimizer, run, done, total_steps)
+            log(status, f"PAUSA TÉRMICA: más de {HOT} °C durante {HOT_MINUTES} minutos seguidos; estado guardado en el paso {done}; pausa de {PAUSE_SECONDS // 60} min")
+            time.sleep(PAUSE_SECONDS)
+            watch.hot = 0
+            watch.pause_requested.clear()
+            log(status, f"Se reanuda tras la pausa térmica (GPU a {gpu_temp_value()} °C)")
         if not args.no_checkpoints and (done % ckpt_every == 0 or done == total_steps):
-            model.save_pretrained(run / "adapter")
-            torch.save(optimizer.state_dict(), run / "optimizer.pt")
-            state_file.write_text(json.dumps({"step": done, "total": total_steps}))
+            save_state(model, optimizer, run, done, total_steps)
             log(status, f"{args.name} guardado en el paso {done}; pérdida de validación {validation_loss(model, tok, ids, val, micro=args.micro):.4f}")
+    watch.stop()
     if args.no_checkpoints:
         log(status, f"{args.name} prueba corta terminada; pérdida de validación {validation_loss(model, tok, ids, val, limit=200, micro=args.micro):.4f}")
-    log(status, f"FIN {args.name}: {(time.time() - started) / 60:.1f} min")
+    else:
+        final_val = validation_loss(model, tok, ids, val, limit=len(val) or 1, micro=args.micro)
+        final_train = float(np.mean(history[-100:])) if history else float("nan")
+        model.save_pretrained(run / "adapter_final")
+        log(status, f"FIN {args.name} {time.strftime('%Y-%m-%d %H:%M')} pérdida final de entrenamiento {final_train:.4f} (media de los últimos 100 pasos) "
+                    f"pérdida de validación {final_val:.4f}; adaptador final en {run / 'adapter_final'}; {(time.time() - started) / 3600:.2f} h en esta ejecución")
 
 
 if __name__ == "__main__":
