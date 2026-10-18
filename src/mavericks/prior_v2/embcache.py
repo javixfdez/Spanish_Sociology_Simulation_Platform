@@ -67,11 +67,28 @@ def build_query_questions(evidence_path, table_path, out_dir, device="cpu", batc
     return len(items)
 
 
+def build_query_options(evidence_path, table_path, out_dir, dev_cases=(), device="cpu", batch_size=32):
+    """Etiquetas de opción del almacén y de los casos dev codificadas como «query: » (para el prior aprendido)."""
+    from ..embeddings import SentenceTransformerEmbedder
+
+    items = store_items(evidence_path, table_path)
+    labels = sorted(
+        {clean_label(o) for _, _, opts in items for o in opts if clean_label(o)}
+        | {clean_label(o) for c in dev_cases for o in c["options"]}
+    )
+    embedder = SentenceTransformerEmbedder(MODEL, device=device, batch_size=batch_size)
+    np.savez_compressed(
+        Path(out_dir) / "options_query.npz", labels=np.array(labels), matrix=embedder.encode_queries(labels).astype(np.float32)
+    )
+    return len(labels)
+
+
 class EmbCache:
     """Lectura de la caché: vectores de preguntas (por evidence_id) y de opciones (por etiqueta limpia)."""
 
     def __init__(self, directory):
         directory = Path(directory)
+        self.directory = directory
         q = np.load(directory / "questions.npz")
         o = np.load(directory / "options.npz")
         self.q_index = {str(i): k for k, i in enumerate(q["ids"])}
@@ -86,6 +103,13 @@ class EmbCache:
 
     def question(self, evidence_id):
         return self.q[self.q_index[evidence_id]]
+
+    def option_query(self, label):
+        if not hasattr(self, "oq_index"):
+            z = np.load(self.directory / "options_query.npz")
+            self.oq_index = {str(x): k for k, x in enumerate(z["labels"])}
+            self.oq = z["matrix"]
+        return self.oq[self.oq_index[clean_label(label)]]
 
     def question_query(self, evidence_id):
         return self.qq[self.qq_index[evidence_id]]

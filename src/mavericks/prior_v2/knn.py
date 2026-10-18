@@ -34,7 +34,7 @@ def qq_shift(collected):
 class CaseArrays:
     """Candidatas de un caso como arrays para evaluar muchas configuraciones sin volver a recuperar."""
 
-    def __init__(self, case, shift=0.0):
+    def __init__(self, case, shift=0.0, forbid_ordinal_two=False):
         cands = case["candidates"]
         self.evidence_id, self.topic, self.study = case["evidence_id"], case["topic"], case["estudio_id"]
         self.options = case["options"]
@@ -49,7 +49,11 @@ class CaseArrays:
             "e5qp": np.array([c["in_qp"] for c in cands], dtype=bool),
         }
         self.pool["mix"] = self.pool["lex"] | self.pool["e5qq"]
-        self.kind_w = np.array([KIND_WEIGHT[c["kind"]] for c in cands], dtype=float)
+        self.kinds = [c["kind"] for c in cands]
+        self.kind_w = np.array([KIND_WEIGHT[k] for k in self.kinds], dtype=float)
+        if forbid_ordinal_two and len(self.options) == 2:
+            # variante decidida de antemano: con 2 opciones no se acepta la alineación por posición
+            self.kind_w = np.where(np.array(self.kinds) == "ordinal", 0.0, self.kind_w)
         order = sorted({c["date"] or "" for c in cands})
         self.date_rank = np.array([order.index(c["date"] or "") for c in cands], dtype=float)
         self.dist = np.array([[c["dist"][o] for o in self.options] for c in cands], dtype=float).reshape(len(cands), len(self.options))
@@ -58,6 +62,12 @@ class CaseArrays:
         return {
             "lex": self.sim_lex, "e5qq": self.sim_qq, "e5qp": self.sim_qp, "mix": 0.5 * self.sim_lex + 0.5 * self.sim_qq
         }[sim]
+
+    def selected(self, sim, k, power):
+        """Índices de las candidatas que entran en el prior (las k de mayor peso, con peso positivo)."""
+        w = np.where(self.pool[sim], (self.similarity(sim) ** power) * self.kind_w, 0.0)
+        order = np.lexsort((-self.date_rank, -w))[:k]
+        return [int(i) for i in order if w[i] > 0]
 
     def prior(self, sim, k, power):
         n_options = len(self.options)

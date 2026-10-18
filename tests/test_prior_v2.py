@@ -62,3 +62,34 @@ def test_reserved_ids_stop_the_experiment():
     data.assert_no_reserved(["CIS3475_P1"], "casos", reserved)
     with pytest.raises(AssertionError, match="reservados"):
         data.assert_no_reserved(["CIS3475_P1", "CIS3557_P1"], "casos", reserved)
+
+
+def test_learned_features_and_softmax():
+    from mavericks.prior_v2 import learned
+
+    rng = np.random.default_rng(0)
+    q = rng.normal(size=8)
+    o = rng.normal(size=(3, 8))
+    qs, os_, ex = learned.raw_rows(q, o, [False, True, False])
+    assert qs.shape == (3, 8) and os_.shape == (3, 8) and ex.shape == (3, 8)
+    assert ex[:, 1].tolist() == [0.0, 0.5, 1.0]  # posición en la escala
+    assert ex[:, 5].tolist() == [0.0, 1.0, 0.0]  # espontánea
+    _, _, two = learned.raw_rows(q, o[:2], [False, False])
+    assert two[:, 1].tolist() == [0.5, 0.5] and two[:, 7].tolist() == [1.0, 1.0]  # con 2 opciones la posición no informa
+    p = learned.softmax([1.0, 2.0, 3.0])
+    assert p.sum() == pytest.approx(1) and p.argmax() == 2
+    assert learned.logit([0.5])[0] == pytest.approx(0.0)
+
+
+def test_featurizer_is_fitted_only_with_training_data():
+    from mavericks.prior_v2 import learned
+
+    rng = np.random.default_rng(1)
+    q, o = rng.normal(size=(40, 16)), rng.normal(size=(40, 16))
+    extras = rng.normal(size=(40, 8))
+    f = learned.Featurizer(4)
+    x = f.fit(q[:10], o[:10], q, o, extras)
+    assert x.shape == (40, 4 * 3 + 8)
+    assert np.allclose(x.mean(axis=0), 0, atol=1e-6)
+    new = f.transform(q[:3], o[:3], extras[:3])
+    assert new.shape == (3, 20)
