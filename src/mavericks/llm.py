@@ -202,6 +202,20 @@ class MockLLMProvider:
         )
 
 
+def runtime_info(settings):
+    """Versión de Ollama y digest del modelo: se registra en cada resultado para poder atribuir cambios."""
+    base = settings.ollama_base_url.rstrip("/")
+    info = {"ollama_version": None, "model": settings.ollama_model, "model_digest": None}
+    try:
+        info["ollama_version"] = httpx.get(base + "/api/version", timeout=5).json().get("version")
+        for m in httpx.get(base + "/api/tags", timeout=5).json().get("models", []):
+            if m.get("name") == settings.ollama_model:
+                info["model_digest"] = str(m.get("digest", ""))[:12]
+    except (httpx.HTTPError, ValueError):
+        pass
+    return info
+
+
 def check_ollama(settings):
     try:
         response = httpx.get(settings.ollama_base_url.rstrip("/") + "/api/tags", timeout=5)
@@ -237,6 +251,7 @@ class StructuredProvider:
                 reasoning=False,
             )
             self.name = settings.ollama_model
+            self.info = runtime_info(settings)
         else:
             from langchain_openai import ChatOpenAI
 

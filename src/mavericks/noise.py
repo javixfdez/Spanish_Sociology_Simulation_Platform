@@ -68,6 +68,19 @@ def subgroup_rows(case, anchors, predictors, rng, draws=200):
     return rows
 
 
+def case_floors(case, anchors, rng, draws=100):
+    """Suelo de ruido de un caso: error por muestreo del total nacional y medio de sus subgrupos."""
+    frame = case_frame(anchors, case["estudio_id"], case["evidence_id"], case["options"])
+    national = bootstrap_floor(frame.answer.to_numpy(), frame.peso.to_numpy(), case["options"], rng, draws)
+    rows = subgroup_rows(case, anchors, {}, rng, draws)
+    floors = [r["floor"] for r in rows if r["floor"] is not None]
+    return {
+        "national_floor": national,
+        "subgroup_floor": float(np.mean(floors)) if floors else None,
+        "n": int(frame.respondent_uid.nunique()),
+    }
+
+
 def summarize(rows, names):
     out = {"subgroups": len(rows), "cases": len({r["evidence_id"] for r in rows})}
     for key in ("floor", *names):

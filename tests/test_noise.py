@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from mavericks.noise import bootstrap_floor, summarize
+from mavericks.schemas import Settings
 
 
 def _sample(n, p=0.3, seed=0):
@@ -35,3 +36,25 @@ def test_summarize_ignores_missing_values():
     rows = [{"evidence_id": "a", "floor": 0.02, "flat": 0.1, "llm": None}, {"evidence_id": "b", "floor": 0.04, "flat": 0.3, "llm": 0.2}]
     out = summarize(rows, ["flat", "llm"])
     assert out["floor"] == pytest.approx(0.03) and out["flat"] == pytest.approx(0.2) and out["llm"] == 0.2 and out["cases"] == 2
+
+
+def test_runtime_info_records_ollama_version_and_model_digest(monkeypatch):
+    import mavericks.llm as module
+
+    class Resp:
+        def __init__(self, data):
+            self.data = data
+
+        def json(self):
+            return self.data
+
+    def fake_get(url, timeout):
+        if url.endswith("/api/version"):
+            return Resp({"version": "0.99.0"})
+        return Resp({"models": [{"name": "qwen3:8b", "digest": "500a1f067a9f782620b4"}, {"name": "otro", "digest": "zzz"}]})
+
+    monkeypatch.setattr(module.httpx, "get", fake_get)
+    info = module.runtime_info(Settings(llm_provider="ollama", ollama_model="qwen3:8b"))
+    assert info == {"ollama_version": "0.99.0", "model": "qwen3:8b", "model_digest": "500a1f067a9f"}
+    monkeypatch.setattr(module.httpx, "get", lambda *a, **k: (_ for _ in ()).throw(module.httpx.ConnectError("x")))
+    assert module.runtime_info(Settings())["ollama_version"] is None

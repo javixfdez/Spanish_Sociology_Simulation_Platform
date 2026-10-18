@@ -81,6 +81,7 @@ async def backtest(
                 "assessment_fallback": "interpret_evidence:fallback" in result["stages"],
                 "had_evidence": bool(result["retrieved_evidence"]),
                 "execution_time": result["execution_metadata"]["execution_time"],
+                "runtime": result["execution_metadata"].get("runtime"),
                 "llm_latency": _latencies(result["execution_metadata"]["llm_calls"]),
                 "observed": observed,
                 **baseline_fields(result, case, anchors, observed, failed),

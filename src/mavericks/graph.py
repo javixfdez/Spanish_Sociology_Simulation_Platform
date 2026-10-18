@@ -624,6 +624,7 @@ async def simulate(
             "rag": rag,
             "anchors": anchors is not None,
             "context_warnings": getattr(service.provider, "context_warnings", 0),
+            "runtime": getattr(service.provider, "info", None),
         }
     )
     return state

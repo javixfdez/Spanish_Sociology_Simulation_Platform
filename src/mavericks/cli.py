@@ -155,6 +155,11 @@ def parser():
     nz.add_argument("--direct-k", type=int, default=1, help="Oleadas de la misma pregunta a mezclar en los directos")
     nz.add_argument("--sources", default="cis")
     nz.add_argument("--out", required=True)
+    cf = commands.add_parser("case-floors", help="Suelo de ruido (nacional y de subgrupos) de cada caso")
+    cf.add_argument("--cases", nargs="+", required=True)
+    cf.add_argument("--cis-dir", default="data/processed")
+    cf.add_argument("--draws", type=int, default=100)
+    cf.add_argument("--out", required=True)
     blend_ = commands.add_parser("fit-blend", help="Mezcla LLM+prior y nitidez conjuntas, validadas dejando un tema fuera")
     blend_.add_argument("--results", nargs="+", required=True, help="backtest.json oficial (primero) y de desarrollo")
     blend_.add_argument("--analog-cache", nargs="+", required=True)
@@ -290,6 +295,20 @@ def run(args):
         translated = [apply_translation(r, cache) for r in records]
         save_json(args.out, translated)
         return {"records": len(translated), "texts": len(wanted), "translated_now": todo, "out": args.out}
+    if args.command == "case-floors":
+        import numpy as np
+
+        from .anchor import AnchorStore
+        from .noise import case_floors
+
+        anchors = AnchorStore(args.cis_dir)
+        rng = np.random.default_rng(0)
+        floors = {}
+        for case in (c for path in args.cases for c in json.loads(Path(path).read_text(encoding="utf-8-sig"))):
+            floors[case["evidence_id"]] = case_floors(case, anchors, rng, args.draws)
+        save_json(args.out, floors)
+        values = [f["national_floor"] for f in floors.values() if f["national_floor"] is not None]
+        return {"cases": len(floors), "mean_national_floor": float(np.mean(values)), "out": args.out}
     if args.command == "noise-floor":
         import numpy as np
 
