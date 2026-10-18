@@ -33,7 +33,7 @@ def collect(cases, resources, split_of=None, progress=None):
     for i, case in enumerate(cases):
         options = case["options"]
         filters = {"excluded_ids": [case["evidence_id"]], "cutoff": case.get("fieldwork_date")}
-        mode, national, _spec, _groups, _items, _w, similarity = svc._fast(
+        mode, national, _spec, _groups, _items, _w, similarity, _prior = svc._fast(
             resources, case["question"], options, case.get("topic"), 10, svc.DIRECT_SIMILARITY, 0.55, filters
         )
         p = [float(national[o]) for o in options]

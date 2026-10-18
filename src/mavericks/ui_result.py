@@ -51,23 +51,41 @@ def render_header(result):
         )
 
 
+def _pct(value):
+    return "—" if value is None else f"{100 * value:.0f} %"
+
+
 def render_national(result):
     node = result["national"]
     st.subheader("Distribución de respuestas en la población adulta")
-    st.plotly_chart(distribution_bars(node["distribution"], node["interval"], core=node.get("interval_core")), use_container_width=True)
+    st.plotly_chart(distribution_bars(node["distribution"], None, core=node.get("interval_core")), use_container_width=True)
     info = node.get("interval_info")
-    if node["interval"] is not None:
-        if info:
-            st.caption(
-                f"**Rango probable** de cada opción (línea negra, de media ±{info['mean_halfwidth_pp']:.0f} puntos): en la "
-                f"validación el resultado real quedó dentro en 9 de cada 10 opciones ({info['cases']} preguntas). "
-                "La banda gruesa morada es el **rango habitual**: la mitad de las veces el resultado cae dentro."
-            )
-        else:
-            st.caption("Las líneas negras marcan el **rango probable** de cada opción: en 9 de cada 10 casos de validación el resultado real quedó dentro.")
+    if node.get("interval_core") is not None:
+        text = "La banda gruesa es el **rango habitual** de cada opción: la mitad de las veces el resultado real cae dentro"
+        if info and info.get("coverage_50") is not None:
+            text += f" (en preguntas nuevas no vistas cayó dentro el {_pct(info['coverage_50'])} de las veces)"
+        if info and info.get("mean_halfwidth_pp") is not None:
+            text += f"; de media ±{info['mean_halfwidth_pp']:.0f} puntos"
+        st.caption(text + ".")
+    if node.get("interval") is not None:
+        with st.expander("Rango del 90 %"):
+            rows = [
+                {"Opción": o, "Estimación (%)": 100 * node["distribution"][o], "Mínimo (%)": 100 * lo, "Máximo (%)": 100 * hi}
+                for o, (lo, hi) in node["interval"].items()
+            ]
+            st.dataframe(pd.DataFrame(rows).round(1), hide_index=True, use_container_width=True)
+            cover = f" (en preguntas nuevas no vistas: {_pct(info['coverage_90'])})" if info and info.get("coverage_90") is not None else ""
+            st.caption(f"Con este rango el resultado real debería quedar dentro 9 de cada 10 veces{cover}.")
     if result.get("spontaneous"):
         names = ", ".join(f"«{o}»" for o in result["spontaneous"])
         st.caption(f"{names}: {SPONTANEOUS_NOTE}.")
+    for note in result.get("notes", []):
+        st.info(note)
+    used = result.get("prior_usado") or {}
+    if used.get("metodo") == "media_knn_mlp":
+        st.caption("Estimación: media de las preguntas parecidas del CIS y de un modelo aprendido de todas las preguntas anteriores del CIS.")
+    elif used.get("metodo") == "knn":
+        st.caption(f"Estimación basada solo en preguntas parecidas del CIS ({used.get('motivo')}).")
 
 
 def render_subgroups(result, key="sub"):

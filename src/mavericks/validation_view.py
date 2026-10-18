@@ -141,3 +141,65 @@ def points(rows, scale=100):
                 }
             )
     return pd.DataFrame(out)
+
+
+PRIOR_VALIDATION = "outputs/models/prior_validation.json"
+CONFIG_NAMES = {"uniforme": "Reparto uniforme", "knn_actual": "KNN actual", "media_knn_mlp": "Media KNN + modelo aprendido"}
+
+
+def load_prior_validation(path=PRIOR_VALIDATION):
+    file = Path(path)
+    return json.loads(file.read_text(encoding="utf-8")) if file.exists() else None
+
+
+def _ci(delta, ci):
+    return "—" if delta is None else f"{100 * delta:+.1f} [{100 * ci[0]:+.1f}, {100 * ci[1]:+.1f}]"
+
+
+def _p(value):
+    return "—" if value is None else ("<0,001" if value < 0.001 else f"{value:.3f}".replace(".", ","))
+
+
+def prior_table(validation):
+    """Una fila por conjunto y configuración: MAE, Δ frente al KNN con IC por estudio, Wilcoxon, preguntas y estudios."""
+    rows = []
+    for info in validation["sets"].values():
+        cell = info["grupos"]["todas"]
+        for name, entry in cell["configuraciones"].items():
+            rows.append(
+                {
+                    "Conjunto": info["titulo"], "Configuración": CONFIG_NAMES[name], "Error (pp)": 100 * entry["mae"],
+                    "Δ frente al KNN [IC 95 % por estudio]": _ci(entry.get("delta_vs_knn"), entry.get("ci", (0, 0))),
+                    "Wilcoxon p": _p(entry.get("p")) if name != "knn_actual" else "—",
+                    "Preguntas": cell["preguntas"], "Estudios": cell["estudios"],
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def prior_replication(validation):
+    """Mejora de la media sobre el KNN en cada conjunto (para la cifra destacada)."""
+    return [
+        (info["titulo"], info["grupos"]["todas"]["configuraciones"]["media_knn_mlp"]["delta_vs_knn"],
+         info["grupos"]["todas"]["configuraciones"]["media_knn_mlp"]["ci"], info["grupos"]["todas"]["preguntas"])
+        for info in validation["sets"].values()
+    ]
+
+
+def prior_vs_uniform(validation):
+    """Media KNN+modelo frente al reparto uniforme, por número de opciones y conjunto."""
+    rows = []
+    for info in validation["sets"].values():
+        for group in ("2 opciones", "3 o más"):
+            cell = info["grupos"].get(group)
+            if not cell:
+                continue
+            entry = cell["configuraciones"]["media_knn_mlp"]
+            rows.append(
+                {
+                    "Conjunto": info["titulo"], "Preguntas": group + f" ({cell['preguntas']})",
+                    "Uniforme (pp)": 100 * cell["configuraciones"]["uniforme"]["mae"], "Media KNN + modelo (pp)": 100 * entry["mae"],
+                    "Media − uniforme [IC 95 % por estudio]": _ci(entry["delta_vs_uniforme"], entry["ci_vs_uniforme"]),
+                }
+            )
+    return pd.DataFrame(rows)

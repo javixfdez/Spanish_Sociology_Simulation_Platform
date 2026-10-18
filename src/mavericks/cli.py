@@ -103,6 +103,14 @@ def parser():
     fv.add_argument("--cases", nargs="+", default=["data/processed/backtest_cases.json", "data/processed_v2/backtest_cases_dev.json"])
     fv.add_argument("--out", default="outputs/fast_validation.json")
     fv.add_argument("--refit", action="store_true", help="Solo reajusta los rangos con las filas ya guardadas")
+    tp = commands.add_parser("train-prior", help="Entrena una vez el MLP del prior con todo el CIS no reservado (outputs/models)")
+    tp.add_argument("--db", default="data/processed_v2/evidence_v2.sqlite")
+    tp.add_argument("--table", default="data/processed_v2/cis_national.json")
+    tp.add_argument("--emb", default="outputs/prior_v2/emb_cache")
+    tp.add_argument("--out", default="outputs/models")
+    tp.add_argument("--seed", type=int, default=0)
+    cp = commands.add_parser("calibrate-prior", help="Cuantiles de los rangos y tabla de validación del prior (outputs/models)")
+    cp.add_argument("--out", default="outputs/models")
     pt = commands.add_parser("population-targets", help="Objetivos de la ECP (sexo, edad, CCAA) para la página de población")
     pt.add_argument("--raw", default="maverick_data/raw")
     pt.add_argument("--period", default="1 de enero de 2026")
@@ -310,6 +318,14 @@ def run(args):
         payload["chosen"] = "by_mode"
         fastcal.save(args.out, payload)
         return {"cases": len(rows), "cv_by_mode": payload["by_mode"]["cv"], "cv_by_buckets": payload["by_buckets"]["cv"]}
+    if args.command == "train-prior":
+        from .prior_v2 import production
+
+        return production.train(args.db, args.table, args.emb, args.out, seed=args.seed)
+    if args.command == "calibrate-prior":
+        from .prior_v2 import artifacts
+
+        return artifacts.build(args.out)
     if args.command == "population-targets":
         from .population_view import build_targets
 

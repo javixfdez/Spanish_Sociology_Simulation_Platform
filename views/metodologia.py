@@ -37,17 +37,17 @@ st.markdown(
 st.subheader("Reglas")
 st.markdown(
     "- Solo se usa información **anterior** a la fecha del estudio que se predice.\n"
-    "- Si la pregunta ya existe en el CIS, se parte de su **oleada más reciente** y se ajusta con las diferencias reales entre grupos.\n"
-    "- Si solo existe una pregunta parecida, se usa como punto de partida con más incertidumbre.\n"
-    "- Si no existe nada parecido, se promedian las preguntas más cercanas y se indica baja confianza.\n"
-    "- Los intervalos salen de los errores reales medidos en la validación, no de supuestos teóricos.\n"
-    "- Los grupos con pocas entrevistas se acercan al conjunto de la población (reducción jerárquica)."
+    "- Si la pregunta ya existe en el CIS, se parte de su **oleada más reciente** y se ajusta con las diferencias reales entre grupos (modo directo).\n"
+    "- Si es nueva, la estimación es la **media 50/50 de dos predictores**: las preguntas más parecidas del CIS (5 vecinos ponderados por parecido) y un **modelo aprendido** (red pequeña sobre embeddings multilingües e5) entrenado con todas las preguntas anteriores del CIS. Si el modelo no está disponible, se usan solo las parecidas y se indica.\n"
+    "- Los rangos se calibran por separado para preguntas de 2 y de 3 o más opciones: el **rango habitual** (50 %) es el principal y el del 90 % está en un desplegable.\n"
+    "- Los grupos con pocas entrevistas se acercan al conjunto de la población (reducción jerárquica); en preguntas nuevas las diferencias entre grupos se toman de preguntas parecidas, contraídas a la mitad.\n"
+    "- Cada mejora se valida con estudios que el sistema no había visto, con confirmaciones **prerregistradas** (ver «Validación»)."
 )
 
 st.subheader("Limitaciones")
 st.markdown(
     "- Son **estimaciones**; no sustituyen a una encuesta real.\n"
-    "- Para preguntas nuevas el error es mucho mayor que para preguntas repetidas y no se distinguen bien los grupos.\n"
+    "- Para preguntas nuevas el error es mucho mayor que para repetidas; en las de sí/no ningún método se separa del reparto uniforme de forma fiable.\n"
     "- La población sintética refleja variables sociodemográficas, no actitudes individuales.\n"
     "- Las opiniones cambian: una medición antigua puede quedarse desfasada tras un acontecimiento reciente.\n"
     "- El CIS pregunta por teléfono o cara a cara; hay sesgos de respuesta que no corregimos."

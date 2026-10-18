@@ -7,6 +7,8 @@ Presets:
 """
 
 import asyncio
+import json
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +45,7 @@ MODE_LABELS = {"direct": "directo", "prior": "prior", "none": "sin ancla"}
 CONFIDENCE = {"direct": "alta", "prior": "media", "none": "baja"}
 ALPHA = 0.1
 CONTRACTION = 0.5  # fracción de la diferencia empírica de las análogas que se aplica a cada grupo
+TWO_OPTIONS_NOTE = "En preguntas de sí/no sin datos parecidos, el reparto real es difícil de anticipar; tómalo como orientación."
 SUBGROUP_NOTE = "Diferencias estimadas a partir de preguntas parecidas del CIS; confianza baja."
 # Umbral del modo directo validado con el backtest (153 casos) y con pares de preguntas del CIS: ver README
 DIRECT_SIMILARITY = 0.85
@@ -72,6 +75,7 @@ class Paths:
     calibration: str = "outputs/baseline_v1/calibration.json"
     calibration_fallback: str = "data/processed/calibration.json"
     fast_validation: str = "outputs/fast_validation.json"
+    models: str = "outputs/models"
 
 
 @dataclass
@@ -83,6 +87,10 @@ class Resources:
     calibration: dict | None
     fast: dict | None = None
     paths: Paths = field(default_factory=Paths)
+    prior_model: object = None  # MLP de producción (solo lo usa este servicio; el backtest nunca)
+    prior_model_error: str | None = None
+    prior_intervals: dict | None = None
+    prior_validation: dict | None = None
 
 
 def load_resources(paths=None):
@@ -98,6 +106,13 @@ def load_resources(paths=None):
     if not Path(evidence_path).exists():
         raise ServiceError("Falta el almacén de evidencia. Ejecuta ingest-surveys.")
     calibration = load_calibration(paths.calibration) or load_calibration(paths.calibration_fallback)
+    prior_model, prior_error = None, None
+    try:
+        from .prior_v2.production import ProductionPrior
+
+        prior_model = ProductionPrior.load(paths.models)
+    except Exception as exc:  # sin modelo entrenado el prior es el KNN y se indica
+        prior_error = f"No hay modelo del prior aprendido ({type(exc).__name__}); ejecuta mavericks train-prior"
     return Resources(
         PopulationRepository(frame, metadata),
         EvidenceRepository(evidence_path),
@@ -106,7 +121,38 @@ def load_resources(paths=None):
         calibration,
         fastcal.load(paths.fast_validation),
         paths,
+        prior_model,
+        prior_error,
+        _read_json(Path(paths.models) / "prior_intervals.json"),
+        _read_json(Path(paths.models) / "prior_validation.json"),
     )
+
+
+def _read_json(path):
+    path = Path(path)
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+_EMBEDDER = {"obj": None, "error": None}
+_EMBEDDER_LOCK = threading.Lock()
+
+
+def get_embedder():
+    """e5 multilingüe en CPU, cargado una sola vez (singleton). None si no está disponible (se usa el KNN)."""
+    with _EMBEDDER_LOCK:
+        if _EMBEDDER["obj"] is None and _EMBEDDER["error"] is None:
+            try:
+                from .embeddings import SentenceTransformerEmbedder
+                from .prior_v2.embcache import MODEL
+
+                _EMBEDDER["obj"] = SentenceTransformerEmbedder(MODEL, device="cpu", local_files_only=True)
+            except Exception as exc:
+                _EMBEDDER["error"] = f"{type(exc).__name__}: {exc}"
+        return _EMBEDDER["obj"]
+
+
+def embedder_error():
+    return _EMBEDDER["error"]
 
 
 def _radius(errors, alpha=ALPHA):
@@ -135,8 +181,43 @@ def _intervals(distribution, radius):
     return {o: [max(0.0, p - fn(p)), min(1.0, p + fn(p))] for o, p in distribution.items()}
 
 
-def _confidence(calibration, mode, fast_rows=None):
+def _prior_intervals(calib, group, options, national, subgroup_ratio):
+    """Rangos del prior (media KNN+MLP): cuantil por grupo de nº de opciones (2 frente a 3 o más) con la escala de fastcal."""
+    q = calib["groups"][group]
+
+    def at(level):
+        return lambda p: q[level] * float(fastcal.scale(np.asarray(p)))
+
+    radius90, radius50 = at("q90"), at("q50")
+    coverage = calib.get("coverage", {})
+
+    def covered(level):
+        return coverage.get(f"confirmaciones_{level}", {}).get(group, {}).get("cobertura")
+
+    info = {
+        "group": group,
+        "combined": False,
+        "cases": q["preguntas"],
+        "mean_halfwidth_pp": float(np.mean([radius50(national[o]) for o in options]) * 100),
+        "mean_halfwidth_pp_90": float(np.mean([radius90(national[o]) for o in options]) * 100),
+        "coverage_50": covered(50),
+        "coverage_90": covered(90),
+        "calibrated_on": calib.get("calibrada_con"),
+    }
+    return radius90, (lambda p: radius90(p) * subgroup_ratio), radius50, info
+
+
+def _confidence(calibration, mode, fast_rows=None, prior_validation=None, n_options=None):
     """Nivel de confianza por modo y error típico medido para ESE modo (no el global), con su número de casos."""
+    if prior_validation and mode in ("prior", "none"):
+        group = "2 opciones" if n_options == 2 else "3 o más"
+        cell = prior_validation["error_tipico"][group]
+        return {
+            "level": CONFIDENCE[mode],
+            "typical_error": cell["mae"],
+            "backtest_cases": cell["preguntas"],
+            "basis": f"preguntas nuevas de {group} en tres conjuntos no vistos",
+        }
     if fast_rows is not None:
         own = [r["mae"] for r in fast_rows if r["mode"] == mode]
         return {
@@ -296,8 +377,50 @@ def _national_from_segments(resources, options, spec, n_segments):
     return aggregate(segments, predictions, options, "single", evidence_ids=[])
 
 
+def _blend_prior(resources, question, options, knn, enabled):
+    """Media 50/50 KNN + MLP; si el modelo o e5 no están disponibles (o es una validación) devuelve el KNN y lo indica."""
+    knn = {o: float(knn[o]) for o in options}
+
+    def fallback(reason):
+        return knn, {"metodo": "knn", "motivo": reason}
+
+    if not enabled:
+        return fallback("validación con corte temporal: no se usa el modelo de producción")
+    model = resources.prior_model
+    if model is None:
+        return fallback(resources.prior_model_error or "no hay modelo del prior aprendido")
+    if not model.supports(options):
+        return fallback(f"el modelo aprendido cubre de 2 a {model.meta.get('max_options', 7)} opciones")
+    embedder = get_embedder()
+    if embedder is None:
+        return fallback(f"e5 no disponible ({embedder_error()})")
+    try:
+        mlp = model.predict(question, options, embedder)
+    except Exception as exc:
+        return fallback(f"el modelo aprendido falló ({type(exc).__name__})")
+    mixed = {o: 0.5 * knn[o] + 0.5 * float(mlp[i]) for i, o in enumerate(options)}
+    return mixed, {
+        "metodo": "media_knn_mlp",
+        "pesos": {"knn": 0.5, "mlp": 0.5},
+        "modelo": {k: model.meta.get(k) for k in ("trained_at", "cutoff_date", "n_questions")},
+    }
+
+
+def _analog_prior(resources, question, options, topic, filters):
+    """KNN actual (producción): el mismo que se validó, con el tema como bonificación de la búsqueda."""
+    return analog_for_question(
+        {"question": question, "options": options},
+        resources.evidence,
+        resources.table,
+        ANALOG,
+        {**filters, "topic": topic},
+        sources={"cis"},
+    )
+
+
 def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim, filters=None):
     filters = filters or {}
+    use_production_prior = not filters  # con filtros (validación) nunca se usa el modelo entrenado con todo el CIS
     query = f"{question} | " + "; ".join(options[:8])
     found = {}
     for text in (question, query):  # la pregunta literal recupera la misma pregunta en otras oleadas
@@ -319,24 +442,22 @@ def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim
     if spec is not None:
         similarity = spec["similarity"]
         mode = spec["mode"]
-        national = _national_from_segments(resources, options, spec, n_segments)
         items = [{"evidence_id": spec["evidence_id"], "similarity": spec["similarity"]}]
         extras = [
             h["evidence"]["evidence_id"] for h in hits if h["evidence"]["evidence_id"] != spec["evidence_id"]
         ][:4]
         items += [{"evidence_id": e} for e in extras]
         group_specs = [(1.0, spec)]
+        if mode == "direct":
+            national = _national_from_segments(resources, options, spec, n_segments)
+            prior_used = {"metodo": "ancla_directa"}
+        else:
+            analog = _analog_prior(resources, question, options, topic, filters)
+            national, prior_used = _blend_prior(resources, question, options, analog["prior"], use_production_prior)
     else:
         mode = "none"
-        analog = analog_for_question(
-            {"question": question, "options": options},
-            resources.evidence,
-            resources.table,
-            ANALOG,
-            filters,
-            sources={"cis"},
-        )
-        national = analog["prior"]
+        analog = _analog_prior(resources, question, options, topic, filters)
+        national, prior_used = _blend_prior(resources, question, options, analog["prior"], use_production_prior)
         similarity = analog.get("best_similarity")
         items = analog["analogs"]
         group_specs = [
@@ -356,7 +477,7 @@ def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim
             warnings.append(
                 "Las preguntas más parecidas del CIS están poco relacionadas con la tuya: el resultado es poco informativo."
             )
-    return mode, national, spec, group_specs, items, warnings, similarity
+    return mode, national, spec, group_specs, items, warnings, similarity, prior_used
 
 
 def _llm_path(resources, question, options, question_type, settings, service, n_segments):
@@ -422,11 +543,12 @@ def predict(
             for h in result["retrieved_evidence"][:5]
         ]
         group_specs = [(1.0, spec)] if spec else None
+        prior_used = {"metodo": "llm"}
         warnings += [w for w in result.get("warnings", []) if "DEMO" not in w]
     else:
         if question_type != "single":
             raise ServiceError("Sin LLM solo se pueden estimar preguntas de respuesta única.")
-        mode, national, spec, group_specs, items, extra, similarity = _fast(
+        mode, national, spec, group_specs, items, extra, similarity, prior_used = _fast(
             resources,
             question,
             options,
@@ -441,7 +563,18 @@ def predict(
     fast_payload = resources.fast if not used_llm else None
     fast_model = fast_payload["by_buckets" if fast_payload.get("chosen") == "by_buckets" else "by_mode"]["model"] if fast_payload else None
     radius = sub_radius = core_radius = interval_info = None
-    if fast_model:
+    group = "2 opciones" if len(options) == 2 else "3 o más"
+    calib = resources.prior_intervals
+    if not used_llm and mode in ("prior", "none") and calib and group in calib["groups"]:
+        _, block = select_stratum(calibration, mode, min_cases=1)
+        ratio = 1.0
+        if block:
+            sub_overall = _subgroup_radius(calibration, mode)
+            base = _radius(block["option_errors"])
+            ratio = max(1.0, sub_overall / base) if sub_overall and base else 1.0
+        radius, sub_radius, core_radius, interval_info = _prior_intervals(calib, group, options, national, ratio)
+        fast_model = None
+    elif fast_model:
         _, block = select_stratum(calibration, mode, min_cases=1)
         ratio = 1.0
         if block:
@@ -449,17 +582,20 @@ def predict(
             base = _radius(block["option_errors"])
             ratio = max(1.0, sub_overall / base) if sub_overall and base else 1.0
         radius, sub_radius, core_radius, interval_info = _fast_intervals(fast_model, mode, options, national, ratio)
-    if radius is None and not fast_model:
+    if radius is None and not fast_model and interval_info is None:
         _, block = select_stratum(calibration, mode)
         radius = _radius(block["option_errors"]) if block else None
         sub_radius = _subgroup_radius(calibration, mode)
     if radius is None:
         warnings.append("Sin calibración suficiente: no se muestra el rango probable.")
-    if interval_info and interval_info["combined"]:
+    if interval_info and interval_info.get("combined"):
         warnings.append(
             "Hay pocas preguntas de validación de este tipo (prior); el rango probable se calcula junto con las preguntas "
             "sin equivalente en el CIS, por lo que es más amplio."
         )
+    notes = []
+    if len(options) == 2 and mode in ("prior", "none"):
+        notes.append(TWO_OPTIONS_NOTE)
     evidence = _evidence_entries(resources.evidence, resources.table, items)
     subgroups = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius)
     return {
@@ -471,7 +607,11 @@ def predict(
         "mode": mode,
         "mode_label": MODE_LABELS[mode],
         "explanation": _explain(mode, evidence),
-        "confidence": _confidence(calibration, mode, fast_payload["rows"] if fast_payload else None),
+        "confidence": _confidence(
+            calibration, mode, fast_payload["rows"] if fast_payload else None, resources.prior_validation, len(options)
+        ),
+        "prior_usado": prior_used,
+        "notes": notes,
         "national": {
             "distribution": {o: float(national[o]) for o in options},
             "interval": _intervals({o: float(national[o]) for o in options}, radius),

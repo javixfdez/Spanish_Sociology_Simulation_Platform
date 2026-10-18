@@ -839,6 +839,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+embed = [
+    { name = "sentence-transformers" },
+]
 external = [
     { name = "langchain-openai" },
 ]
@@ -874,10 +877,11 @@ requires-dist = [
     { name = "pyreadstat", marker = "extra == 'spss'", specifier = ">=1.2" },
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "scipy", specifier = ">=1.14" },
+    { name = "sentence-transformers", marker = "extra == 'embed'", specifier = ">=3" },
     { name = "sentence-transformers", marker = "extra == 'semantic'", specifier = ">=3" },
     { name = "streamlit", specifier = ">=1.40" },
 ]
-provides-extras = ["semantic", "spss", "external"]
+provides-extras = ["semantic", "embed", "spss", "external"]
 
 [package.metadata.requires-dev]
 dev = [

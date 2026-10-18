@@ -5,7 +5,7 @@ import streamlit as st
 
 from .llm import LLMService, check_ollama, create_provider
 from .schemas import Settings
-from .service import ServiceError, load_resources
+from .service import ServiceError, get_embedder, load_resources
 
 PRESET_LABELS = {
     "recomendado": "Recomendado (estadística + modelo de lenguaje si está disponible)",
@@ -48,6 +48,12 @@ def ollama_ready(base_url, model, timeout=2.0):
 @st.cache_resource(show_spinner="Cargando población y datos del CIS…")
 def cached_resources():
     return load_resources()
+
+
+@st.cache_resource(show_spinner="Cargando el modelo de lenguaje e5 (solo la primera vez)…")
+def warm_embedder():
+    """Carga e5 una sola vez por proceso (singleton de service.py); devuelve el modelo o None si no está disponible."""
+    return get_embedder()
 
 
 def get_resources():

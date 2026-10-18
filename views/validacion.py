@@ -39,6 +39,36 @@ st.caption(
     "Se mide dejando cada pregunta fuera al calcular su rango."
 )
 
+prior = view.load_prior_validation()
+if prior:
+    st.subheader("Validación con datos no vistos")
+    st.markdown(
+        "Para las preguntas **nuevas** (sin ninguna parecida en el pasado) la demo usa la **media de las preguntas parecidas del CIS y de un "
+        "modelo aprendido** de todas las preguntas anteriores. Así se comprobó, con tres conjuntos de preguntas y estudios distintos:"
+    )
+    cols = st.columns(3)
+    for col, (title, delta, ci, n) in zip(cols, view.prior_replication(prior), strict=True):
+        col.metric(title.split(" (")[0], f"{100 * delta:+.1f} puntos", help=f"IC 95 % por estudio [{100 * ci[0]:+.1f}, {100 * ci[1]:+.1f}]; {n} preguntas")
+    st.caption(
+        "Mejora de la media frente a usar solo las preguntas parecidas (error en puntos porcentuales; negativo = mejor). "
+        "La mejora se repite en los tres conjuntos."
+    )
+    st.dataframe(view.prior_table(prior).round(1), hide_index=True, use_container_width=True)
+    st.markdown("**Frente al reparto uniforme**, por número de opciones:")
+    st.dataframe(view.prior_vs_uniform(prior).round(1), hide_index=True, use_container_width=True)
+    st.info(
+        "Honestidad: frente al reparto uniforme la mejora es clara en preguntas de 3 o más opciones; en las de sí/no ningún método "
+        "se separa del uniforme de forma fiable."
+    )
+    with st.expander("Cómo se validó (protocolo)"):
+        st.markdown(
+            "1. Los ajustes se eligieron con un conjunto de desarrollo grande (1.460 preguntas de 2025-07 a 2026-03), prediciendo cada pregunta solo con lo anterior a su fecha y sin su estudio.\n"
+            "2. La media se confirmó con una comparación **prerregistrada** (fijada en git antes de ejecutarla) en estudios no vistos de 2025-01 a 2025-06: mejora de 2,4 puntos.\n"
+            "3. Una segunda mejora propuesta (usar solo el modelo aprendido en preguntas de sí/no) se probó en estudios de 2024-07 a 2024-12 y **no se confirmó**; se descartó.\n"
+            "4. Una variante que parecía ganar en 44 casos dejó de ganar al ampliar el conjunto («maldición del ganador»): por eso se exigen confirmaciones externas.\n"
+            "5. Los intervalos de confianza se calculan remuestreando estudios completos, porque las preguntas de un mismo estudio están correlacionadas."
+        )
+
 st.subheader("Qué configuración respalda lo que ves en la demo")
 st.markdown(
     "La demo usa por defecto el **modo rápido sin LLM**: su validación es la fila «Modo rápido sin LLM». "

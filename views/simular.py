@@ -10,7 +10,7 @@ from mavericks.service import (
     suggest_options,
 )
 from mavericks.topics import TOPICS
-from mavericks.ui_common import PRESET_LABELS, get_resources, llm_service, ollama_ready, setup
+from mavericks.ui_common import PRESET_LABELS, get_resources, llm_service, ollama_ready, setup, warm_embedder
 from mavericks.ui_result import render, render_coverage
 
 setup()
@@ -68,6 +68,7 @@ if st.button("Analizar pregunta", type="primary"):
     st.session_state.pop("result", None)
     try:
         resources = get_resources()
+        warm_embedder()
         service, notice = llm_service(preset, model)
         if notice:
             st.info(notice)
