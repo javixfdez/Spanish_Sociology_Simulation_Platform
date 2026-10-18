@@ -50,16 +50,16 @@ def render_national(result):
 def render_subgroups(result, key="sub"):
     st.subheader("Por grupos de población")
     subgroups = result["subgroups"]
-    if result["mode"] == "none":
-        st.info(
-            "Para preguntas sin equivalente en el CIS no podemos distinguir entre grupos: "
-            "todos reciben el mismo reparto que el total."
-        )
+    if result.get("subgroup_note"):
+        st.info(result["subgroup_note"])
     names = {k: v["label"] for k, v in subgroups.items()}
     left, right = st.columns([2, 3])
     dimension = left.selectbox("Dimensión", list(names), format_func=names.get, key=f"{key}_dim")
     view = right.radio(
-        "Vista", ["Barras apiladas", "Mapa de calor", "Tabla con intervalos"], horizontal=True, key=f"{key}_view"
+        "Vista",
+        ["Barras apiladas", "Mapa de calor", "Tabla con intervalos"],
+        horizontal=True,
+        key=f"{key}_view",
     )
     groups = subgroups[dimension]["groups"]
     options = result["options"]
@@ -70,14 +70,18 @@ def render_subgroups(result, key="sub"):
     else:
         table = batch.subgroup_frame(result, dimension).rename(
             columns={
-                "grupo": "Grupo", "opcion": "Opción", "porcentaje": "%", "ic90_min": "IC 90 % mín.",
-                "ic90_max": "IC 90 % máx.", "peso_poblacion": "% de la población",
+                "grupo": "Grupo",
+                "opcion": "Opción",
+                "porcentaje": "%",
+                "ic90_min": "IC 90 % mín.",
+                "ic90_max": "IC 90 % máx.",
+                "peso_poblacion": "% de la población",
             }
         )
         option = st.selectbox("Opción", options, key=f"{key}_opt")
         shown = table[table["Opción"] == option].drop(columns=["dimension"])
         st.dataframe(shown.round(1), hide_index=True, use_container_width=True)
-    if result["mode"] != "none":
+    if result["mode"] == "direct":
         st.caption(
             "Los grupos con pocas entrevistas en el CIS se acercan al conjunto de la población "
             "para no sacar conclusiones de muestras pequeñas."
@@ -95,7 +99,10 @@ def render_evidence(result):
             st.write(item["question"])
             if item["distribution"]:
                 frame = pd.DataFrame(
-                    {"Opción": list(item["distribution"]), "%": [v * 100 for v in item["distribution"].values()]}
+                    {
+                        "Opción": list(item["distribution"]),
+                        "%": [v * 100 for v in item["distribution"].values()],
+                    }
                 )
                 st.dataframe(frame.round(1), hide_index=True, use_container_width=True)
 
@@ -103,7 +110,9 @@ def render_evidence(result):
 def render_downloads(result, key="dl"):
     left, right, _ = st.columns([1, 1, 3])
     left.download_button("Descargar CSV", batch.to_csv(result), "resultado.csv", "text/csv", key=f"{key}_csv")
-    right.download_button("Descargar JSON", batch.to_json(result), "resultado.json", "application/json", key=f"{key}_json")
+    right.download_button(
+        "Descargar JSON", batch.to_json(result), "resultado.json", "application/json", key=f"{key}_json"
+    )
 
 
 def render(result, key="res"):

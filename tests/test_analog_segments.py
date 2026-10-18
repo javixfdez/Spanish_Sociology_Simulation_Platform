@@ -56,3 +56,22 @@ def test_predict_reproduces_the_total_and_flat_mode_has_no_group_differences(tmp
     flat = predict(result, ["Sí", "No"], repo, None, n_segments=3, dimensions=["grupo_edad"], deviations=False)
     assert {round(g["Sí"], 6) for g in flat["subgroups"]["grupo_edad"].values()} == {0.5}
     assert np.isclose(sum(flat["national"].values()), 1)
+
+
+class DeviationAnchors:
+    def segment_distribution(self, spec, constraints):
+        young = "18-34" in constraints.get("grupo_edad", [])
+        p = 0.8 if young else 0.4
+        return {"probabilities": {"Sí": p, "No": 1 - p}, "national": {"Sí": 0.5, "No": 0.5}}
+
+
+def test_group_estimates_contract_and_rake_to_total():
+    from mavericks.analog_segments import group_estimates
+
+    shares = {"grupo_edad": {"18-34": 0.4, "35+": 0.6}}
+    total = {"Sí": 0.6, "No": 0.4}
+    half = group_estimates([(1.0, {})], ["Sí", "No"], shares, DeviationAnchors(), total, 0.5)["grupo_edad"]
+    full = group_estimates([(1.0, {})], ["Sí", "No"], shares, DeviationAnchors(), total, 1.0)["grupo_edad"]
+    assert 0.4 * half["18-34"]["Sí"] + 0.6 * half["35+"]["Sí"] == pytest.approx(0.6, abs=1e-6)
+    assert half["18-34"]["Sí"] > half["35+"]["Sí"]
+    assert half["18-34"]["Sí"] - half["35+"]["Sí"] < full["18-34"]["Sí"] - full["35+"]["Sí"]

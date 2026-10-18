@@ -76,3 +76,34 @@ def predict(result, options, population, anchors, n_segments=10, dimensions=None
         "national": aggregate(segments, predictions, options_list, "single", evidence_ids=[]),
         "subgroups": subgroup_distributions(segments, predictions, options_list, "single", evidence_ids=[]),
     }
+
+
+def group_estimates(weighted_specs, options, shares, anchors, total, contraction=0.5):
+    """Distribución por categoría de cada dimensión desde las diferencias empíricas de preguntas análogas.
+
+    ``weighted_specs``: [(peso, spec)] con el spec de ``AnchorStore.segment_distribution``. Para cada categoría se
+    mide cuánto se aparta de la distribución nacional de la análoga, se mezclan esas diferencias, se aplica solo
+    ``contraction`` (0,5 = la mitad) a ``total`` y se hace raking dentro de cada dimensión para que la media
+    ponderada por población reproduzca ``total``.
+    ``shares``: {dimensión: {categoría: peso poblacional}}.
+    """
+    goal = np.array([total[o] for o in options], dtype=float)
+    goal = goal / goal.sum()
+    norm = sum(w for w, _ in weighted_specs) or 1.0
+    out = {}
+    for dimension, categories in shares.items():
+        distributions = {}
+        for category in categories:
+            deviation = np.zeros(len(options))
+            for weight, spec in weighted_specs:
+                try:
+                    estimate = anchors.segment_distribution(spec, {dimension: [category]})
+                except Exception:  # sin microdatos utilizables para esta categoría
+                    continue
+                deviation += (weight / norm) * np.array(
+                    [estimate["probabilities"][o] - estimate["national"][o] for o in options]
+                )
+            vector = np.clip(goal + contraction * deviation, 1e-6, None)
+            distributions[category] = dict(zip(options, (vector / vector.sum()).tolist(), strict=True))
+        out[dimension] = rake(distributions, categories, dict(zip(options, goal.tolist(), strict=True)))
+    return out

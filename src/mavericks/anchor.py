@@ -34,6 +34,17 @@ def question_similarity(a, b):
     return max(jaccard, difflib.SequenceMatcher(None, ta, tb).ratio())
 
 
+def battery_item(text):
+    """Ítem entre corchetes de las preguntas de batería ("¿Y está Ud. viviendo? [Con su cónyuge]"), normalizado."""
+    return norm(" ".join(re.findall(r"\[([^\]]*)\]", text or "")))
+
+
+def same_item(a, b):
+    """Falso si las dos preguntas comparten enunciado pero miden ítems distintos de una batería."""
+    item_a, item_b = battery_item(a), battery_item(b)
+    return item_a == item_b or question_similarity(item_a, item_b) >= 0.6
+
+
 def option_mapping(question_options, evidence_options):
     """Opciones de la pregunta -> etiquetas de la evidencia, o None si no son equivalentes.
 
@@ -52,7 +63,7 @@ def option_mapping(question_options, evidence_options):
     return mapping
 
 
-def select_anchor(hits, question, direct_similarity=0.9, prior_similarity=0.55):
+def select_anchor(hits, question, direct_similarity=0.9, prior_similarity=0.55, item_guard=True):
     """Elige la evidencia que ancla la predicción: la de mayor parecido de redacción con opciones equivalentes
     y, a igualdad, la oleada más reciente (después la mejor puntuación de recuperación). Devuelve dict o None."""
     candidates = []
@@ -66,6 +77,8 @@ def select_anchor(hits, question, direct_similarity=0.9, prior_similarity=0.55):
         if mapping is None:
             continue
         similarity = question_similarity(question["question"], e["question_text"])
+        if item_guard and not same_item(question["question"], e["question_text"]):
+            continue  # mismo enunciado, otro ítem de la batería: no es la misma pregunta
         if similarity >= prior_similarity:
             candidates.append((round(similarity, 3), e.get("fieldwork_date") or "", hit["retrieval_score"], hit, mapping, qtype))
     if not candidates:

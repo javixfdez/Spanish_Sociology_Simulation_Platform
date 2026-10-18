@@ -15,6 +15,7 @@ import numpy as np
 
 from . import categories as cat
 from .analog import AnalogConfig, analog_for_question, load_national_table
+from .analog_segments import group_estimates
 from .anchor import AnchorStore, constraints_of, select_anchor
 from .evidence import EvidenceRepository
 from .population import PopulationLoader, PopulationRepository, build_segments
@@ -40,6 +41,10 @@ _ORDER = {
 MODE_LABELS = {"direct": "directo", "prior": "prior", "none": "sin ancla"}
 CONFIDENCE = {"direct": "alta", "prior": "media", "none": "baja"}
 ALPHA = 0.1
+CONTRACTION = 0.5  # fracción de la diferencia empírica de las análogas que se aplica a cada grupo
+SUBGROUP_NOTE = "Diferencias estimadas a partir de preguntas parecidas del CIS; confianza baja."
+# Umbral del modo directo validado con el backtest (153 casos) y con pares de preguntas del CIS: ver README
+DIRECT_SIMILARITY = 0.85
 # Configuración del prior por analogía elegida por validación cruzada (analog-eval)
 ANALOG = AnalogConfig(k=5, power=4.0, min_sim=0.0, shrink=0.0, sim_mode="lex")
 
@@ -71,7 +76,10 @@ class Resources:
 
 def load_resources(paths=None):
     paths = paths or Paths()
-    for label, path in (("la población sintética", paths.population), ("los microdatos del CIS", paths.cis_dir)):
+    for label, path in (
+        ("la población sintética", paths.population),
+        ("los microdatos del CIS", paths.cis_dir),
+    ):
         if not Path(path).exists():
             raise ServiceError(f"Faltan {label} ({path}). Genéralos con etl-population y etl-cis.")
     frame, metadata = PopulationLoader().load(paths.population)
@@ -179,30 +187,44 @@ def _population_share(frame, dimension, category):
     return float(frame.loc[mask, "peso"].sum() / frame["peso"].sum())
 
 
-def _subgroups(resources, options, spec, flat, radius):
-    """Distribución por categoría de cada dimensión (microdatos de la análoga/ancla o reparto plano)."""
+def _subgroups(resources, options, mode, spec, group_specs, national, radius):
+    """Distribución por categoría de cada dimensión.
+
+    Directo: microdatos de la pregunta repetida. Prior y sin ancla: diferencias empíricas de las preguntas análogas,
+    contraídas a la mitad hacia el total y con raking para que cuadren con él (ver ``group_estimates``).
+    """
     frame = resources.population.frame
-    out = {}
+    shares, labels = {}, {}
     for dimension, label in SUBGROUP_DIMENSIONS.items():
-        if dimension not in frame:
-            continue
-        categories = [c for c in _ORDER[dimension] if c in set(frame[dimension].dropna())]
+        if dimension in frame:
+            present = set(frame[dimension].dropna())
+            shares[dimension] = {
+                c: _population_share(frame, dimension, c) for c in _ORDER[dimension] if c in present
+            }
+            labels[dimension] = label
+    estimated = None
+    if mode != "direct" and group_specs:
+        estimated = group_estimates(group_specs, options, shares, resources.anchors, national, CONTRACTION)
+    out = {}
+    for dimension, categories in shares.items():
         groups = {}
-        for category in categories:
+        for category, share in categories.items():
             n_cis = None
-            if spec is not None:
+            if mode == "direct" and spec is not None:
                 estimate = resources.anchors.segment_distribution(spec, {dimension: [category]})
                 distribution = {o: float(estimate["probabilities"][o]) for o in options}
                 n_cis = estimate["finest"]["n"] if estimate["finest"]["level"] != "nacional" else 0
+            elif estimated is not None:
+                distribution = estimated[dimension][category]
             else:
-                distribution = dict(flat)
+                distribution = {o: float(national[o]) for o in options}
             groups[category] = {
                 "distribution": distribution,
                 "interval": _intervals(distribution, radius),
-                "population_share": _population_share(frame, dimension, category),
+                "population_share": share,
                 "n_cis": n_cis,
             }
-        out[dimension] = {"label": label, "groups": groups}
+        out[dimension] = {"label": labels[dimension], "groups": groups}
     return out
 
 
@@ -222,9 +244,13 @@ def _national_from_segments(resources, options, spec, n_segments):
 
 def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim):
     query = f"{question} | " + "; ".join(options[:8])
-    hits = resources.evidence.search(
-        query, limit=40, options=options, topic=topic, topic_filter=False, sources={"cis"}
-    )
+    found = {}
+    for text in (question, query):  # la pregunta literal recupera la misma pregunta en otras oleadas
+        for hit in resources.evidence.search(
+            text, limit=40, options=options, topic=topic, topic_filter=False, sources={"cis"}
+        ):
+            found.setdefault(hit["evidence"]["evidence_id"], hit)
+    hits = list(found.values())
     spec = select_anchor(
         hits, {"question": question, "options": options, "question_type": "single"}, direct_sim, prior_sim
     )
@@ -237,7 +263,7 @@ def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim
             h["evidence"]["evidence_id"] for h in hits if h["evidence"]["evidence_id"] != spec["evidence_id"]
         ][:4]
         items += [{"evidence_id": e} for e in extras]
-        flat = None
+        group_specs = [(1.0, spec)]
     else:
         mode = "none"
         analog = analog_for_question(
@@ -247,13 +273,26 @@ def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim
             ANALOG,
             sources={"cis"},
         )
-        national, flat = analog["prior"], analog["prior"]
+        national = analog["prior"]
         items = analog["analogs"]
-        if not analog["analogs"] or analog["best_similarity"] < 0.15:
-            warnings.append(
-                "No hay preguntas realmente parecidas en el CIS: el resultado es poco informativo."
+        group_specs = [
+            (
+                weight,
+                {
+                    "study_id": c["study_id"],
+                    "evidence_id": c["evidence_id"],
+                    "mapping": c["mapping"],
+                    "question_type": "single",
+                },
             )
-    return mode, national, spec, flat, items, warnings
+            for weight, c in analog["weighted"]
+            if c.get("microdata") and c.get("study_id")
+        ]
+        if not analog["analogs"] or analog["best_similarity"] < 0.45:
+            warnings.append(
+                "Las preguntas más parecidas del CIS están poco relacionadas con la tuya: el resultado es poco informativo."
+            )
+    return mode, national, spec, group_specs, items, warnings
 
 
 def _llm_path(resources, question, options, question_type, settings, service, n_segments):
@@ -314,18 +353,18 @@ def predict(
             {"evidence_id": h["evidence"]["evidence_id"], "similarity": None}
             for h in result["retrieved_evidence"][:5]
         ]
-        flat = national if spec is None else None
+        group_specs = [(1.0, spec)] if spec else None
         warnings += [w for w in result.get("warnings", []) if "DEMO" not in w]
     else:
         if question_type != "single":
             raise ServiceError("Sin LLM solo se pueden estimar preguntas de respuesta única.")
-        mode, national, spec, flat, items, extra = _fast(
+        mode, national, spec, group_specs, items, extra = _fast(
             resources,
             question,
             options,
             topic,
             n_segments,
-            settings.anchor_direct_similarity,
+            min(settings.anchor_direct_similarity, DIRECT_SIMILARITY),
             settings.anchor_prior_similarity,
         )
         warnings += extra
@@ -337,9 +376,7 @@ def predict(
     if radius is None:
         warnings.append("Sin calibración suficiente: no se muestran intervalos.")
     evidence = _evidence_entries(resources.evidence, resources.table, items)
-    subgroups = _subgroups(resources, options, spec if mode != "none" else None, flat or national, sub_radius)
-    if mode == "none":
-        warnings.append("Sin pregunta equivalente en el CIS, los grupos reciben el mismo reparto.")
+    subgroups = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius)
     return {
         "question": question,
         "options": options,
@@ -356,6 +393,7 @@ def predict(
             "radius": radius,
         },
         "subgroups": subgroups,
+        "subgroup_note": None if mode == "direct" else SUBGROUP_NOTE,
         "evidence": evidence,
         "warnings": warnings,
         "seconds": time.monotonic() - started,

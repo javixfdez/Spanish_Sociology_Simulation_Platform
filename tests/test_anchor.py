@@ -358,3 +358,13 @@ def test_few_shot_adds_real_examples_only_when_enabled_and_not_for_direct(tmp_pa
     assert example["distribution"]["Sí"] == 0.8 and example["n"] == 1000 and example["source"] == "CIS"
     direct_result, direct_payloads = _run_with_settings(tmp_path, world, QUESTION, few_shot=3)
     assert direct_payloads == [] and direct_result["anchor_spec"]["mode"] == "direct"
+
+
+def test_battery_items_are_not_the_same_question():
+    stem = "¿Y está Ud. viviendo? "
+    q = {"question": stem + "[Con su cónyuge o pareja]", "options": ["Sí", "No"], "question_type": "single"}
+    other_item = _hit(stem + "[Con sus hijos/as]", ["Sí", "No"])
+    same_item_hit = _hit(stem + "[Con su cónyuge o pareja]", ["Sí", "No"])
+    assert select_anchor([other_item], q) is None
+    assert select_anchor([other_item], q, item_guard=False) is not None  # sin la guarda sería un falso ancla
+    assert select_anchor([other_item, same_item_hit], q)["evidence_id"] == same_item_hit["evidence"]["evidence_id"]

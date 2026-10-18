@@ -148,6 +148,12 @@ Páginas (en español, sin parámetros técnicos a la vista; todo lo avanzado es
 | `recomendado` | Solo si Ollama está disponible; si no, cae al rápido con un aviso | Estadística + modelo de lenguaje como ajuste |
 | `llm_completo` | Sí (Ollama con el modelo configurado) | Pipeline completo con agentes por segmento |
 
+Modo directo en la interfaz: umbral de similitud 0,85 (el pipeline con LLM conserva 0,90) y guarda de baterías (un ítem
+distinto entre corchetes no cuenta como la misma pregunta). Con los 153 casos (reservados + desarrollo) el MAE de los directos
+sigue en 0,019 (n=69 frente a 68) sin ningún falso directo; por debajo de 0,80 empiezan a entrar preguntas que no lo son. En
+prior y sin ancla, los subgrupos usan las diferencias empíricas de las preguntas análogas, contraídas un 50 % hacia el total
+y con raking para que cuadren con él.
+
 Los ejemplos de la barra lateral están precalculados en `data/examples/ejemplos_demo.json` (modo rápido) para que la demo no
 espere; se regeneran con `uv run mavericks build-examples [--preset recomendado]`. Los objetivos del INE de la página de
 población se generan una vez con `uv run mavericks population-targets`.
