@@ -75,6 +75,16 @@ class Methodology(BaseModel):
     warnings: list[str] = []
 
 
+class OptionSuggestion(BaseModel):
+    options: list[str] = Field(min_length=2, max_length=6)
+
+
+class ScopeJudgement(BaseModel):
+    category: Literal["opinion", "hechos", "prediccion", "persona_concreta", "poblacion_distinta", "no_es_pregunta"]
+    reason: str = ""
+    reformulation: str = ""
+
+
 class AssessmentItem(BaseModel):
     evidence_id: str
     relevance: Literal["direct", "indirect", "incompatible"]

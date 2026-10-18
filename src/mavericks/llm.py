@@ -12,7 +12,7 @@ from typing import Literal, Protocol
 import httpx
 from pydantic import BaseModel, Field, create_model
 
-from .schemas import Assessment, Methodology, Narrative, Prediction
+from .schemas import Assessment, Methodology, Narrative, OptionSuggestion, Prediction, ScopeJudgement
 from .topics import classify_topic
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,13 @@ ROLES = {
     "Diferencia al segmento solo cuando la evidencia lo respalde; evita estereotipos.",
     "Translation": "Rol: traductor. Traduce al español de España cada texto de la lista, en el mismo orden y sin añadir "
     "ni omitir elementos; conserva los números y las siglas y no expliques nada.",
+    "OptionSuggestion": "Rol: diseñador de cuestionarios del CIS. Propón entre 2 y 6 opciones de respuesta cerradas, "
+    "mutuamente excluyentes y ordenadas, en español y con el estilo del CIS. Usa como referencia las escalas de "
+    "reference_scales cuando encajen. No incluyas N.S., N.C. ni «No procede».",
+    "ScopeJudgement": "Rol: revisor de encuestas. Decide si la pregunta pide una opinión, actitud o comportamiento de la "
+    "población adulta residente en España (opinion) o si es otra cosa: hechos objetivos, predicción de sucesos futuros, "
+    "una persona concreta, otra población distinta, o algo que no es una pregunta. Si no es opinión, propón en "
+    "reformulation una pregunta de opinión equivalente.",
     "Narrative": "Rol: analista. Interpreta sin alterar ninguna cifra; señala límites y advertencias.",
 }
 
@@ -196,6 +203,10 @@ class MockLLMProvider:
                 evidence_ids=[],
                 limitations=["Sin validez sociológica"],
             )
+        if schema is OptionSuggestion:
+            return OptionSuggestion(options=["Mucho", "Bastante", "Poco", "Nada"])
+        if schema is ScopeJudgement:
+            return ScopeJudgement(category="opinion", reason="DEMO / SYNTHETIC")
         return Narrative(
             summary="DEMO / SYNTHETIC: ejecución técnica, no encuesta ni predicción validada",
             limitations=["Fiabilidad predictiva todavía no calibrada"],

@@ -148,6 +148,15 @@ Páginas (en español, sin parámetros técnicos a la vista; todo lo avanzado es
 | `recomendado` | Solo si Ollama está disponible; si no, cae al rápido con un aviso | Estadística + modelo de lenguaje como ajuste |
 | `llm_completo` | Sí (Ollama con el modelo configurado) | Pipeline completo con agentes por segmento |
 
+Flujo de Simular: el usuario solo escribe la pregunta. «Analizar pregunta» clasifica su cobertura (respaldada por el CIS,
+basada en preguntas parecidas, sin datos comparables o fuera de alcance; en este caso no se simula y se sugiere una
+reformulación) y propone las opciones, editables, por este orden: las oficiales del CIS si la pregunta existe, la escala de
+una pregunta parecida, Sí/No o A favor/En contra si es cerrada, y por último el modelo de lenguaje (si hay) o una escala
+estándar del CIS (acuerdo, preocupación, valoración, frecuencia, confianza). Nunca se incluyen N.S./N.C.
+El modo prior exige además que la pregunta del CIS cubra al menos el 60 % de las palabras con contenido de la tuya y que el
+tema coincida (salvo cobertura casi total). Sobre los 6 casos prior del backtest el error medio pasa de 0,093 a 0,081
+(los rechazados caen al prior por analogía) y el MAE de los directos no cambia (0,019).
+
 Modo directo en la interfaz: umbral de similitud 0,85 (el pipeline con LLM conserva 0,90) y guarda de baterías (un ítem
 distinto entre corchetes no cuenta como la misma pregunta). Con los 153 casos (reservados + desarrollo) el MAE de los directos
 sigue en 0,019 (n=69 frente a 68) sin ningún falso directo; por debajo de 0,80 empiezan a entrar preguntas que no lo son. En

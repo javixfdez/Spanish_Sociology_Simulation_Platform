@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import assist
 from . import categories as cat
 from .analog import AnalogConfig, analog_for_question, load_national_table
 from .analog_segments import group_estimates
@@ -51,6 +52,14 @@ ANALOG = AnalogConfig(k=5, power=4.0, min_sim=0.0, shrink=0.0, sim_mode="lex")
 
 class ServiceError(ValueError):
     """Error de uso con un mensaje comprensible para quien utiliza la interfaz."""
+
+
+class OutOfScopeError(ServiceError):
+    """La pregunta no se puede responder con encuestas de opinión; ``coverage`` explica por qué y cómo reformularla."""
+
+    def __init__(self, coverage):
+        super().__init__(f"{coverage['explanation']} {coverage['reformulation']}".strip())
+        self.coverage = coverage
 
 
 @dataclass
@@ -252,7 +261,12 @@ def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim
             found.setdefault(hit["evidence"]["evidence_id"], hit)
     hits = list(found.values())
     spec = select_anchor(
-        hits, {"question": question, "options": options, "question_type": "single"}, direct_sim, prior_sim
+        hits,
+        {"question": question, "options": options, "question_type": "single"},
+        direct_sim,
+        prior_sim,
+        prior_guard=assist.PRIOR_GUARD,
+        topic=topic,
     )
     warnings = []
     if spec is not None:
@@ -339,6 +353,9 @@ def predict(
     resources = resources or load_resources()
     topic = topic if topic in TOPICS else classify_topic(question)
     warnings = []
+    scope = assist.scope_check(question, service if preset != "rapido_sin_llm" else None)
+    if not scope["in_scope"]:
+        raise OutOfScopeError(assist.coverage_card("none", None, scope))
 
     if preset == "llm_completo" or (preset == "recomendado" and service is not None):
         if service is None:
@@ -392,9 +409,22 @@ def predict(
             "interval": _intervals(national, radius),
             "radius": radius,
         },
+        "coverage": assist.coverage_card(mode, evidence[0] if evidence else None),
         "subgroups": subgroups,
         "subgroup_note": None if mode == "direct" else SUBGROUP_NOTE,
         "evidence": evidence,
         "warnings": warnings,
         "seconds": time.monotonic() - started,
     }
+
+
+def suggest_options(question, resources=None, service=None, topic=None):
+    """Opciones sugeridas para una pregunta escrita sin opciones (ver ``assist.suggest_options``)."""
+    resources = resources or load_resources()
+    return assist.suggest_options(question, resources, service, topic if topic in TOPICS else classify_topic(question))
+
+
+def assess_coverage(question, resources=None, service=None, topic=None):
+    """Clasificación previa: respaldada, basada en parecidas, sin datos comparables o fuera de alcance."""
+    resources = resources or load_resources()
+    return assist.assess_coverage(question, resources, service, topic if topic in TOPICS else classify_topic(question))

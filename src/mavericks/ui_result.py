@@ -13,6 +13,20 @@ def _points(value):
     return "—" if value is None else f"{value * 100:.1f} puntos"
 
 
+COVERAGE_ICON = {"respaldada": "🟢", "parecidas": "🟡", "sin_datos": "🟠", "fuera_de_alcance": "🔴"}
+
+
+def render_coverage(card):
+    """Tarjeta de cobertura: si la pregunta se puede responder con las encuestas y con qué respaldo."""
+    extra = ""
+    if card.get("reformulation"):
+        extra = f"<br><b>Cómo reformularla:</b> {card['reformulation']}"
+    st.markdown(
+        f"<div class='card'><b>{COVERAGE_ICON[card['category']]} {card['label']}</b><br>{card['explanation']}{extra}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_header(result):
     left, right = st.columns([3, 2])
     with left:
@@ -117,6 +131,8 @@ def render_downloads(result, key="dl"):
 
 def render(result, key="res"):
     st.markdown(f"### {result['question']}")
+    if result.get("coverage"):
+        render_coverage(result["coverage"])
     render_header(result)
     for warning in result["warnings"]:
         st.warning(warning)

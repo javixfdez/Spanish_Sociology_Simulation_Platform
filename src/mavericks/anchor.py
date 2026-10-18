@@ -63,7 +63,39 @@ def option_mapping(question_options, evidence_options):
     return mapping
 
 
-def select_anchor(hits, question, direct_similarity=0.9, prior_similarity=0.55, item_guard=True):
+_FUNCTION_WORDS = {
+    "a", "al", "algo", "ante", "como", "con", "cual", "cuales", "de", "del", "desde", "e", "el", "en", "es", "esta",
+    "este", "la", "las", "le", "lo", "los", "me", "mi", "muy", "o", "para", "por", "que", "se", "si", "su", "sus",
+    "tiene", "un", "una", "uno", "usted", "ud", "y", "ha", "han", "su", "sobre", "mas", "menos", "cree", "diria",
+}
+
+
+def _content_words(text):
+    words = re.findall(r"[a-z0-9]+", norm(re.sub(r"\[.*?\]", " ", text or "")))
+    return {w.rstrip("s") for w in words if w not in _FUNCTION_WORDS and len(w) > 2}
+
+
+def content_coverage(question, evidence_text):
+    """Fracción de las palabras con contenido de la pregunta que aparecen en la pregunta del CIS."""
+    wanted = _content_words(question)
+    return len(wanted & _content_words(evidence_text)) / len(wanted) if wanted else 0.0
+
+
+def prior_compatible(question_text, topic, evidence, guard):
+    """Guarda del modo prior: la pregunta del CIS debe cubrir el contenido de la tuya y, salvo que lo cubra casi del todo,
+    ser del mismo tema (la etiqueta de tema del almacén es la carpeta del estudio: es ruidosa)."""
+    coverage = content_coverage(question_text, evidence.get("question_text"))
+    if coverage < guard.get("coverage", 0):
+        return False
+    other = evidence.get("topic")
+    if guard.get("topic_match") and topic and other not in (topic, "general", None) and topic != "general":
+        return coverage >= guard.get("topic_override", 0.7)
+    return True
+
+
+def select_anchor(
+    hits, question, direct_similarity=0.9, prior_similarity=0.55, item_guard=True, prior_guard=None, topic=None
+):
     """Elige la evidencia que ancla la predicción: la de mayor parecido de redacción con opciones equivalentes
     y, a igualdad, la oleada más reciente (después la mejor puntuación de recuperación). Devuelve dict o None."""
     candidates = []
@@ -79,6 +111,8 @@ def select_anchor(hits, question, direct_similarity=0.9, prior_similarity=0.55, 
         similarity = question_similarity(question["question"], e["question_text"])
         if item_guard and not same_item(question["question"], e["question_text"]):
             continue  # mismo enunciado, otro ítem de la batería: no es la misma pregunta
+        if prior_guard and similarity < direct_similarity and not prior_compatible(question["question"], topic, e, prior_guard):
+            continue
         if similarity >= prior_similarity:
             candidates.append((round(similarity, 3), e.get("fieldwork_date") or "", hit["retrieval_score"], hit, mapping, qtype))
     if not candidates:
