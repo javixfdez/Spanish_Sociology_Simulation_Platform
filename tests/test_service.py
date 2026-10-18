@@ -70,3 +70,22 @@ def test_fast_real():
             assert sum(group["distribution"].values()) == pytest.approx(1, abs=1e-6)
     assert out["evidence"]
     assert out["seconds"] >= 0
+
+
+def test_confidence_uses_the_error_of_the_mode_used():
+    from mavericks.service import _confidence
+
+    rows = [{"mode": "direct", "mae": 0.02}, {"mode": "direct", "mae": 0.03}, {"mode": "none", "mae": 0.2}]
+    direct = _confidence(None, "direct", rows)
+    none = _confidence(None, "none", rows)
+    assert direct["typical_error"] == pytest.approx(0.025) and direct["backtest_cases"] == 2
+    assert none["typical_error"] == pytest.approx(0.2) and none["backtest_cases"] == 1
+    assert "sin ancla" in none["basis"]
+
+
+def test_spontaneous_options_are_flagged():
+    from mavericks.service import _spontaneous
+
+    spec = {"mapping": {"Buena": "Buena", "Regular": "(NO LEER) Regular"}}
+    assert _spontaneous(spec, ["Buena", "Regular"]) == ["Regular"]
+    assert _spontaneous(None, ["Buena"]) == []

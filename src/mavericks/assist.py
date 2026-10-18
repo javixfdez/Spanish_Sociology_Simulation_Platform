@@ -10,12 +10,14 @@ import re
 
 from .anchor import (
     _NON_SUBSTANTIVE,
+    RECENCY_WINDOW,
     content_coverage,
     norm,
     option_key,
     prior_compatible,
     question_similarity,
     same_item,
+    series_key,
 )
 from .schemas import OptionSuggestion, ScopeJudgement
 
@@ -72,6 +74,23 @@ def clean_options(options):
     return out
 
 
+SPONTANEOUS_NOTE = "opción no leída por el entrevistador en el CIS"
+
+
+def is_spontaneous(option):
+    return bool(re.match(r"^\(NO LEER\)", str(option).strip(), flags=re.I))
+
+
+def display_label(option):
+    """Etiqueta para el usuario: sin la marca interna «(NO LEER)»."""
+    return re.sub(r"^\(NO LEER\)\s*", "", str(option), flags=re.I).strip()
+
+
+def spontaneous_labels(options):
+    """Etiquetas limpias de las opciones que el CIS no lee al entrevistado (espontáneas)."""
+    return [display_label(o) for o in options or [] if is_spontaneous(o)]
+
+
 def find_reference(resources, question, topic=None):
     """Pregunta del CIS más parecida (ignora las opciones, que aún no se conocen) y modo que le correspondería."""
     found = {}
@@ -79,7 +98,7 @@ def find_reference(resources, question, topic=None):
         question, limit=40, topic=topic, topic_filter=False, sources={"cis"}
     ):
         found.setdefault(hit["evidence"]["evidence_id"], hit)
-    best = None
+    scored = []
     for hit in found.values():
         e = hit["evidence"]
         original = e.get("metadata", {}).get("original_fields", {})
@@ -93,11 +112,23 @@ def find_reference(resources, question, topic=None):
         if len(options) < 2:
             continue
         similarity = question_similarity(question, text)
-        key = (similarity, e.get("fieldwork_date") or "")
-        if best is None or key > best["key"]:
-            best = {"key": key, "evidence": e, "similarity": similarity, "options": options}
-    if best is None:
+        scored.append({"evidence": e, "similarity": similarity, "options": options})
+    if not scored:
         return None
+    top = max(c["similarity"] for c in scored)
+    # entre candidatas de parecido casi igual (diferencia < 0,05) manda la oleada más reciente
+    pool = [c for c in scored if top - c["similarity"] < RECENCY_WINDOW]
+    best = max(pool, key=lambda c: (c["evidence"].get("fieldwork_date") or "", c["similarity"]))
+    key = series_key(best["evidence"]["evidence_id"])
+    later = [
+        c
+        for c in scored
+        if key and series_key(c["evidence"]["evidence_id"]) == key
+        and (c["evidence"].get("fieldwork_date") or "") > (best["evidence"].get("fieldwork_date") or "")
+    ]
+    if later:  # misma variable del CIS en una oleada posterior
+        newest = max(later, key=lambda c: c["evidence"].get("fieldwork_date") or "")
+        best = {**newest, "similarity": best["similarity"]}
     e = best["evidence"]
     if best["similarity"] >= DIRECT_SIMILARITY:
         mode = "direct"
@@ -109,6 +140,7 @@ def find_reference(resources, question, topic=None):
         "mode": mode,
         "similarity": round(best["similarity"], 3),
         "options": best["options"],
+        "spontaneous": spontaneous_labels(e.get("options")),
         "evidence_id": e["evidence_id"],
         "study_id": str(e["study_id"]),
         "fieldwork_date": e.get("fieldwork_date"),
@@ -160,6 +192,7 @@ def suggest_options(question, resources, service=None, topic=None, reference=Non
         return {
             "options": options, "source": source, "explanation": explanation,
             "reference": info if with_ref else None, "warnings": warnings,
+            "spontaneous": [o for o in options if o in (ref or {}).get("spontaneous", [])] if with_ref else [],
         }
 
     if ref and ref["mode"] == "direct":

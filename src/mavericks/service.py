@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import assist
+from . import assist, fastcal
 from . import categories as cat
 from .analog import AnalogConfig, analog_for_question, load_national_table
 from .analog_segments import group_estimates
@@ -71,6 +71,7 @@ class Paths:
     cis_dir: str = "data/processed"
     calibration: str = "outputs/baseline_v1/calibration.json"
     calibration_fallback: str = "data/processed/calibration.json"
+    fast_validation: str = "outputs/fast_validation.json"
 
 
 @dataclass
@@ -80,6 +81,7 @@ class Resources:
     anchors: AnchorStore
     table: dict
     calibration: dict | None
+    fast: dict | None = None
     paths: Paths = field(default_factory=Paths)
 
 
@@ -102,6 +104,7 @@ def load_resources(paths=None):
         AnchorStore(paths.cis_dir),
         load_national_table(paths.national_table),
         calibration,
+        fastcal.load(paths.fast_validation),
         paths,
     )
 
@@ -125,22 +128,64 @@ def _subgroup_radius(calibration, mode):
 
 
 def _intervals(distribution, radius):
+    """Rango probable por opción; ``radius`` es un número o una función de la probabilidad de la opción."""
     if radius is None:
         return None
-    return {o: [max(0.0, p - radius), min(1.0, p + radius)] for o, p in distribution.items()}
+    fn = radius if callable(radius) else (lambda p: radius)
+    return {o: [max(0.0, p - fn(p)), min(1.0, p + fn(p))] for o, p in distribution.items()}
 
 
-def _confidence(calibration, mode):
-    """Nivel de confianza por modo y error típico medido en el backtest para ese modo."""
-    name, block = select_stratum(calibration, mode)
-    typical = block["mae"] if block else None
-    n_cases = block["n_cases"] if block else 0
+def _confidence(calibration, mode, fast_rows=None):
+    """Nivel de confianza por modo y error típico medido para ESE modo (no el global), con su número de casos."""
+    if fast_rows is not None:
+        own = [r["mae"] for r in fast_rows if r["mode"] == mode]
+        return {
+            "level": CONFIDENCE[mode],
+            "typical_error": float(np.mean(own)) if own else None,
+            "backtest_cases": len(own),
+            "basis": f"modo {MODE_LABELS[mode]}",
+        }
+    block = (calibration or {}).get("by_anchor_mode", {}).get(mode)
     return {
         "level": CONFIDENCE[mode],
-        "typical_error": typical,
-        "backtest_cases": n_cases,
-        "basis": name,
+        "typical_error": block["mae"] if block else None,
+        "backtest_cases": block["n_cases"] if block else 0,
+        "basis": f"modo {MODE_LABELS[mode]}",
     }
+
+
+def _fast_intervals(model, mode, options, national, subgroup_ratio):
+    """Rango probable por opción del modo rápido: (radio(p) nacional, radio(p) de subgrupos, info) o (None, None, None)."""
+    if not model:
+        return None, None, None, None
+    n = len(options)
+    probe, group = fastcal.radius(model, mode, n, 0.5)
+    if probe is None:
+        return None, None, None, None
+
+    def national_radius(p):
+        return fastcal.radius(model, mode, n, p)[0]
+
+    def core_radius(p):
+        return fastcal.radius(model, mode, n, p, level="q50")[0]
+
+    def subgroup_radius(p):
+        return national_radius(p) * subgroup_ratio
+
+    info = {
+        "combined": mode in model["combined"],
+        "cases": group["cases"],
+        "group": group["key"],
+        "mean_halfwidth_pp": float(np.mean([national_radius(national[o]) for o in options]) * 100),
+    }
+    return national_radius, subgroup_radius, core_radius, info
+
+
+def _spontaneous(spec, options):
+    """Opciones que en la pregunta del CIS usada no se leen al entrevistado (espontáneas)."""
+    if not spec:
+        return []
+    return [o for o in options if assist.is_spontaneous(spec["mapping"].get(o, ""))]
 
 
 def _explain(mode, evidence):
@@ -158,7 +203,7 @@ def _explain(mode, evidence):
         )
     return (
         "No hay ninguna pregunta equivalente en el CIS. Estimamos la distribución a partir de las preguntas más parecidas "
-        "(media ponderada por similitud) y no podemos distinguir entre grupos: es la situación con más incertidumbre."
+        "(media ponderada por similitud): es la situación con más incertidumbre."
     )
 
 
@@ -251,12 +296,13 @@ def _national_from_segments(resources, options, spec, n_segments):
     return aggregate(segments, predictions, options, "single", evidence_ids=[])
 
 
-def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim):
+def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim, filters=None):
+    filters = filters or {}
     query = f"{question} | " + "; ".join(options[:8])
     found = {}
     for text in (question, query):  # la pregunta literal recupera la misma pregunta en otras oleadas
         for hit in resources.evidence.search(
-            text, limit=40, options=options, topic=topic, topic_filter=False, sources={"cis"}
+            text, limit=40, options=options, topic=topic, topic_filter=False, sources={"cis"}, **filters
         ):
             found.setdefault(hit["evidence"]["evidence_id"], hit)
     hits = list(found.values())
@@ -269,7 +315,9 @@ def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim
         topic=topic,
     )
     warnings = []
+    similarity = None
     if spec is not None:
+        similarity = spec["similarity"]
         mode = spec["mode"]
         national = _national_from_segments(resources, options, spec, n_segments)
         items = [{"evidence_id": spec["evidence_id"], "similarity": spec["similarity"]}]
@@ -285,9 +333,11 @@ def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim
             resources.evidence,
             resources.table,
             ANALOG,
+            filters,
             sources={"cis"},
         )
         national = analog["prior"]
+        similarity = analog.get("best_similarity")
         items = analog["analogs"]
         group_specs = [
             (
@@ -306,7 +356,7 @@ def _fast(resources, question, options, topic, n_segments, direct_sim, prior_sim
             warnings.append(
                 "Las preguntas más parecidas del CIS están poco relacionadas con la tuya: el resultado es poco informativo."
             )
-    return mode, national, spec, group_specs, items, warnings
+    return mode, national, spec, group_specs, items, warnings, similarity
 
 
 def _llm_path(resources, question, options, question_type, settings, service, n_segments):
@@ -357,7 +407,8 @@ def predict(
     if not scope["in_scope"]:
         raise OutOfScopeError(assist.coverage_card("none", None, scope))
 
-    if preset == "llm_completo" or (preset == "recomendado" and service is not None):
+    used_llm = preset == "llm_completo" or (preset == "recomendado" and service is not None)
+    if used_llm:
         if service is None:
             raise ServiceError("El preset con LLM necesita un modelo disponible (Ollama).")
         result = _llm_path(resources, question, options, question_type, settings, service, n_segments)
@@ -375,7 +426,7 @@ def predict(
     else:
         if question_type != "single":
             raise ServiceError("Sin LLM solo se pueden estimar preguntas de respuesta única.")
-        mode, national, spec, group_specs, items, extra = _fast(
+        mode, national, spec, group_specs, items, extra, similarity = _fast(
             resources,
             question,
             options,
@@ -387,11 +438,28 @@ def predict(
         warnings += extra
 
     calibration = resources.calibration
-    _, block = select_stratum(calibration, mode)
-    radius = _radius(block["option_errors"]) if block else None
-    sub_radius = _subgroup_radius(calibration, mode)
+    fast_payload = resources.fast if not used_llm else None
+    fast_model = fast_payload["by_buckets" if fast_payload.get("chosen") == "by_buckets" else "by_mode"]["model"] if fast_payload else None
+    radius = sub_radius = core_radius = interval_info = None
+    if fast_model:
+        _, block = select_stratum(calibration, mode, min_cases=1)
+        ratio = 1.0
+        if block:
+            sub_overall = _subgroup_radius(calibration, mode)
+            base = _radius(block["option_errors"])
+            ratio = max(1.0, sub_overall / base) if sub_overall and base else 1.0
+        radius, sub_radius, core_radius, interval_info = _fast_intervals(fast_model, mode, options, national, ratio)
+    if radius is None and not fast_model:
+        _, block = select_stratum(calibration, mode)
+        radius = _radius(block["option_errors"]) if block else None
+        sub_radius = _subgroup_radius(calibration, mode)
     if radius is None:
-        warnings.append("Sin calibración suficiente: no se muestran intervalos.")
+        warnings.append("Sin calibración suficiente: no se muestra el rango probable.")
+    if interval_info and interval_info["combined"]:
+        warnings.append(
+            "Hay pocas preguntas de validación de este tipo (prior); el rango probable se calcula junto con las preguntas "
+            "sin equivalente en el CIS, por lo que es más amplio."
+        )
     evidence = _evidence_entries(resources.evidence, resources.table, items)
     subgroups = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius)
     return {
@@ -403,12 +471,14 @@ def predict(
         "mode": mode,
         "mode_label": MODE_LABELS[mode],
         "explanation": _explain(mode, evidence),
-        "confidence": _confidence(calibration, mode),
+        "confidence": _confidence(calibration, mode, fast_payload["rows"] if fast_payload else None),
         "national": {
             "distribution": {o: float(national[o]) for o in options},
-            "interval": _intervals(national, radius),
-            "radius": radius,
+            "interval": _intervals({o: float(national[o]) for o in options}, radius),
+            "interval_core": _intervals({o: float(national[o]) for o in options}, core_radius),
+            "interval_info": interval_info,
         },
+        "spontaneous": _spontaneous(spec, options),
         "coverage": assist.coverage_card(mode, evidence[0] if evidence else None),
         "subgroups": subgroups,
         "subgroup_note": None if mode == "direct" else SUBGROUP_NOTE,

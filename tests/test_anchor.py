@@ -368,3 +368,26 @@ def test_battery_items_are_not_the_same_question():
     assert select_anchor([other_item], q) is None
     assert select_anchor([other_item], q, item_guard=False) is not None  # sin la guarda sería un falso ancla
     assert select_anchor([other_item, same_item_hit], q)["evidence_id"] == same_item_hit["evidence"]["evidence_id"]
+
+
+def test_recent_wave_wins_among_similar_candidates():
+    q = {"question": QUESTION, "options": ["Sí", "No"], "question_type": "single"}
+    old = _hit(QUESTION, ["Sí", "No"])
+    new = _hit(QUESTION + " ", ["Sí", "No"])
+    old["evidence"].update(evidence_id="CIS1_P1", fieldwork_date="2025-07-01")
+    new["evidence"].update(evidence_id="CIS2_P1", fieldwork_date="2026-03-01")
+    assert select_anchor([old, new], q)["evidence_id"] == "CIS2_P1"
+    assert select_anchor([new, old], q)["evidence_id"] == "CIS2_P1"
+
+
+def test_same_variable_in_a_later_wave_is_preferred_even_if_stored_text_differs():
+    q = {"question": "Valoración de la situación económica general de España", "options": ["Sí", "No"], "question_type": "single"}
+    summary = _hit("Valoración de la situación económica general de España", ["Sí", "No"])
+    full = _hit("Refiriéndonos a la situación económica general de España actualmente, ¿cómo la calificaría Ud.?", ["Sí", "No"])
+    summary["evidence"].update(evidence_id="CIS3517_ECOESP", fieldwork_date="2025-07-07")
+    full["evidence"].update(evidence_id="CIS3546_ECOESP", fieldwork_date="2026-03-06")
+    spec = select_anchor([summary, full], q)
+    assert spec["evidence_id"] == "CIS3546_ECOESP"
+    other = _hit(QUESTION, ["Sí", "No"])
+    other["evidence"].update(evidence_id="CIS3546_P1", fieldwork_date="2026-03-06")  # P1, P2…: no son series
+    assert select_anchor([summary, other], q)["evidence_id"] == "CIS3517_ECOESP"

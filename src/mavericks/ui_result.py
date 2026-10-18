@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from . import batch
+from .assist import SPONTANEOUS_NOTE, display_label, is_spontaneous
 from .ui_charts import distribution_bars, heatmap, stacked_groups
 
 CONFIDENCE_TEXT = {"alta": "Confianza alta", "media": "Confianza media", "baja": "Confianza baja"}
@@ -39,7 +40,7 @@ def render_header(result):
         conf = result["confidence"]
         level = conf["level"]
         detail = (
-            "En preguntas del mismo tipo, el error típico medido con estudios que el sistema no había visto fue de "
+            f"En las preguntas de validación resueltas en modo {result['mode_label']}, el error típico fue de "
             f"{_points(conf['typical_error'])} por opción ({conf['backtest_cases']} preguntas)."
             if conf["typical_error"] is not None
             else "No hay validación suficiente para este tipo de pregunta."
@@ -53,12 +54,20 @@ def render_header(result):
 def render_national(result):
     node = result["national"]
     st.subheader("Distribución de respuestas en la población adulta")
-    st.plotly_chart(distribution_bars(node["distribution"], node["interval"]), use_container_width=True)
-    if node["radius"] is not None:
-        st.caption(
-            "Las líneas negras marcan un intervalo del 90 %: en preguntas de este tipo, el valor real quedó dentro de "
-            f"±{node['radius'] * 100:.0f} puntos aproximadamente 9 de cada 10 veces."
-        )
+    st.plotly_chart(distribution_bars(node["distribution"], node["interval"], core=node.get("interval_core")), use_container_width=True)
+    info = node.get("interval_info")
+    if node["interval"] is not None:
+        if info:
+            st.caption(
+                f"**Rango probable** de cada opción (línea negra, de media ±{info['mean_halfwidth_pp']:.0f} puntos): en la "
+                f"validación el resultado real quedó dentro en 9 de cada 10 opciones ({info['cases']} preguntas). "
+                "La banda gruesa morada es el **rango habitual**: la mitad de las veces el resultado cae dentro."
+            )
+        else:
+            st.caption("Las líneas negras marcan el **rango probable** de cada opción: en 9 de cada 10 casos de validación el resultado real quedó dentro.")
+    if result.get("spontaneous"):
+        names = ", ".join(f"«{o}»" for o in result["spontaneous"])
+        st.caption(f"{names}: {SPONTANEOUS_NOTE}.")
 
 
 def render_subgroups(result, key="sub"):
@@ -87,8 +96,8 @@ def render_subgroups(result, key="sub"):
                 "grupo": "Grupo",
                 "opcion": "Opción",
                 "porcentaje": "%",
-                "ic90_min": "IC 90 % mín.",
-                "ic90_max": "IC 90 % máx.",
+                "rango_min": "Rango probable mín. (%)",
+                "rango_max": "Rango probable máx. (%)",
                 "peso_poblacion": "% de la población",
             }
         )
@@ -114,11 +123,15 @@ def render_evidence(result):
             if item["distribution"]:
                 frame = pd.DataFrame(
                     {
-                        "Opción": list(item["distribution"]),
+                        "Opción": [
+                            display_label(o) + (" (no leída)" if is_spontaneous(o) else "") for o in item["distribution"]
+                        ],
                         "%": [v * 100 for v in item["distribution"].values()],
                     }
                 )
                 st.dataframe(frame.round(1), hide_index=True, use_container_width=True)
+                if any(is_spontaneous(o) for o in item["distribution"]):
+                    st.caption("(no leída): " + SPONTANEOUS_NOTE + ".")
 
 
 def render_downloads(result, key="dl"):

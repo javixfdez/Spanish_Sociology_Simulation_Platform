@@ -151,3 +151,17 @@ def test_predict_refuses_out_of_scope_questions():
     with pytest.raises(OutOfScopeError) as error:
         predict("¿Cuántos habitantes tiene Madrid?", ["Mucho", "Poco"], resources=resources([]))
     assert error.value.coverage["category"] == "fuera_de_alcance"
+
+
+def test_clean_labels_and_spontaneous_flag():
+    assert assist.display_label("(NO LEER) Regular") == "Regular"
+    assert assist.spontaneous_labels(["Buena", "(NO LEER) Regular", "N.S."]) == ["Regular"]
+    out = assist.suggest_options(ECO, resources([hit("CIS1_ECO", ECO, ECO_OPTIONS)]))
+    assert out["spontaneous"] == ["Regular"] and "(NO LEER)" not in " ".join(out["options"])
+
+
+def test_latest_wave_of_the_same_variable_is_the_reference():
+    short = hit("CIS3517_ECOESP", "Valoración de la situación económica general de España", ECO_OPTIONS, date="2025-07-07")
+    long = hit("CIS3546_ECOESP", ECO, ECO_OPTIONS, date="2026-03-06")
+    ref = assist.find_reference(resources([short, long]), "Valoración de la situación económica general de España")
+    assert ref["evidence_id"] == "CIS3546_ECOESP"

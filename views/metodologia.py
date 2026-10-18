@@ -2,7 +2,7 @@ import streamlit as st
 
 from mavericks.ui_common import setup
 
-setup("Metodología", "🧭")
+setup()
 st.title("Cómo funciona")
 st.markdown("Principio de diseño: **la estadística va primero y el modelo de lenguaje solo ajusta.**")
 

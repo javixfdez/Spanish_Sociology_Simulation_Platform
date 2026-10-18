@@ -1,5 +1,6 @@
 """Piezas comunes de la interfaz Streamlit: recursos en caché, estilo y avisos de error."""
 
+import httpx
 import streamlit as st
 
 from .llm import LLMService, check_ollama, create_provider
@@ -22,9 +23,26 @@ CSS = """
 """
 
 
-def setup(title, icon="📊"):
-    st.set_page_config(page_title=f"{title} · Simulación sociológica", page_icon=icon, layout="wide")
+def configure():
+    """Configuración global de la aplicación (solo la llama el punto de entrada ``app.py``)."""
+    st.set_page_config(page_title="Simulación sociológica", page_icon="📊", layout="wide")
     st.markdown(CSS, unsafe_allow_html=True)
+
+
+def setup(title=None, icon=None):
+    """Estilo de cada página (la configuración global se hace en ``app.py``)."""
+    st.markdown(CSS, unsafe_allow_html=True)
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def ollama_ready(base_url, model, timeout=2.0):
+    """¿Responde Ollama en menos de ``timeout`` segundos y tiene el modelo? Comprobación rápida, sin generar nada."""
+    try:
+        response = httpx.get(base_url.rstrip("/") + "/api/tags", timeout=timeout)
+        response.raise_for_status()
+        return model in [m["name"] for m in response.json()["models"]]
+    except (httpx.HTTPError, ValueError, KeyError):
+        return False
 
 
 @st.cache_resource(show_spinner="Cargando población y datos del CIS…")

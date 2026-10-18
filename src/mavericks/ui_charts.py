@@ -19,7 +19,7 @@ def _layout(fig, height, title=None):
     return fig
 
 
-def distribution_bars(distribution, interval=None, title=None):
+def distribution_bars(distribution, interval=None, title=None, core=None):
     """Barras horizontales con el intervalo del 90 % como barra de error (valores en %)."""
     options = list(distribution)[::-1]
     values = [distribution[o] * 100 for o in options]
@@ -47,6 +47,18 @@ def distribution_bars(distribution, interval=None, title=None):
             hovertemplate="%{y}: %{x:.1f} %<extra></extra>",
         )
     )
+    if core:
+        fig.add_trace(
+            go.Scatter(
+                x=values, y=options, mode="markers", marker={"size": 1, "color": "rgba(0,0,0,0)"}, hoverinfo="skip",
+                showlegend=False,
+                error_x={
+                    "type": "data", "symmetric": False, "color": PALETTE[6], "thickness": 7, "width": 0,
+                    "array": [(core[o][1] - distribution[o]) * 100 for o in options],
+                    "arrayminus": [(distribution[o] - core[o][0]) * 100 for o in options],
+                },
+            )
+        )
     fig.update_xaxes(range=[0, max(100, 1.0) if not values else min(100, max(values) * 1.35 + 8)], title="% de la población adulta")
     return _layout(fig, 90 + 52 * len(options), title)
 

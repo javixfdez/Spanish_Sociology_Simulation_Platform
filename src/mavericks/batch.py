@@ -60,7 +60,7 @@ def national_frame(result):
     rows = []
     for option, value in node["distribution"].items():
         low, high = (node["interval"] or {}).get(option, (None, None))
-        rows.append({"opcion": option, "porcentaje": value * 100, "ic90_min": _pct(low), "ic90_max": _pct(high)})
+        rows.append({"opcion": option, "porcentaje": value * 100, "rango_min": _pct(low), "rango_max": _pct(high)})
     return pd.DataFrame(rows)
 
 
@@ -79,7 +79,7 @@ def subgroup_frame(result, dimension=None):
                 rows.append(
                     {
                         "dimension": dim["label"], "grupo": group, "opcion": option, "porcentaje": value * 100,
-                        "ic90_min": _pct(low), "ic90_max": _pct(high), "peso_poblacion": info["population_share"] * 100,
+                        "rango_min": _pct(low), "rango_max": _pct(high), "peso_poblacion": info["population_share"] * 100,
                     }
                 )
     return pd.DataFrame(rows)

@@ -4,7 +4,7 @@ from mavericks import categories as cat
 from mavericks import population_view as pv
 from mavericks.ui_common import get_resources, setup
 
-setup("Población", "👥")
+setup()
 st.title("Población sintética")
 st.markdown(
     "50 000 personas adultas que representan a la población adulta residente en España. "

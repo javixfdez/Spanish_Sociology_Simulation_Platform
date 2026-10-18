@@ -133,12 +133,12 @@ python -m uv run streamlit run app.py
 
 Páginas (en español, sin parámetros técnicos a la vista; todo lo avanzado está en el expander «Avanzado»):
 
-- **Simular** (`app.py`): pregunta, plantillas de opciones (Sí/No, Mucho–Nada, acuerdo 1–5), modo de cálculo, distribución
+- **Simular** (`views/simular.py`; `app.py` es el punto de entrada con la navegación): pregunta, plantillas de opciones (Sí/No, Mucho–Nada, acuerdo 1–5), modo de cálculo, distribución
   con intervalo del 90 %, tarjeta del modo (directo / prior / sin ancla) y nivel de confianza con el error típico del
   backtest, subgrupos (sexo, edad, CCAA, estudios, ingresos) en barras, mapa de calor o tabla, preguntas del CIS usadas y
   descargas CSV/JSON.
 - **Lote**: CSV o Excel con `pregunta`, `opciones` (separadas por `|`) y `tipo`; devuelve un Excel con total, subgrupos y evidencia.
-- **Validación**: lee `outputs/baseline_v1/backtest.json`: error por modo y tema frente al reparto uniforme y al suelo de ruido,
+- **Validación**: lee `outputs/fast_validation.json` (modo rápido, 153 preguntas; `mavericks fast-validation`) y `outputs/baseline_v1/backtest.json` (con LLM): error por modo y tema frente al reparto uniforme y al suelo de ruido,
   cobertura de los intervalos y predicho frente a observado.
 - **Metodología** y **Población** (márgenes de los 50 000 adultos frente a los objetivos del INE).
 
@@ -162,6 +162,12 @@ distinto entre corchetes no cuenta como la misma pregunta). Con los 153 casos (r
 sigue en 0,019 (n=69 frente a 68) sin ningún falso directo; por debajo de 0,80 empiezan a entrar preguntas que no lo son. En
 prior y sin ancla, los subgrupos usan las diferencias empíricas de las preguntas análogas, contraídas un 50 % hacia el total
 y con raking para que cuadren con él.
+
+Rangos probables del modo rápido (`fastcal.py`): cuantil conforme del error por opción, con escala sqrt(p(1-p)+0,02) para
+que sean más estrechos en probabilidades extremas, por modo, validado dejando cada pregunta fuera en los 153 casos. Cobertura 90,0 %;
+anchura media ±4 puntos en directo y ±34 en prior y sin ancla (prior tiene solo 3 casos, así que usa el rango combinado
+prior+sin ancla). El número de opciones y la similitud de la análoga no estrechan los rangos de forma apreciable (<5 %).
+Además del rango del 90 % se dibuja el rango habitual (50 %). Si Ollama no responde en 2 s, la demo arranca en modo rápido.
 
 Los ejemplos de la barra lateral están precalculados en `data/examples/ejemplos_demo.json` (modo rápido) para que la demo no
 espere; se regeneran con `uv run mavericks build-examples [--preset recomendado]`. Los objetivos del INE de la página de

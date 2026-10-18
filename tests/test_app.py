@@ -20,7 +20,7 @@ def run(path):
 
 
 def test_simular_page_and_example():
-    at = run("app.py")
+    at = run("views/simular.py")
     assert at.sidebar.selectbox[1].options[0] == "—"
     at.sidebar.selectbox[1].select(at.sidebar.selectbox[1].options[2]).run()
     assert not at.exception
@@ -28,7 +28,7 @@ def test_simular_page_and_example():
 
 
 def analyse(question):
-    at = run("app.py")
+    at = run("views/simular.py")
     at.sidebar.selectbox[0].select("rapido_sin_llm")
     at.text_area(key="q").set_value(question)
     at.button[0].click().run()
@@ -60,6 +60,6 @@ def test_bad_options_message():
     assert at.error and "opciones" in at.error[0].value
 
 
-@pytest.mark.parametrize("page", ["1_Lote", "2_Validacion", "3_Metodologia", "4_Poblacion"])
+@pytest.mark.parametrize("page", ["lote", "validacion", "metodologia", "poblacion"])
 def test_other_pages(page):
-    run(f"pages/{page}.py")
+    run(f"views/{page}.py")

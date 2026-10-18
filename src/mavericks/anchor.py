@@ -63,6 +63,13 @@ def option_mapping(question_options, evidence_options):
     return mapping
 
 
+RECENCY_WINDOW = 0.05
+
+
+def series_key(evidence_id):
+    """Nombre de variable estable del CIS (ECOESP, PREFPTE…): la misma pregunta en distintas oleadas. None si es P1, P2…"""
+    suffix = str(evidence_id or "").split("_", 1)[-1]
+    return suffix.lower() if re.fullmatch(r"[A-Za-z]{4,}[A-Za-z0-9_]*", suffix) else None
 _FUNCTION_WORDS = {
     "a", "al", "algo", "ante", "como", "con", "cual", "cuales", "de", "del", "desde", "e", "el", "en", "es", "esta",
     "este", "la", "las", "le", "lo", "los", "me", "mi", "muy", "o", "para", "por", "que", "se", "si", "su", "sus",
@@ -98,7 +105,7 @@ def select_anchor(
 ):
     """Elige la evidencia que ancla la predicción: la de mayor parecido de redacción con opciones equivalentes
     y, a igualdad, la oleada más reciente (después la mejor puntuación de recuperación). Devuelve dict o None."""
-    candidates = []
+    candidates, valid = [], []
     for hit in hits:
         e = hit["evidence"]
         original = e.get("metadata", {}).get("original_fields", {})
@@ -111,13 +118,22 @@ def select_anchor(
         similarity = question_similarity(question["question"], e["question_text"])
         if item_guard and not same_item(question["question"], e["question_text"]):
             continue  # mismo enunciado, otro ítem de la batería: no es la misma pregunta
+        valid.append((e.get("fieldwork_date") or "", hit, mapping, qtype))
         if prior_guard and similarity < direct_similarity and not prior_compatible(question["question"], topic, e, prior_guard):
             continue
         if similarity >= prior_similarity:
             candidates.append((round(similarity, 3), e.get("fieldwork_date") or "", hit["retrieval_score"], hit, mapping, qtype))
     if not candidates:
         return None
-    similarity, _, _, hit, mapping, qtype = max(candidates, key=lambda c: (c[0], c[1], c[2]))
+    best = max(c[0] for c in candidates)
+    # entre candidatas de parecido casi igual (diferencia < 0,05) manda la oleada más reciente
+    pool = [c for c in candidates if best - c[0] < RECENCY_WINDOW]
+    similarity, _, _, hit, mapping, qtype = max(pool, key=lambda c: (c[1], c[0], c[2]))
+    # la misma variable del CIS en una oleada posterior es la misma pregunta aunque el texto guardado difiera
+    key = series_key(hit["evidence"]["evidence_id"])
+    later = [v for v in valid if key and series_key(v[1]["evidence"]["evidence_id"]) == key and v[0] > (hit["evidence"].get("fieldwork_date") or "")]
+    if later:
+        _, hit, mapping, qtype = max(later, key=lambda v: v[0])
     e = hit["evidence"]
     return {
         "mode": "direct" if similarity >= direct_similarity else "prior",

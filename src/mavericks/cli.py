@@ -99,6 +99,10 @@ def parser():
     ex = commands.add_parser("build-examples", help="Precalcula las preguntas de ejemplo de la interfaz")
     ex.add_argument("--preset", default="rapido_sin_llm", choices=["rapido_sin_llm", "recomendado", "llm_completo"])
     ex.add_argument("--out", default="data/examples/ejemplos_demo.json")
+    fv = commands.add_parser("fast-validation", help="Valida el modo rápido (sin LLM) con los casos de test y desarrollo")
+    fv.add_argument("--cases", nargs="+", default=["data/processed/backtest_cases.json", "data/processed_v2/backtest_cases_dev.json"])
+    fv.add_argument("--out", default="outputs/fast_validation.json")
+    fv.add_argument("--refit", action="store_true", help="Solo reajusta los rangos con las filas ya guardadas")
     pt = commands.add_parser("population-targets", help="Objetivos de la ECP (sexo, edad, CCAA) para la página de población")
     pt.add_argument("--raw", default="maverick_data/raw")
     pt.add_argument("--period", default="1 de enero de 2026")
@@ -275,6 +279,26 @@ def run(args):
             service = LLMService(create_provider(settings), settings)
         payload = build_examples(load_resources(), args.preset, args.out, service)
         return {"examples": len(payload["items"]), "preset": args.preset, "out": args.out}
+    if args.command == "fast-validation":
+        from . import fastcal
+        from .service import load_resources
+
+        if args.refit:
+            payload = fastcal.refit(args.out)
+            return {"cv_by_mode": payload["by_mode"]["cv"]}
+        cases, split_of = [], {}
+        for path in args.cases:
+            for case in json.loads(Path(path).read_text(encoding="utf-8-sig")):
+                cases.append(case)
+                split_of[case["evidence_id"]] = "dev" if "dev" in Path(path).name else "test"
+        rows = fastcal.collect(cases, load_resources(), split_of)
+        payload = {"rows": rows}
+        for buckets in (False, True):
+            name = "by_buckets" if buckets else "by_mode"
+            payload[name] = {"model": fastcal.fit(rows, buckets), "cv": fastcal.cross_validate(rows, buckets)}
+        payload["chosen"] = "by_mode"
+        fastcal.save(args.out, payload)
+        return {"cases": len(rows), "cv_by_mode": payload["by_mode"]["cv"], "cv_by_buckets": payload["by_buckets"]["cv"]}
     if args.command == "population-targets":
         from .population_view import build_targets
 

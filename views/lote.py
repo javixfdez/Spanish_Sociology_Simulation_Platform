@@ -1,10 +1,10 @@
 import streamlit as st
 
 from mavericks import batch
-from mavericks.service import PRESETS, ServiceError
+from mavericks.service import ServiceError
 from mavericks.ui_common import PRESET_LABELS, get_resources, llm_service, setup
 
-setup("Lote", "🗂️")
+setup()
 st.title("Procesar varias preguntas a la vez")
 st.markdown(
     "Sube un archivo CSV o Excel con una fila por pregunta y descarga un Excel con el total y el detalle por grupos."
@@ -17,7 +17,9 @@ st.download_button(
     "text/csv",
 )
 
-preset = st.selectbox("Modo de cálculo", PRESETS, format_func=PRESET_LABELS.get)
+preset = st.selectbox(
+    "Modo de cálculo", ["rapido_sin_llm", "recomendado", "llm_completo"], format_func=PRESET_LABELS.get
+)
 uploaded = st.file_uploader("Archivo de preguntas", type=["csv", "xlsx", "xls"])
 
 if uploaded and st.button("Procesar", type="primary"):
