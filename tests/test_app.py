@@ -62,3 +62,9 @@ def test_bad_options_message():
 @pytest.mark.parametrize("page", ["lote", "validacion", "metodologia", "poblacion"])
 def test_other_pages(page):
     run(f"views/{page}.py")
+
+
+def test_every_page_compiles():
+    # AppTest no siempre convierte un error de sintaxis en excepción: se comprueba aparte
+    for path in [ROOT / "app.py", *sorted((ROOT / "views").glob("*.py"))]:
+        compile(path.read_text(encoding="utf-8"), str(path), "exec")

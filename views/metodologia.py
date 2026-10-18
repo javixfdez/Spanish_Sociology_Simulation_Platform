@@ -36,15 +36,9 @@ st.markdown(
 
 st.subheader("Dos modos de cálculo")
 st.markdown(
-    "- **Rápido** (por defecto): los números salen del prior estadístico (preguntas parecidas del CIS + modelo aprendido), sin modelo de lenguaje; "
-    "la explicación escrita usa plantillas con las cifras calculadas. Responde al instante.
-"
-    "- **Con LLM**: los números mezclan el modelo de lenguaje (peso 0,3) con el prior (peso 0,7), y el modelo redacta la explicación a partir "
-    "de las cifras ya calculadas; si algún número del texto no coincide con los calculados, o tarda más de 20 s, se muestra la plantilla.
-"
-    "- **Precisión**: con el peso elegido por validación cruzada dejando un estudio fuera, la mezcla da 15,06 puntos de error frente a 14,84 del prior solo "
-    "(44 casos de desarrollo). En precisión, los dos modos son equivalentes dentro del error de medida; el valor del modo con LLM está "
-    "en la explicación y en el criterio cualitativo del modelo."
+    "- **Rápido** (por defecto): los números salen del prior estadístico (preguntas parecidas del CIS + modelo aprendido), sin modelo de lenguaje; la explicación escrita usa plantillas con las cifras calculadas. Responde al instante.\n"
+    "- **Con LLM**: los números mezclan el modelo de lenguaje (peso 0,3) con el prior (peso 0,7), y el modelo redacta la explicación a partir de las cifras ya calculadas; si algún número del texto no coincide con los calculados, o tarda más de 20 s, se muestra la plantilla.\n"
+    "- **Precisión**: con el peso elegido por validación cruzada dejando un estudio fuera, la mezcla da 15,06 puntos de error frente a 14,84 del prior solo (44 casos de desarrollo). En precisión, los dos modos son equivalentes dentro del error de medida; el valor del modo con LLM está en la explicación y en el criterio cualitativo del modelo."
 )
 
 st.subheader("Reglas")
