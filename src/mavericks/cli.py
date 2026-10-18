@@ -173,6 +173,7 @@ def parser():
     rep = commands.add_parser("report-backtest", help="Tablas por modo y tema de un backtest")
     rep.add_argument("--results", required=True)
     rep.add_argument("--title", default="Backtest")
+    rep.add_argument("--floors", help="case_floors.json: añade la columna del suelo de ruido")
     rep.add_argument("--out")
     cmp_ = commands.add_parser("compare-backtests", help="Compara configuraciones caso a caso contra una base")
     cmp_.add_argument("--base", required=True)
@@ -513,7 +514,8 @@ def run(args):
         return output
     if args.command == "report-backtest":
         raw = json.loads(Path(args.results).read_text(encoding="utf-8"))
-        text = build_report(raw["results"] if isinstance(raw, dict) else raw, args.title)
+        floors = json.loads(Path(args.floors).read_text(encoding="utf-8")) if args.floors else None
+        text = build_report(raw["results"] if isinstance(raw, dict) else raw, args.title, floors)
         if args.out:
             Path(args.out).parent.mkdir(parents=True, exist_ok=True)
             Path(args.out).write_text(text, encoding="utf-8")

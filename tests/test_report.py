@@ -56,3 +56,11 @@ def test_simbench_and_entropy_ratio():
     flat = {"status": "completed", "predicted": {"A": 0.5, "B": 0.5}, "observed": {"A": 0.9, "B": 0.1}}
     assert entropy_ratio([flat]) > 1.5  # reparte de más
     assert entropy_ratio([exact]) == 1.0 and simbench([]) is None
+
+
+def test_report_includes_the_noise_floor_column():
+    results = [_r(i, "none", 0.15, nat=0.2) for i in range(3)]
+    floors = {f"c{i}": {"national_floor": 0.012, "subgroup_floor": 0.03} for i in range(3)}
+    text = report(results, "Prueba", floors)
+    assert "suelo ruido" in text and "0.012 / 0.030" in text
+    assert "— / —" in report(results, "Prueba")  # sin suelos se muestra vacío

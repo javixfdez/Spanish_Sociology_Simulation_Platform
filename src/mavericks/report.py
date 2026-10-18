@@ -40,7 +40,7 @@ def entropy_ratio(items):
     return float(np.mean(ratios)) if ratios else None
 
 
-def row(items):
+def row(items, floors=None):
     done = [r for r in items if r["status"] == "completed"]
     base = [r for r in done if r.get("mae_national_baseline") is not None]
     return {
@@ -55,6 +55,8 @@ def row(items):
         "seconds": _mean([r.get("execution_time") for r in items]),
         "beats_uniform": sum(r["mae"] < r["mae_uniform_baseline"] for r in done),
         "beats_national": sum(r["mae"] < r["mae_national_baseline"] for r in base),
+        "floor": _mean([(floors or {}).get(r["evidence_id"], {}).get("national_floor") for r in done]),
+        "floor_subgroup": _mean([(floors or {}).get(r["evidence_id"], {}).get("subgroup_floor") for r in done]),
         "simbench": simbench(items),
         "entropy_ratio": entropy_ratio(items),
     }
@@ -64,11 +66,11 @@ def _fmt(value, digits=3):
     return "—" if value is None else f"{value:.{digits}f}"
 
 
-def markdown_table(results, by="anchor_mode"):
+def markdown_table(results, by="anchor_mode", floors=None):
     header = (
         "| Grupo | casos | fallidos | MAE modelo | uniforme | nacional* | modelo en esos | gana a uniforme | "
-        "gana a nacional* | MAE subgrupos | SimBench | H pred/real | s/caso |\n"
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+        "gana a nacional* | MAE subgrupos | suelo ruido (nac. / subg.) | SimBench | H pred/real | s/caso |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     keys = [(k, label) for k, label in MODES] if by == "anchor_mode" else [(t, t) for t in sorted({str(r["topic"]) for r in results})]
@@ -76,34 +78,35 @@ def markdown_table(results, by="anchor_mode"):
         items = [r for r in results if str(r.get(by)) == key]
         if not items:
             continue
-        s = row(items)
+        s = row(items, floors)
         lines.append(
             f"| {label} | {s['n']} | {s['failed']} | {_fmt(s['mae'])} | {_fmt(s['uniform'])} | {_fmt(s['national'])} "
             f"(n={s['national_n']}) | {_fmt(s['model_on_national'])} | {s['beats_uniform']}/{s['n'] - s['failed']} | "
-            f"{s['beats_national']}/{s['national_n']} | {_fmt(s['subgroup_mae'])} | {_fmt(s['simbench'], 1)} | "
+            f"{s['beats_national']}/{s['national_n']} | {_fmt(s['subgroup_mae'])} | "
+            f"{_fmt(s['floor'])} / {_fmt(s['floor_subgroup'])} | {_fmt(s['simbench'], 1)} | "
             f"{_fmt(s['entropy_ratio'], 2)} | {_fmt(s['seconds'], 0)} |"
         )
     return header + "\n".join(lines)
 
 
-def mode_topic_table(results):
+def mode_topic_table(results, floors=None):
     header = (
-        "| Modo · tema | casos | MAE | uniforme | nacional* | modelo en esos | SimBench | H pred/real | s/caso |\n"
-        "|---|---|---|---|---|---|---|---|---|\n"
+        "| Modo · tema | casos | MAE | uniforme | nacional* | modelo en esos | suelo ruido | SimBench | H pred/real | s/caso |\n"
+        "|---|---|---|---|---|---|---|---|---|---|\n"
     )
     lines = []
     for key, label in MODES:
         for topic in sorted({str(r["topic"]) for r in results if r["anchor_mode"] == key}):
-            s = row([r for r in results if r["anchor_mode"] == key and str(r["topic"]) == topic])
+            s = row([r for r in results if r["anchor_mode"] == key and str(r["topic"]) == topic], floors)
             lines.append(
                 f"| {label.split(' ')[0]} · {topic} | {s['n']} | {_fmt(s['mae'])} | {_fmt(s['uniform'])} | "
-                f"{_fmt(s['national'])} (n={s['national_n']}) | {_fmt(s['model_on_national'])} | {_fmt(s['simbench'], 1)} | "
-                f"{_fmt(s['entropy_ratio'], 2)} | {_fmt(s['seconds'], 0)} |"
+                f"{_fmt(s['national'])} (n={s['national_n']}) | {_fmt(s['model_on_national'])} | {_fmt(s['floor'])} | "
+                f"{_fmt(s['simbench'], 1)} | {_fmt(s['entropy_ratio'], 2)} | {_fmt(s['seconds'], 0)} |"
             )
     return header + "\n".join(lines)
 
 
-def report(results, title="Backtest"):
+def report(results, title="Backtest", floors=None):
     done = [r for r in results if r["status"] == "completed"]
     coverage = interval_coverage(results)
     cov_lines = [
@@ -120,13 +123,13 @@ def report(results, title="Backtest"):
             f"{len(results)} casos · {overall['failed']} fallidos · {_fmt(overall['seconds'], 0)} s/caso de media",
             "",
             "## Por modo de ancla",
-            markdown_table(results, "anchor_mode"),
+            markdown_table(results, "anchor_mode", floors),
             "",
             "## Por tema",
-            markdown_table(results, "topic"),
+            markdown_table(results, "topic", floors),
             "",
             "## Por modo y tema",
-            mode_topic_table(results),
+            mode_topic_table(results, floors),
             "",
             "## Cobertura de intervalos (dejando un caso fuera)",
             *cov_lines,
