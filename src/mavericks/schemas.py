@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     analog_shrink: float = Field(0.0, ge=0)
     analog_sim_mode: Literal["lex", "emb", "max"] = "lex"
     blend: bool = False
+    corrector: float = Field(0.0, ge=0, le=0.5)
     context: bool = False
     sharpen: bool = False
     context_path: str = "data/processed_v2/context.json"

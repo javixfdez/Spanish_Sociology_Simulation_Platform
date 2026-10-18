@@ -314,6 +314,20 @@ def build_graph(
                     "levels": estimate["levels"],
                     "max_shift": settings.anchor_max_shift,
                 }
+            if anchor is None and settings.corrector > 0 and analog_state and analog_state["analogs"]:
+                # LLM corrector: parte del prior por analogía y solo puede desviarse ±corrector por opción
+                rounded = {k: round(v, 4) for k, v in analog_state["prior"].items()}
+                anchor = {
+                    "mode": "prior",
+                    "evidence_id": analog_state["analogs"][0]["evidence_id"],
+                    "study_id": None,
+                    "question_similarity": analog_state["best_similarity"],
+                    "prior": rounded,
+                    "national": rounded,
+                    "basis": {"level": "analogía", "n": None, "n_eff": None},
+                    "levels": [],
+                    "max_shift": settings.corrector,
+                }
             sends.append(
                 Send(
                     "respondent_agent",

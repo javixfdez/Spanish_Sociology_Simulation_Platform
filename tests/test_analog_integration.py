@@ -66,3 +66,22 @@ def test_blend_mixes_the_llm_with_the_prior_and_records_w_and_alpha(tmp_path):
         assert info["w"] == 0.5 and info["alpha"] == 1.0
         expected = 0.5 * info["llm_mean"]["Sí"] + 0.5 * 0.8
         assert prediction["probabilities"]["Sí"] == pytest.approx(expected)
+
+
+def test_corrector_limits_the_llm_to_a_band_around_the_analog_prior(tmp_path):
+    population, evidence = _world(tmp_path)
+
+    class Extreme(MockLLMProvider):
+        async def generate(self, schema, payload, temperature=None):
+            if schema is Prediction:
+                assert payload["anchor"]["mode"] == "prior" and payload["anchor"]["max_shift"] == 0.05
+                return Prediction(segment_id=payload["segment"]["segment_id"], probabilities={"Sí": 0.02, "No": 0.98}, explanation="x")
+            return await super().generate(schema, payload)
+
+    settings = Settings(llm_provider="mock", llm_retries=0, analog_min_sim=0.2, analog=True, corrector=0.05)
+    llm = LLMService(Extreme(), settings, tmp_path / "c")
+    result = asyncio.run(simulate(Question(question=QUESTION, options=["Sí", "No"]), population, evidence, llm, 3))
+    assert result["execution_metadata"]["status"] == "completed"
+    for p in result["segment_predictions"].values():
+        assert abs(p["probabilities"]["Sí"] - 0.8) <= 0.05 + 1e-9  # el LLM quería 0,02: queda a 0,75
+        assert p["llm_probabilities"]["Sí"] == 0.02 and p["anchor"]["mode"] == "prior"

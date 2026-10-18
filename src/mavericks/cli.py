@@ -46,6 +46,7 @@ def parser():
             sub.add_argument("--context", action="store_true", help="Añade contexto de actualidad fechado")
             sub.add_argument("--sharpen", action="store_true", help="Aplica el ajuste de nitidez de calibration.json")
             sub.add_argument("--analog", action="store_true", help="Prior por analogía (y sus ejemplos) en el prompt")
+            sub.add_argument("--corrector", type=float, help="LLM corrector: ajuste máximo ±X por opción sobre el prior por analogía")
             sub.add_argument("--blend", action="store_true", help="Mezcla calibrada LLM+prior de calibration.json")
             sub.add_argument("--calibration-in", help="calibration.json a LEER en backtest (--calibration es de escritura)")
             sub.add_argument("--sources", help="Familias de evidencia permitidas: cis,eurobarometro,ess")
@@ -190,6 +191,8 @@ def run(args):
         updates["ollama_model"] = args.model
     if getattr(args, "analog", False):
         updates["analog"] = True
+    if getattr(args, "corrector", None):
+        updates["corrector"] = args.corrector
     if getattr(args, "blend", False):
         updates["blend"] = True
     if getattr(args, "sharpen", False):
