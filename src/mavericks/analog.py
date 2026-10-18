@@ -129,6 +129,9 @@ def candidates(hits, question_text, options, table, embedder=None):
                 "emb": hit.get("embedding_similarity"),
                 "kind": kind,
                 "dist": {q: v / mass for q, v in values.items()},
+                "study_id": str(e["study_id"]) if e.get("study_id") is not None else None,
+                "mapping": mapping,
+                "microdata": e["evidence_id"] in table,
             }
         )
     return out
@@ -160,7 +163,7 @@ def combine(cands, options, config):
     total = sum(w for w, _, _ in scored)
     if total <= 0:
         return {"prior": uniform, "best_similarity": max([similarity(c, config.sim_mode) for c in cands], default=0.0),
-                "weight": 0.0, "used": 0, "best_kind": None, "analogs": []}
+                "weight": 0.0, "used": 0, "best_kind": None, "analogs": [], "trust": 0.0, "weighted": []}
     mix = {o: sum(w * c["dist"][o] for w, _, c in scored) / total for o in options}
     trust = total / (total + config.shrink) if config.shrink > 0 else 1.0
     prior = {o: trust * mix[o] + (1 - trust) * uniform[o] for o in options}
@@ -173,6 +176,8 @@ def combine(cands, options, config):
         "best_kind": best[2]["kind"],
         "analogs": [{"evidence_id": c["evidence_id"], "similarity": round(s, 3), "kind": c["kind"], "source": c["source"]}
                     for _, s, c in scored],
+        "trust": trust,
+        "weighted": [(w, c) for w, _, c in scored],
     }
 
 

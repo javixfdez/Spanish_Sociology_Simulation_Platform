@@ -119,6 +119,21 @@ def parser():
     ana.add_argument("--previous-waves", action="store_true", help="No excluir el texto idéntico (modo temporal)")
     ana.add_argument("--reuse", action="store_true", help="Reutilizar la caché de candidatas de --out")
     ana.add_argument("--tune", action="store_true")
+    full = commands.add_parser("analog-full", help="Pipeline sin LLM: total por analogía + segmentos desde microdatos + raking")
+    full.add_argument("--cases", nargs="+", required=True)
+    full.add_argument("--db", default="data/processed_v2/evidence_v2.sqlite")
+    full.add_argument("--table", default="data/processed_v2/cis_national.json")
+    full.add_argument("--population", default="data/processed/synthetic_population.parquet")
+    full.add_argument("--cis-dir", default="data/processed")
+    full.add_argument("--segments", type=int, default=10)
+    full.add_argument("--sources", default="cis")
+    full.add_argument("--out", required=True)
+    full.add_argument("--baseline", help="backtest.json de la línea base para comparar subgrupos en los mismos casos")
+    full.add_argument("--k", type=int, default=5)
+    full.add_argument("--power", type=float, default=4.0)
+    full.add_argument("--min-sim", type=float, default=0.0)
+    full.add_argument("--shrink", type=float, default=0.0)
+    full.add_argument("--sim-mode", default="lex")
     blend_ = commands.add_parser("fit-blend", help="Mezcla LLM+prior y nitidez conjuntas, validadas dejando un tema fuera")
     blend_.add_argument("--results", nargs="+", required=True, help="backtest.json oficial (primero) y de desarrollo")
     blend_.add_argument("--analog-cache", nargs="+", required=True)
@@ -231,6 +246,62 @@ def run(args):
             "by_topic": dict(collections.Counter(c["topic"] for c in built)),
             "studies": sorted({c["estudio_id"] for c in built}),
         }
+    if args.command == "analog-full":
+        import time
+
+        import numpy as np
+
+        from .analog import AnalogConfig, collect_case, combine, load_national_table
+        from .analog_segments import predict
+        from .anchor import AnchorStore
+        from .evaluation import subgroup_errors
+
+        config = AnalogConfig(args.k, args.power, args.min_sim, args.shrink, args.sim_mode)
+        frame, metadata = PopulationLoader().load(args.population)
+        population = PopulationRepository(frame, metadata)
+        repo = evidence_repository(args.db)
+        table = load_national_table(args.table)
+        anchors = AnchorStore(args.cis_dir)
+        sources = set(args.sources.split(",")) if args.sources else None
+        cases = [c for path in args.cases for c in json.loads(Path(path).read_text(encoding="utf-8-sig"))]
+        rows = []
+        for case in cases:
+            started = time.monotonic()
+            collected = collect_case(case, repo, table, repo.embedder, True, sources=sources)
+            result = combine(collected["candidates"], collected["options"], config)
+            observed = case["observed_distribution"]
+            row = {"evidence_id": case["evidence_id"], "topic": case["topic"], "split": case.get("split", "test"),
+                   "best_similarity": result["best_similarity"], "used": result["used"]}
+            for name, flag in (("dev", True), ("flat", False)):
+                out = predict(result, collected["options"], population, anchors, args.segments, deviations=flag)
+                scores = subgroup_errors(out["subgroups"], case.get("observed_subgroups", {}))
+                row[f"{name}_subgroup_mae"] = float(np.mean([s["mae"] for s in scores])) if scores else None
+                row[f"{name}_subgroups"] = len(scores)
+                row["national_mae"] = float(np.mean([abs(out["national"][o] - observed[o]) for o in observed]))
+            row["seconds"] = time.monotonic() - started
+            rows.append(row)
+        base = {}
+        if args.baseline:
+            base = {r["evidence_id"]: r for r in load_results(args.baseline) if r["status"] == "completed"}
+        summary = {}
+        for split in sorted({r["split"] for r in rows}):
+            part = [r for r in rows if r["split"] == split and r["dev_subgroup_mae"] is not None]
+            shared = [r for r in part if r["evidence_id"] in base and base[r["evidence_id"]].get("subgroup_mae") is not None]
+            summary[split] = {
+                "cases": len([r for r in rows if r["split"] == split]),
+                "national_mae": float(np.mean([r["national_mae"] for r in rows if r["split"] == split])),
+                "subgroup_mae_with_deviations": float(np.mean([r["dev_subgroup_mae"] for r in part])) if part else None,
+                "subgroup_mae_flat": float(np.mean([r["flat_subgroup_mae"] for r in part])) if part else None,
+                "seconds_per_case": float(np.mean([r["seconds"] for r in rows if r["split"] == split])),
+                "baseline_same_cases": {
+                    "n": len(shared),
+                    "baseline_subgroup_mae": float(np.mean([base[r["evidence_id"]]["subgroup_mae"] for r in shared])) if shared else None,
+                    "analog_subgroup_mae": float(np.mean([r["dev_subgroup_mae"] for r in shared])) if shared else None,
+                    "analog_flat_subgroup_mae": float(np.mean([r["flat_subgroup_mae"] for r in shared])) if shared else None,
+                },
+            }
+        save_json(args.out, {"summary": summary, "rows": rows})
+        return summary
     if args.command == "fit-blend":
         from .analog import AnalogConfig
         from .calibrate import build_rows, compare_variants
