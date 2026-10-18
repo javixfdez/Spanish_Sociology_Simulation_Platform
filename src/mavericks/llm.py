@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -314,7 +315,8 @@ class StructuredProvider:
 
 
 class LLMService:
-    def __init__(self, provider, settings, cache_dir="outputs/cache"):
+    def __init__(self, provider, settings, cache_dir=None):
+        cache_dir = cache_dir or os.environ.get("LLM_CACHE_DIR", "outputs/cache")  # una caché por experimento
         self.provider, self.settings = provider, settings
         self.semaphore = asyncio.Semaphore(settings.llm_max_concurrency)
         self.cache_dir = Path(cache_dir)

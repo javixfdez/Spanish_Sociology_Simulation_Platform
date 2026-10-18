@@ -244,9 +244,12 @@ class EvidenceRepository:
         include_reserved=False,
         retriever=None,
         sources=None,
+        keep_zero=False,
     ):
         """Búsqueda híbrida. Con ``topic`` se filtra a ese tema y a 'general'; si no hay resultados
-        se repite sin filtro y los resultados llevan ``topic_fallback=True``."""
+        se repite sin filtro y los resultados llevan ``topic_fallback=True``.
+        ``keep_zero=True`` conserva también los registros sin ninguna palabra en común con la consulta (con tfidf se
+        descartan por defecto): sirve para recuperar sobre TODO el almacén ya filtrado y reordenar con otro criterio."""
 
         def normalize(t):
             return " ".join((t or "").casefold().split())
@@ -273,14 +276,14 @@ class EvidenceRepository:
         general = Topic.GENERAL.value
         if topic and topic != general and topic_filter:
             narrowed = [e for e in records if (e.topic or general) in (topic, general)]
-            hits = self._rank(narrowed, query, limit, target_population, options, topic, as_of, mode) if narrowed else []
+            hits = self._rank(narrowed, query, limit, target_population, options, topic, as_of, mode, keep_zero) if narrowed else []
             if hits:
                 return hits
-            hits = self._rank(records, query, limit, target_population, options, topic, as_of, mode)
+            hits = self._rank(records, query, limit, target_population, options, topic, as_of, mode, keep_zero)
             return [{**h, "topic_fallback": True} for h in hits]
-        return self._rank(records, query, limit, target_population, options, topic, as_of, mode)
+        return self._rank(records, query, limit, target_population, options, topic, as_of, mode, keep_zero)
 
-    def _rank(self, records, query, limit, target_population, options, topic, as_of, mode="tfidf"):
+    def _rank(self, records, query, limit, target_population, options, topic, as_of, mode="tfidf", keep_zero=False):
         index = self._index()
         rows = [index["position"][e.evidence_id] for e in records]
         if index["matrix"] is None:
@@ -312,7 +315,7 @@ class EvidenceRepository:
                 semantic_ranks = {e_id: rank for rank, e_id in enumerate(hits["ids"][0])}
         results = []
         for position, (e, similarity) in enumerate(zip(records, similarities)):
-            if mode == "tfidf" and similarity <= 0 and e.evidence_id not in semantic_ranks:
+            if mode == "tfidf" and similarity <= 0 and not keep_zero and e.evidence_id not in semantic_ranks:
                 continue
             universe = float(target_population is not None and e.target_population == target_population)
             option_match = len(set(options) & set(e.options)) / max(1, len(set(options) | set(e.options)))

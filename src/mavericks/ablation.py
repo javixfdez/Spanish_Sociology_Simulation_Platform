@@ -161,3 +161,48 @@ def topic_table(configs, floors=None):
             cells.append(f"{_pp(np.mean([r['mae'] for r in part]))} (n={len(part)})" if part else "—")
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
     return header + "\n".join(lines)
+
+
+def _paired(results, bases, ids, analog_cache, config=None):
+    """[(tema, p_llm, p_prior, observado)] de los casos con predicción del LLM y análogas."""
+    config = config or AnalogConfig(5, 4.0, 0.0, 0.0, "lex")
+    cache = {c["evidence_id"]: c for c in analog_cache}
+    by = {r["evidence_id"]: r for r in results if r["status"] == "completed"}
+    out = []
+    for i in ids:
+        if i in by and i in bases and i in cache:
+            prior = combine(cache[i]["candidates"], cache[i]["options"], config)["prior"]
+            out.append((bases[i]["topic"], by[i]["predicted"], prior, bases[i]["observed"]))
+    return out
+
+
+def _mean_metric(items, w, metric):
+    return float(np.mean([metric(blend_distributions(p, q, w, 1.0), o) for _, p, q, o in items]))
+
+
+def w_curve(results, bases, ids, analog_cache, grid=None):
+    """Error medio (MAE y JSD) de la mezcla w·LLM + (1−w)·prior para cada w (w=0 es el prior solo, w=1 el LLM solo)."""
+    from .calibrate import jsd, mae
+
+    grid = grid if grid is not None else [round(x, 1) for x in np.arange(0, 1.01, 0.1)]
+    items = _paired(results, bases, ids, analog_cache)
+    return [{"w": w, "mae": _mean_metric(items, w, mae), "jsd": _mean_metric(items, w, jsd)} for w in grid], len(items)
+
+
+def loto_w(results, bases, ids, analog_cache, grid=None, objective="mae"):
+    """w elegido por validación cruzada dejando un tema fuera y el error resultante fuera de muestra."""
+    from .calibrate import jsd, mae
+
+    target = mae if objective == "mae" else jsd
+
+    grid = grid if grid is not None else [round(x, 1) for x in np.arange(0, 1.01, 0.1)]
+    items = _paired(results, bases, ids, analog_cache)
+    chosen, held = {}, []
+    for topic in sorted({t for t, *_ in items}):
+        train = [x for x in items if x[0] != topic]
+        w = min(grid, key=lambda g: _mean_metric(train, g, target))
+        chosen[topic] = w
+        held += [(w, x) for x in items if x[0] == topic]
+    held_mae = float(np.mean([mae(blend_distributions(x[1], x[2], w, 1.0), x[3]) for w, x in held]))
+    all_w = min(grid, key=lambda g: _mean_metric(items, g, target))
+    return {"w_by_fold": chosen, "w_all": all_w, "mae_held_out": held_mae, "cases": len(items)}

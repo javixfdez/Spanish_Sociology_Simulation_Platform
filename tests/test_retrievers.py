@@ -106,3 +106,23 @@ def test_embed_requires_an_embedder(tmp_path):
         EvidenceRepository(tmp_path / "x.sqlite", retriever="hybrid")
     with pytest.raises(ValueError):
         EvidenceRepository(tmp_path / "x.sqlite", retriever="otro")
+
+
+def test_keep_zero_returns_the_whole_filtered_store_and_default_is_unchanged(tmp_path):
+    repo = EvidenceRepository(tmp_path / "z.sqlite")
+    path = tmp_path / "z.json"
+    records = [
+        {"evidence_id": "A", "source": "t", "question_text": "vivienda alquiler precio", "fieldwork_date": "2024-01-01"},
+        {"evidence_id": "B", "source": "t", "question_text": "salud sanidad hospital", "fieldwork_date": "2024-02-01"},
+        {"evidence_id": "C", "source": "t", "question_text": "clima temperatura", "fieldwork_date": "2026-05-01"},
+        {"evidence_id": "R", "source": "t", "question_text": "salud mental", "fieldwork_date": "2024-03-01",
+         "reservado_examen": True},
+        {"evidence_id": "X", "source": "t", "question_text": "salud propia pregunta", "fieldwork_date": "2024-04-01"},
+    ]
+    path.write_text(json.dumps(records), encoding="utf-8")
+    repo.ingest(path, include_reserved=True)
+    kwargs = dict(limit=100, cutoff="2025-01-01", excluded_ids=["X"], retriever="tfidf")
+    default = {h["evidence"]["evidence_id"] for h in repo.search("alquiler vivienda", **kwargs)}
+    everything = {h["evidence"]["evidence_id"] for h in repo.search("alquiler vivienda", keep_zero=True, **kwargs)}
+    assert default == {"A"}  # comportamiento por defecto: solo lo que comparte palabras
+    assert everything == {"A", "B"}  # sin reservados (R), sin la propia pregunta (X) y sin posteriores al corte (C)

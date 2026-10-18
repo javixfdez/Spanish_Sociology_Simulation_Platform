@@ -28,6 +28,12 @@ from .statistics import (
 from .topics import classify_topic
 
 
+def _cited_only(prediction, allowed):
+    """Descarta las citas a evidencias que no se le dieron al modelo (solo sirven de trazabilidad, no son datos)."""
+    kept = [e for e in prediction.evidence_ids if e in allowed]
+    return prediction if kept == prediction.evidence_ids else prediction.model_copy(update={"evidence_ids": kept})
+
+
 def merge_unique(left, right):
     overlap = set(left) & set(right)
     if overlap:
@@ -352,6 +358,8 @@ def build_graph(
         ids = [e["evidence_id"] for e in state["evidence"]]
         if anchor and anchor["evidence_id"] not in ids:
             ids.append(anchor["evidence_id"])  # la ancla es siempre una evidencia citable
+        # solo se conservan citas a evidencias recuperadas (las únicas que la agregación acepta)
+        cite_ok = {e["evidence_id"] for e in state["evidence"]}
         runs = settings.stability_runs
 
         def check(p):
@@ -394,7 +402,7 @@ def build_graph(
                     Prediction,
                     payload,
                     check,
-                    repair=(lambda p: p.renormalized()) if qtype == "single" else None,
+                    repair=lambda p: _cited_only(p.renormalized() if qtype == "single" else p, cite_ok),
                     temperature=settings.stability_temperature if runs > 1 else None,
                 )
                 raw = dict(value.probabilities)
