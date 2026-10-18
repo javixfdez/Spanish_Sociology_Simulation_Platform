@@ -66,7 +66,12 @@ def _fmt(value, digits=3):
     return "—" if value is None else f"{value:.{digits}f}"
 
 
-def markdown_table(results, by="anchor_mode", floors=None):
+def _err(value, pts):
+    """Error medio: 0-1 con 3 decimales o, en puntos porcentuales, ×100 con 1 decimal."""
+    return _fmt(None if value is None else value * 100, 1) if pts else _fmt(value)
+
+
+def markdown_table(results, by="anchor_mode", floors=None, pts=False):
     header = (
         "| Grupo | casos | fallidos | MAE modelo | uniforme | nacional* | modelo en esos | gana a uniforme | "
         "gana a nacional* | MAE subgrupos | suelo ruido (nac. / subg.) | SimBench | H pred/real | s/caso |\n"
@@ -80,16 +85,17 @@ def markdown_table(results, by="anchor_mode", floors=None):
             continue
         s = row(items, floors)
         lines.append(
-            f"| {label} | {s['n']} | {s['failed']} | {_fmt(s['mae'])} | {_fmt(s['uniform'])} | {_fmt(s['national'])} "
-            f"(n={s['national_n']}) | {_fmt(s['model_on_national'])} | {s['beats_uniform']}/{s['n'] - s['failed']} | "
-            f"{s['beats_national']}/{s['national_n']} | {_fmt(s['subgroup_mae'])} | "
-            f"{_fmt(s['floor'])} / {_fmt(s['floor_subgroup'])} | {_fmt(s['simbench'], 1)} | "
+            f"| {label} | {s['n']} | {s['failed']} | {_err(s['mae'], pts)} | {_err(s['uniform'], pts)} | "
+            f"{_err(s['national'], pts)} (n={s['national_n']}) | {_err(s['model_on_national'], pts)} | "
+            f"{s['beats_uniform']}/{s['n'] - s['failed']} | {s['beats_national']}/{s['national_n']} | "
+            f"{_err(s['subgroup_mae'], pts)} | {_err(s['floor'], pts)} / {_err(s['floor_subgroup'], pts)} | "
+            f"{_fmt(s['simbench'], 1)} | "
             f"{_fmt(s['entropy_ratio'], 2)} | {_fmt(s['seconds'], 0)} |"
         )
     return header + "\n".join(lines)
 
 
-def mode_topic_table(results, floors=None):
+def mode_topic_table(results, floors=None, pts=False):
     header = (
         "| Modo · tema | casos | MAE | uniforme | nacional* | modelo en esos | suelo ruido | SimBench | H pred/real | s/caso |\n"
         "|---|---|---|---|---|---|---|---|---|---|\n"
@@ -99,14 +105,14 @@ def mode_topic_table(results, floors=None):
         for topic in sorted({str(r["topic"]) for r in results if r["anchor_mode"] == key}):
             s = row([r for r in results if r["anchor_mode"] == key and str(r["topic"]) == topic], floors)
             lines.append(
-                f"| {label.split(' ')[0]} · {topic} | {s['n']} | {_fmt(s['mae'])} | {_fmt(s['uniform'])} | "
-                f"{_fmt(s['national'])} (n={s['national_n']}) | {_fmt(s['model_on_national'])} | {_fmt(s['floor'])} | "
+                f"| {label.split(' ')[0]} · {topic} | {s['n']} | {_err(s['mae'], pts)} | {_err(s['uniform'], pts)} | "
+                f"{_err(s['national'], pts)} (n={s['national_n']}) | {_err(s['model_on_national'], pts)} | {_err(s['floor'], pts)} | "
                 f"{_fmt(s['simbench'], 1)} | {_fmt(s['entropy_ratio'], 2)} | {_fmt(s['seconds'], 0)} |"
             )
     return header + "\n".join(lines)
 
 
-def report(results, title="Backtest", floors=None):
+def report(results, title="Backtest", floors=None, pts=False):
     done = [r for r in results if r["status"] == "completed"]
     coverage = interval_coverage(results)
     cov_lines = [
@@ -123,13 +129,13 @@ def report(results, title="Backtest", floors=None):
             f"{len(results)} casos · {overall['failed']} fallidos · {_fmt(overall['seconds'], 0)} s/caso de media",
             "",
             "## Por modo de ancla",
-            markdown_table(results, "anchor_mode", floors),
+            markdown_table(results, "anchor_mode", floors, pts),
             "",
             "## Por tema",
-            markdown_table(results, "topic", floors),
+            markdown_table(results, "topic", floors, pts),
             "",
             "## Por modo y tema",
-            mode_topic_table(results, floors),
+            mode_topic_table(results, floors, pts),
             "",
             "## Cobertura de intervalos (dejando un caso fuera)",
             *cov_lines,
@@ -138,6 +144,16 @@ def report(results, title="Backtest", floors=None):
             f"Casos completados: {len(done)}.",
         ]
     )
+
+
+def bootstrap_ci(deltas, draws=2000, seed=0):
+    """IC 95 % bootstrap de la media de las diferencias de error por caso."""
+    deltas = np.asarray(deltas, dtype=float)
+    if len(deltas) < 2:
+        return None, None
+    rng = np.random.default_rng(seed)
+    means = deltas[rng.integers(0, len(deltas), (draws, len(deltas)))].mean(axis=1)
+    return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
 
 
 def compare(base, others, modes=("prior", "none")):
@@ -154,6 +170,8 @@ def compare(base, others, modes=("prior", "none")):
             "mae_base": float(np.mean([base_by[k]["mae"] for k in shared])) if shared else None,
             "mae": float(np.mean([by[k]["mae"] for k in shared])) if shared else None,
             "median_delta": float(np.median(deltas)) if len(deltas) else None,
+            "mean_delta": float(np.mean(deltas)) if len(deltas) else None,
+            "delta_ci": bootstrap_ci(deltas),
             "better": int((deltas < -TIE).sum()),
             "worse": int((deltas > TIE).sum()),
             "ties": int((np.abs(deltas) <= TIE).sum()),
@@ -174,14 +192,25 @@ def compare(base, others, modes=("prior", "none")):
     return out
 
 
-def comparison_table(comparison):
+def comparison_table(comparison, pts=False):
     header = (
-        "| Configuración | casos | MAE base | MAE | Δ mediano | mejoran | empeoran | empates | cambian de modo | s/caso (base) | fallidos |\n"
-        "|---|---|---|---|---|---|---|---|---|---|---|\n"
+        "| Configuración | casos | error base | error | Δ medio [IC 95 %] | Δ mediano | mejoran | empeoran | empates | "
+        "cambian de modo | s/caso (base) | fallidos |\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
-    lines = [
-        f"| {name} | {c['cases']} | {_fmt(c['mae_base'])} | {_fmt(c['mae'])} | {_fmt(c['median_delta'], 4)} | {c['better']} | "
-        f"{c['worse']} | {c['ties']} | {c['mode_changes']} | {_fmt(c['seconds'], 0)} ({_fmt(c['seconds_base'], 0)}) | {c['failed']} |"
-        for name, c in comparison.items()
-    ]
+    digits = 1 if pts else 4
+    k = 100 if pts else 1
+
+    def num(v):
+        return "—" if v is None else f"{v * k:.{digits}f}"
+
+    lines = []
+    for name, c in comparison.items():
+        low, high = c.get("delta_ci") or (None, None)
+        ci = f"{num(c.get('mean_delta'))} [{num(low)}, {num(high)}]"
+        lines.append(
+            f"| {name} | {c['cases']} | {_err(c['mae_base'], pts)} | {_err(c['mae'], pts)} | {ci} | {num(c['median_delta'])} | "
+            f"{c['better']} | {c['worse']} | {c['ties']} | {c['mode_changes']} | "
+            f"{_fmt(c['seconds'], 0)} ({_fmt(c['seconds_base'], 0)}) | {c['failed']} |"
+        )
     return header + "\n".join(lines)

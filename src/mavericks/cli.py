@@ -185,11 +185,22 @@ def parser():
     rep.add_argument("--results", required=True)
     rep.add_argument("--title", default="Backtest")
     rep.add_argument("--floors", help="case_floors.json: añade la columna del suelo de ruido")
+    rep.add_argument("--points", action="store_true", help="Errores en puntos porcentuales")
     rep.add_argument("--out")
     cmp_ = commands.add_parser("compare-backtests", help="Compara configuraciones caso a caso contra una base")
     cmp_.add_argument("--base", required=True)
     cmp_.add_argument("--others", nargs="+", required=True, help="nombre=ruta.json")
+    cmp_.add_argument("--points", action="store_true")
     cmp_.add_argument("--out")
+    ab = commands.add_parser("ablation-table", help="Tabla de ablación sobre un conjunto de casos difíciles")
+    ab.add_argument("--cases", required=True, help="Casos del conjunto (JSON de casos)")
+    ab.add_argument("--base", required=True, help="Resultados de baseline_v1 (referencia de modo, tema y observado)")
+    ab.add_argument("--llm", nargs="*", default=[], help="nombre=ruta a backtest.json de otras configuraciones")
+    ab.add_argument("--blend", nargs="*", default=[], help="nombre=ruta:w mezcla offline LLM/prior")
+    ab.add_argument("--fast", default="outputs/fast_validation.json")
+    ab.add_argument("--analog-cache", default="data/processed_v2/analog_cache_tfidf_cis.json")
+    ab.add_argument("--floors", default="outputs/case_floors.json")
+    ab.add_argument("--out")
     stats = commands.add_parser("survey-stats")
     stats.add_argument("--respondents", required=True)
     stats.add_argument("--responses", required=True)
@@ -559,16 +570,44 @@ def run(args):
     if args.command == "report-backtest":
         raw = json.loads(Path(args.results).read_text(encoding="utf-8"))
         floors = json.loads(Path(args.floors).read_text(encoding="utf-8")) if args.floors else None
-        text = build_report(raw["results"] if isinstance(raw, dict) else raw, args.title, floors)
+        text = build_report(raw["results"] if isinstance(raw, dict) else raw, args.title, floors, args.points)
         if args.out:
             Path(args.out).parent.mkdir(parents=True, exist_ok=True)
             Path(args.out).write_text(text, encoding="utf-8")
         print(text)
         return {"report": args.out}
+    if args.command == "ablation-table":
+        from . import ablation
+
+        ids = [c["evidence_id"] for c in json.loads(Path(args.cases).read_text(encoding="utf-8-sig"))]
+        base_results = ablation.read_results(args.base)
+        bases = {r["evidence_id"]: r for r in base_results if r["status"] == "completed"}
+        floors = json.loads(Path(args.floors).read_text(encoding="utf-8")) if Path(args.floors).exists() else None
+        configs = {"uniforme": ablation.uniform_rows(bases, ids), "nacional": ablation.national_rows(bases, ids)}
+        fast = json.loads(Path(args.fast).read_text(encoding="utf-8")) if Path(args.fast).exists() else None
+        if fast:
+            configs["modo rápido sin LLM"] = ablation.fast_rows(fast, bases, ids)
+        configs["baseline_v1"] = ablation.from_results(base_results, bases, ids)
+        for spec in args.llm:
+            name, path = spec.split("=", 1)
+            if Path(path).exists():
+                configs[name] = ablation.from_results(ablation.read_results(path), bases, ids)
+        cache = json.loads(Path(args.analog_cache).read_text(encoding="utf-8"))
+        for spec in args.blend:
+            name, rest = spec.split("=", 1)
+            path, w = rest.rsplit(":", 1)
+            if Path(path).exists():
+                configs[name] = ablation.blend_rows(ablation.read_results(path), bases, ids, cache, float(w))
+        text = ablation.table(configs, "baseline_v1", floors) + "\n\n" + ablation.topic_table(configs, floors)
+        if args.out:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(text, encoding="utf-8")
+        print(text)
+        return {"out": args.out, "configs": {k: len(v) for k, v in configs.items()}}
     if args.command == "compare-backtests":
         others = {spec.split("=", 1)[0]: load_results(spec.split("=", 1)[1]) for spec in args.others}
         comparison = compare(load_results(args.base), others)
-        text = comparison_table(comparison)
+        text = comparison_table(comparison, args.points)
         if args.out:
             Path(args.out).write_text(text, encoding="utf-8")
         print(text)
