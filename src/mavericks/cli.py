@@ -119,6 +119,15 @@ def parser():
     ana.add_argument("--previous-waves", action="store_true", help="No excluir el texto idéntico (modo temporal)")
     ana.add_argument("--reuse", action="store_true", help="Reutilizar la caché de candidatas de --out")
     ana.add_argument("--tune", action="store_true")
+    blend_ = commands.add_parser("fit-blend", help="Mezcla LLM+prior y nitidez conjuntas, validadas dejando un tema fuera")
+    blend_.add_argument("--results", nargs="+", required=True, help="backtest.json oficial (primero) y de desarrollo")
+    blend_.add_argument("--analog-cache", nargs="+", required=True)
+    blend_.add_argument("--k", type=int, default=5)
+    blend_.add_argument("--power", type=float, default=4.0)
+    blend_.add_argument("--min-sim", type=float, default=0.0)
+    blend_.add_argument("--shrink", type=float, default=0.0)
+    blend_.add_argument("--sim-mode", default="lex")
+    blend_.add_argument("--objective", choices=["jsd", "logloss", "mae"], default="jsd")
     rep = commands.add_parser("report-backtest", help="Tablas por modo y tema de un backtest")
     rep.add_argument("--results", required=True)
     rep.add_argument("--title", default="Backtest")
@@ -222,6 +231,22 @@ def run(args):
             "by_topic": dict(collections.Counter(c["topic"] for c in built)),
             "studies": sorted({c["estudio_id"] for c in built}),
         }
+    if args.command == "fit-blend":
+        from .analog import AnalogConfig
+        from .calibrate import build_rows, compare_variants
+
+        config = AnalogConfig(args.k, args.power, args.min_sim, args.shrink, args.sim_mode)
+        cache = [c for path in args.analog_cache for c in json.loads(Path(path).read_text(encoding="utf-8"))]
+        out = {}
+        for i, path in enumerate(args.results):
+            split = "test" if i == 0 else "dev"
+            out[split] = {"rows": len(build_rows(load_results(path), cache, config, split=split))}
+        official = build_rows(load_results(args.results[0]), cache, config, split="test")
+        dev = [r for path in args.results[1:] for r in build_rows(load_results(path), cache, config, split="dev")]
+        out["official_only"] = compare_variants(official, args.objective)
+        if dev:
+            out["official_plus_dev_cv"] = compare_variants(official + dev, args.objective)
+        return out
     if args.command == "build-national":
         from .analog import build_national_table
 
