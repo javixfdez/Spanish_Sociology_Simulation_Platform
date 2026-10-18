@@ -6,6 +6,7 @@ reservado (publicado ≥ 2026-04-01) entra en ningún conjunto (assert). Dos cor
 
 import json
 import random
+import re
 import zlib
 from pathlib import Path
 
@@ -18,7 +19,10 @@ from ..assist import display_label
 from ..evidence import EvidenceRepository, source_family
 from ..prior_v2.data import assert_no_reserved, reserved_ids
 
-CUT_A = "2024-07-01"
+CUT_A = "2025-07-01"  # corte A': el modelo de evaluación solo ve trabajo de campo anterior a dev_grande
+MAX_SUBGROUPS = 6  # subgrupos por pregunta y dimensión
+EXTERNAL_WEIGHT = 0.5  # peso de la pérdida de Eurobarómetro y ESS frente al CIS
+SEED = 0
 CUT_B = "2026-04-01"
 MIN_SUBGROUP = 100
 MAX_OPTIONS = 7
@@ -51,16 +55,33 @@ def profile_text(dim, category):
     return "Población: adultos residentes en España"
 
 
-def prompt_text(profile, source, year, question, options):
+def prompt_text(profile, source, year, question, options, language="es"):
+    idioma = "pregunta en inglés" if language == "en" else "pregunta en español"
     lines = [
         "Estima cómo se reparten las respuestas de la población indicada a esta pregunta de encuesta. Responde solo con la letra de una opción.",
         profile,
-        f"Fuente: {source}, {year}",
+        f"Fuente: {source}, {year} ({idioma})",
         f"Pregunta: {' '.join(question.split())}",
         *[f"{LETTERS[i]}) {o}" for i, o in enumerate(options)],
         "Respuesta:",
     ]
     return "\n".join(lines)
+
+
+def sample_subgroups(examples, k=MAX_SUBGROUPS, seed=SEED):
+    """Conserva todos los ejemplos nacionales y, como máximo, ``k`` subgrupos al azar por pregunta y dimensión."""
+    rng = random.Random(seed)
+    kept, groups = [], {}
+    for e in examples:
+        if e["scope"] == "nacional":
+            kept.append(e)
+        else:
+            groups.setdefault((e["evidence_id"], e["dim"]), []).append(e)
+    for key in sorted(groups):
+        items = sorted(groups[key], key=lambda e: e["id"])
+        rng.shuffle(items)
+        kept += items[:k]
+    return sorted(kept, key=lambda e: e["id"])
 
 
 def shuffled(example):
@@ -162,11 +183,27 @@ def cis_subgroups(meta, cis_dir):
     return examples
 
 
+DERIVED = re.compile(r"INDEX|SUMMARI[SZ]ED|RECODED|SCALE|\(D\d|\bD\d{1,3}\b|\(SUM\)|TOTAL|COMBINED|GROUPED|DUMMY|CATEGORIES", re.I)
+CODE_PREFIX = re.compile(r"^[A-Z]{1,3}\d[\w.]*\s+")
+
+
+def real_question(text):
+    """Texto limpio si parece una pregunta real; None para variables derivadas o etiquetas de variable en mayúsculas."""
+    text = " ".join((text or "").split())
+    if not text or DERIVED.search(text) or text == text.upper() or not any(c.islower() for c in text):
+        return None
+    text = CODE_PREFIX.sub("", text)
+    return text if len(text.split()) >= 4 else None
+
+
 def external_examples(path="data/processed_v2/external_evidence.json"):
     """Eurobarómetro y ESS (solo España, textos en inglés): nacionales y por sexo/edad si hay ≥ 100 encuestados."""
     out = []
     for r in json.loads(Path(path).read_text(encoding="utf-8")):
         if r.get("reservado_examen") in (True, "True") or not r.get("fieldwork_date"):
+            continue
+        question = real_question(r.get("question_text"))
+        if question is None:
             continue
         stats = (r.get("metadata") or {}).get("empirical_statistics") or {}
         options = [o for o in r.get("options") or [] if option_key(o) not in NON_SUBSTANTIVE]
@@ -186,7 +223,7 @@ def external_examples(path="data/processed_v2/external_evidence.json"):
                 {
                     "id": f"{r['evidence_id']}|{dim or 'nacional'}|{category or ''}", "evidence_id": r["evidence_id"], "source": source,
                     "study": str(r["study_id"]), "date": date, "year": date[:4], "topic": r.get("topic"), "scope": "nacional" if dim is None else "subgrupo",
-                    "dim": dim, "category": category, "profile": profile_text(dim, category), "question": " ".join(r["question_text"].split()),
+                    "dim": dim, "category": category, "profile": profile_text(dim, category), "question": question,
                     "options": options, "props": [dist.get(o, 0.0) / mass for o in options], "n": int(node.get("n_respondents") or r.get("sample_size") or 0),
                     "language": "en", "shuffled": False,
                 }
@@ -195,14 +232,15 @@ def external_examples(path="data/processed_v2/external_evidence.json"):
 
 
 def build(evidence_path="data/processed_v2/evidence_v2.sqlite", table_path="data/processed_v2/cis_national.json", out_dir="outputs/ft/data"):
-    examples = cis_examples(evidence_path, table_path) + external_examples()
+    examples = sample_subgroups(cis_examples(evidence_path, table_path) + external_examples())
     reserved = reserved_ids()
     assert not {e["evidence_id"] for e in examples} & reserved, "entra un ejemplo de un estudio reservado"
     examples = [e for e in examples if e["date"] < CUT_B]  # el corte B es estricto: lo posterior (p. ej. 2026-04-01) queda fuera
     for e in examples:
         e["in_a"] = e["date"] < CUT_A
         e["in_b"] = e["date"] < CUT_B
-        e["prompt"] = prompt_text(e["profile"], e["source"], e["year"], e["question"], e["options"])
+        e["weight_source"] = 1.0 if e["source"] == "CIS" else EXTERNAL_WEIGHT
+        e["prompt"] = prompt_text(e["profile"], e["source"], e["year"], e["question"], e["options"], e["language"])
     frame = pd.DataFrame(examples)
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     frame.to_pickle(Path(out_dir) / "examples.pkl")
