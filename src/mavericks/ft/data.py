@@ -7,7 +7,6 @@ reservado (publicado ≥ 2026-04-01) entra en ningún conjunto (assert). Dos cor
 import json
 import random
 import re
-import zlib
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +17,7 @@ from ..anchor import option_key
 from ..assist import display_label
 from ..evidence import EvidenceRepository, source_family
 from ..prior_v2.data import assert_no_reserved, reserved_ids
+from .core import LETTERS, prompt_text  # noqa: F401
 
 CUT_A = "2025-07-01"  # corte A': el modelo de evaluación solo ve trabajo de campo anterior a dev_grande
 MAX_SUBGROUPS = 6  # subgrupos por pregunta y dimensión
@@ -26,7 +26,6 @@ SEED = 0
 CUT_B = "2026-04-01"
 MIN_SUBGROUP = 100
 MAX_OPTIONS = 7
-LETTERS = "ABCDEFG"
 SOURCES = {"cis": "CIS", "eurobarometro": "Eurobarómetro", "ess": "ESS"}
 DIMENSIONS = ("sexo", "grupo_edad", "ccaa", "nivel_estudios", "ingresos_hogar_tramo")
 SEX = {"hombre": "hombres adultos", "mujer": "mujeres adultas"}
@@ -55,19 +54,6 @@ def profile_text(dim, category):
     return "Población: adultos residentes en España"
 
 
-def prompt_text(profile, source, year, question, options, language="es"):
-    idioma = "pregunta en inglés" if language == "en" else "pregunta en español"
-    lines = [
-        "Estima cómo se reparten las respuestas de la población indicada a esta pregunta de encuesta. Responde solo con la letra de una opción.",
-        profile,
-        f"Fuente: {source}, {year} ({idioma})",
-        f"Pregunta: {' '.join(question.split())}",
-        *[f"{LETTERS[i]}) {o}" for i, o in enumerate(options)],
-        "Respuesta:",
-    ]
-    return "\n".join(lines)
-
-
 def sample_subgroups(examples, k=MAX_SUBGROUPS, seed=SEED):
     """Conserva todos los ejemplos nacionales y, como máximo, ``k`` subgrupos al azar por pregunta y dimensión."""
     rng = random.Random(seed)
@@ -82,17 +68,6 @@ def sample_subgroups(examples, k=MAX_SUBGROUPS, seed=SEED):
         rng.shuffle(items)
         kept += items[:k]
     return sorted(kept, key=lambda e: e["id"])
-
-
-def shuffled(example):
-    """Copia con el orden de las opciones barajado (y el reparto reordenado), con semilla fija por ejemplo."""
-    rng = random.Random(zlib.crc32(example["id"].encode()))
-    order = list(range(len(example["options"])))
-    rng.shuffle(order)
-    if order == list(range(len(order))):
-        order = order[::-1]
-    return {**example, "id": example["id"] + "#s", "options": [example["options"][i] for i in order],
-            "props": [example["props"][i] for i in order], "shuffled": True}
 
 
 def _substantive(options, dist):
