@@ -54,6 +54,18 @@ if prior:
         "La mejora se repite en los tres conjuntos."
     )
     st.dataframe(view.prior_table(prior).round(1), hide_index=True, use_container_width=True)
+    official = view.load_official()
+    if official:
+        st.markdown("### Evaluación final oficial (estudios reservados)")
+        st.markdown(
+            f"Una sola ejecución, con la configuración congelada de antemano, sobre los {official['casos']} casos de los estudios reservados "
+            "(que nunca se usaron para construir el sistema). Error en puntos porcentuales; menos es mejor."
+        )
+        st.dataframe(view.official_table(official).round(1), hide_index=True, use_container_width=True)
+        st.dataframe(view.official_deltas(official).round(1), hide_index=True, use_container_width=True)
+        st.caption(
+            "Las preguntas repetidas se resuelven con la estadística directa en los dos modos. " + official["nota"]
+        )
     st.markdown("**Frente al reparto uniforme**, por número de opciones:")
     st.dataframe(view.prior_vs_uniform(prior).round(1), hide_index=True, use_container_width=True)
     st.info(

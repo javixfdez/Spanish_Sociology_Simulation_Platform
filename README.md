@@ -147,6 +147,20 @@ Páginas (en español, sin parámetros técnicos a la vista; todo lo avanzado es
 | **Rápido** (`rapido_sin_llm`, por defecto) | No (≈2 s) | Directo si la pregunta existe en el CIS; si no, prior = media 50/50 de las preguntas parecidas (KNN) y un MLP sobre e5. Explicación con plantillas |
 | **Con LLM** (`llm_completo`) | Sí (Ollama) | Números = 0,3·LLM + 0,7·prior (en preguntas repetidas, estadística directa); el LLM redacta la explicación a partir de las cifras, que se comprueban. Si Ollama no responde, cae al modo rápido |
 
+Evaluación final oficial (una sola ejecución, configuración congelada en el commit `3cb71f0`, 88 casos de 11 estudios reservados; error en puntos, IC 95 % por estudio):
+
+| | Total (88) | Directo (47) | Sin ancla (40) | Prior (1) |
+|---|---|---|---|---|
+| Reparto uniforme | 17,13 | 14,80 | 19,89 | 16,26 |
+| Sistema anterior (directo / KNN) | 8,76 | 2,49 | 16,01 | 13,83 |
+| **Modo rápido** | **8,11** (−0,65 [−1,57; +0,17]) | 2,49 | **14,57** (−1,45 [−3,71; +0,44]) | 14,65 |
+| **Modo con LLM** | **7,91** (−0,85 [−1,72; −0,09]) | 2,49 | **14,09** (−1,92 [−4,28; −0,30]) | 15,87 |
+
+El modo con LLM frente al rápido en los 41 no repetidos: −0,43 [−1,38; +0,26]. La ejecución del LLM (qwen3:8b, 41 casos) es la de control de ese día,
+reutilizada tras verificar por hashes la misma configuración (modelo y digest, Ollama 0.40.6, KV q8_0, paralelo 2, evidencia, población, casos, prompts y pipeline).
+La elección qwen3:8b frente a qwen3.5:9b usó estos 41 casos; el prior, w y los rangos no. Con 41 casos no repetidos y 9 estudios sin ancla, las mejoras frente al sistema
+anterior tienen el signo esperado pero el IC del modo rápido incluye el cero; es coherente con las tres validaciones previas, aunque más pequeña.
+
 Precisión honesta: con w elegido por validación cruzada dejando un estudio fuera, la mezcla da **15,06** puntos de error frente a **14,84** del prior solo
 (44 casos de desarrollo): en precisión los dos modos son equivalentes dentro del error de medida. El valor del modo con LLM es la explicación redactada y el
 criterio cualitativo. El modo por defecto se cambia con `DEFAULT_PRESET` en `.env` (ver `.env.example`; `LLM_BLEND_WEIGHT` fija el peso del LLM).

@@ -203,3 +203,36 @@ def prior_vs_uniform(validation):
                 }
             )
     return pd.DataFrame(rows)
+
+
+OFFICIAL = "outputs/final_eval/report.json"
+OFFICIAL_NAMES = {
+    "uniform": "Reparto uniforme", "knn": "Sistema anterior (directo / KNN)", "rapid": "Modo rápido",
+    "with_llm": "Modo con LLM (0,3·LLM + 0,7·prior)",
+}
+MODE_ROWS = {"direct": "Directo (pregunta repetida)", "prior": "Prior (1 pregunta)", "none": "Sin ancla (pregunta nueva)"}
+
+
+def load_official(path=OFFICIAL):
+    file = Path(path)
+    return json.loads(file.read_text(encoding="utf-8")) if file.exists() else None
+
+
+def official_table(report):
+    """Error (pp) de cada configuración por modo y total, y diferencia frente al sistema anterior con IC por estudio."""
+    rows = []
+    for mode, label in MODE_ROWS.items():
+        if mode in report["por_modo"]:
+            rows.append({"Grupo": label, **{OFFICIAL_NAMES[k]: 100 * v for k, v in report["por_modo"][mode].items()}})
+    rows.append({"Grupo": f"Total ({report['casos']} casos, {report['estudios']} estudios)", **{OFFICIAL_NAMES[k]: 100 * v for k, v in report["total"].items()}})
+    return pd.DataFrame(rows)
+
+
+def official_deltas(report):
+    out = []
+    for scope, node in (("Total", report["frente_al_sistema_anterior"]), (f"Preguntas no repetidas ({report['no_directos']['casos']})", report["no_directos"]["frente_al_sistema_anterior"])):
+        for key in ("rapid", "with_llm"):
+            v = node[key]
+            out.append({"Conjunto": scope, "Modo": OFFICIAL_NAMES[key], "Δ frente al sistema anterior [IC 95 % por estudio]": _ci(v["delta"], v["ci"]),
+                        "Mejoran / empeoran": f"{v['mejoran']} / {v['empeoran']}", "Wilcoxon p": _p(v["p"])})
+    return pd.DataFrame(out)
