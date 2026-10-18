@@ -105,7 +105,7 @@ def report_block(name, rows, predictor):
     return out
 
 
-def leave_one_study_out_by(rows, predictor, key_fn):
+def leave_one_study_out_by(rows, predictor, key_fn, level=LEVEL):
     """Igual, pero con tramos dados por ``key_fn(fila)`` (p. ej. nº de opciones). Exploratorio."""
     stats = {}
     for study in sorted({r["study"] for r in rows}):
@@ -113,7 +113,7 @@ def leave_one_study_out_by(rows, predictor, key_fn):
         q = {}
         for key in {key_fn(r) for r in train}:
             pooled = np.concatenate([case_scores(r, predictor)[1] for r in train if key_fn(r) == key])
-            q[key] = _quantile(pooled, LEVEL)
+            q[key] = _quantile(pooled, level)
         for r in (r for r in rows if r["study"] == study):
             p = np.asarray(predictor(r))
             rad = q.get(key_fn(r), max(q.values())) * scale(p)
@@ -126,6 +126,26 @@ def leave_one_study_out_by(rows, predictor, key_fn):
                 e["width"] += float((hi - lo).sum())
                 e["cases"] += 1
     return summarize(stats)
+
+
+def calibrate_and_test(train_rows, test_rows, predictor, key_fn, level):
+    """Calibra un cuantil por grupo con ``train_rows`` y mide cobertura y anchura en ``test_rows`` (conjuntos disjuntos)."""
+    q = {}
+    for key in {key_fn(r) for r in train_rows}:
+        q[key] = _quantile(np.concatenate([case_scores(r, predictor)[1] for r in train_rows if key_fn(r) == key]), level)
+    stats = {}
+    for r in test_rows:
+        p = np.asarray(predictor(r))
+        rad = q[key_fn(r)] * scale(p)
+        lo, hi = np.clip(p - rad, 0, 1), np.clip(p + rad, 0, 1)
+        inside = (r["observed"] >= lo) & (r["observed"] <= hi)
+        for k in (key_fn(r), "global"):
+            e = stats.setdefault(k, {"hit": 0, "n": 0, "width": 0.0, "cases": 0})
+            e["hit"] += int(inside.sum())
+            e["n"] += len(p)
+            e["width"] += float((hi - lo).sum())
+            e["cases"] += 1
+    return summarize(stats), q
 
 
 def exploratory_block(rows, predictor, name):

@@ -67,6 +67,25 @@ def mlp_predictions(cases, questions, emb):
     return out
 
 
+def make_rows(collected, predictions):
+    """Predicciones de cada configuración y datos de la pregunta, listos para evaluar."""
+    shift = knn.qq_shift(collected)
+    rows = []
+    for c in collected:
+        a = knn.CaseArrays(c, shift)
+        sel = a.selected(*knn.CURRENT)
+        best_sim = float(a.sim_lex[sel].max()) if sel else 0.0
+        rows.append(
+            {
+                "evidence_id": c["evidence_id"], "study": str(c["estudio_id"]), "topic": c["topic"], "date": c["fieldwork_date"],
+                "n_options": len(c["options"]), "repeated": c["repeated"], "observed": a.observed, "best_sim": best_sim,
+                "uniform": np.full(len(a.options), 1 / len(a.options)),
+                "knn_now": a.prior(*knn.CURRENT), "knn_cand": a.prior(*CANDIDATE), "mlp": predictions[c["evidence_id"]],
+            }
+        )
+    return rows
+
+
 def main():
     t0 = time.time()
     emb = EmbCache(OUT / "emb_cache")
@@ -88,20 +107,7 @@ def main():
     questions = learned.train_questions(repo, table, emb)
     data.assert_no_reserved([t.evidence_id for t in questions], "entrenamiento")
     predictions = mlp_predictions(cases, questions, emb)
-    shift = knn.qq_shift(collected)
-    rows = []
-    for c in collected:
-        a = knn.CaseArrays(c, shift)
-        sel = a.selected(*knn.CURRENT)
-        best_sim = float(a.sim_lex[sel].max()) if sel else 0.0
-        rows.append(
-            {
-                "evidence_id": c["evidence_id"], "study": str(c["estudio_id"]), "topic": c["topic"], "date": c["fieldwork_date"],
-                "n_options": len(c["options"]), "repeated": c["repeated"], "observed": a.observed, "best_sim": best_sim,
-                "uniform": np.full(len(a.options), 1 / len(a.options)),
-                "knn_now": a.prior(*knn.CURRENT), "knn_cand": a.prior(*CANDIDATE), "mlp": predictions[c["evidence_id"]],
-            }
-        )
+    rows = make_rows(collected, predictions)
     data.save(OUT / "bigdev_preds.pkl", rows)
     print(f"listo en {time.time() - t0:.0f} s", flush=True)
 
