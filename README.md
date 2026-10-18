@@ -127,9 +127,30 @@ directa. `mistral:latest` fue más lento y falló más a menudo. `qwen3:8b` no e
 
 ## Interfaz
 
-`uv run streamlit run app.py`: pregunta, opciones, tipo de respuesta, proveedor, segmentos (hasta 80), repeticiones,
-población, base de evidencia, ancla y calibración; muestra la estimación con intervalos si hay calibración, subgrupos,
-evidencia y la confianza.
+```
+python -m uv run streamlit run app.py
+```
+
+Páginas (en español, sin parámetros técnicos a la vista; todo lo avanzado está en el expander «Avanzado»):
+
+- **Simular** (`app.py`): pregunta, plantillas de opciones (Sí/No, Mucho–Nada, acuerdo 1–5), modo de cálculo, distribución
+  con intervalo del 90 %, tarjeta del modo (directo / prior / sin ancla) y nivel de confianza con el error típico del
+  backtest, subgrupos (sexo, edad, CCAA, estudios, ingresos) en barras, mapa de calor o tabla, preguntas del CIS usadas y
+  descargas CSV/JSON.
+- **Lote**: CSV o Excel con `pregunta`, `opciones` (separadas por `|`) y `tipo`; devuelve un Excel con total, subgrupos y evidencia.
+- **Validación**: lee `outputs/baseline_v1/backtest.json`: error por modo y tema frente al reparto uniforme y al suelo de ruido,
+  cobertura de los intervalos y predicho frente a observado.
+- **Metodología** y **Población** (márgenes de los 50 000 adultos frente a los objetivos del INE).
+
+| Modo de cálculo | Necesita GPU/Ollama | Qué hace |
+|---|---|---|
+| `rapido_sin_llm` | No (≈2 s) | Ancla directa o prior por analogía con datos del CIS |
+| `recomendado` | Solo si Ollama está disponible; si no, cae al rápido con un aviso | Estadística + modelo de lenguaje como ajuste |
+| `llm_completo` | Sí (Ollama con el modelo configurado) | Pipeline completo con agentes por segmento |
+
+Los ejemplos de la barra lateral están precalculados en `data/examples/ejemplos_demo.json` (modo rápido) para que la demo no
+espere; se regeneran con `uv run mavericks build-examples [--preset recomendado]`. Los objetivos del INE de la página de
+población se generan una vez con `uv run mavericks population-targets`.
 
 ## Estructura
 

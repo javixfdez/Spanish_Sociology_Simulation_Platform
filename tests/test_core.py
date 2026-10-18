@@ -410,7 +410,7 @@ def test_streamlit_app_smoke():
 
     app = AppTest.from_file(str(Path(__file__).parents[1] / "app.py")).run(timeout=20)
     assert not app.exception
-    assert app.title[0].value.startswith("GenAI Mavericks")
+    assert app.title[0].value.startswith("Simulación de opinión")
 
 
 def test_search_cache_refreshes_after_ingest(tmp_path):

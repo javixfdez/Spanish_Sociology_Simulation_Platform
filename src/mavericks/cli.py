@@ -96,6 +96,13 @@ def parser():
     pop.add_argument("--n", type=int, default=50_000)
     pop.add_argument("--seed", type=int, default=42)
     pop.add_argument("--period", default="1 de enero de 2026", help="Periodo de la ECP (anterior al 30/06/2026)")
+    ex = commands.add_parser("build-examples", help="Precalcula las preguntas de ejemplo de la interfaz")
+    ex.add_argument("--preset", default="rapido_sin_llm", choices=["rapido_sin_llm", "recomendado", "llm_completo"])
+    ex.add_argument("--out", default="data/examples/ejemplos_demo.json")
+    pt = commands.add_parser("population-targets", help="Objetivos de la ECP (sexo, edad, CCAA) para la página de población")
+    pt.add_argument("--raw", default="maverick_data/raw")
+    pt.add_argument("--period", default="1 de enero de 2026")
+    pt.add_argument("--out", default="data/processed/population_targets.json")
     ext = commands.add_parser("etl-external", help="Eurobarómetro y ESS (solo España) como evidencia adicional")
     ext.add_argument("--raw", default="maverick_data/raw")
     ext.add_argument("--out", default="data/processed_v2")
@@ -259,6 +266,19 @@ def run(args):
         from .etl.cis import run_etl
 
         return run_etl(args.raw, args.catalog, args.out, set(args.only) if args.only else None)
+    if args.command == "build-examples":
+        from .examples import build_examples
+        from .service import load_resources
+
+        service = None
+        if args.preset != "rapido_sin_llm":
+            service = LLMService(create_provider(settings), settings)
+        payload = build_examples(load_resources(), args.preset, args.out, service)
+        return {"examples": len(payload["items"]), "preset": args.preset, "out": args.out}
+    if args.command == "population-targets":
+        from .population_view import build_targets
+
+        return build_targets(args.raw, args.period, args.out)
     if args.command == "etl-population":
         from .etl.population import run_population_etl
 
