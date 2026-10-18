@@ -61,23 +61,35 @@ def summarize_set(rows):
 
 
 def interval_artifact():
-    """Cuantiles por grupo (nivel 90 % y 50 %) con las nuevas de dev_grande y su cobertura en cada conjunto."""
-    calibration = new_questions("dev_grande")
+    """Cuantiles por grupo (nivel 90 % y 50 %) con las preguntas nuevas de los tres conjuntos juntos.
+
+    La cobertura se mide dejando fuera un conjunto (ventana temporal) cada vez: se calibra con los otros dos y se prueba en él.
+    """
+    by_set = {name: new_questions(name) for name in SETS}
+    everything = [r for rows in by_set.values() for r in rows]
     groups = {}
     for g in GROUPS:
-        rows = [r for r in calibration if group_of(r) == g]
+        rows = [r for r in everything if group_of(r) == g]
         scores = np.concatenate([task3.case_scores(r, average)[1] for r in rows])
-        groups[g] = {
-            "q90": task3._quantile(scores, 0.9), "q50": task3._quantile(scores, 0.5), "preguntas": len(rows),
-        }
-    coverage = {}
+        groups[g] = {"q90": task3._quantile(scores, 0.9), "q50": task3._quantile(scores, 0.5), "preguntas": len(rows)}
+    coverage, folds = {}, {}
     for level in (0.9, 0.5):
-        loso = task3.leave_one_study_out_by(calibration, average, group_of, level)
-        coverage[f"dev_grande_{int(level * 100)}"] = {k: {"cobertura": v["coverage"], "anchura_pp": v["width_pp"]} for k, v in loso.items()}
-        pooled_rows = new_questions("confirmacion_2025h1") + new_questions("confirmacion_2024h2")
-        conf, _ = task3.calibrate_and_test(calibration, pooled_rows, average, group_of, level)
-        coverage[f"confirmaciones_{int(level * 100)}"] = {k: {"cobertura": v["coverage"], "anchura_pp": v["width_pp"]} for k, v in conf.items()}
-    return {"groups": groups, "scale_floor": 0.02, "calibrada_con": "preguntas nuevas de dev_grande", "coverage": coverage}
+        pooled = {k: {"hit": 0.0, "n": 0, "width": 0.0} for k in (*GROUPS, "global")}
+        for held, test in by_set.items():
+            train = [r for name, rows in by_set.items() if name != held for r in rows]
+            summary, _ = task3.calibrate_and_test(train, test, average, group_of, level)
+            folds[f"{held}_{int(level * 100)}"] = {k: {"cobertura": v["coverage"], "anchura_pp": v["width_pp"], "preguntas": v["cases"]} for k, v in summary.items()}
+            for k, v in summary.items():
+                pooled[k]["hit"] += v["coverage"] * v["options"]
+                pooled[k]["n"] += v["options"]
+                pooled[k]["width"] += v["width_pp"] * v["options"]
+        coverage[f"fuera_un_conjunto_{int(level * 100)}"] = {
+            k: {"cobertura": v["hit"] / v["n"], "anchura_pp": v["width"] / v["n"]} for k, v in pooled.items() if v["n"]
+        }
+    return {
+        "groups": groups, "scale_floor": 0.02, "calibrada_con": "preguntas nuevas de los tres conjuntos (dev_grande y dos confirmaciones)",
+        "coverage": coverage, "coverage_por_conjunto": folds,
+    }
 
 
 def validation_artifact():

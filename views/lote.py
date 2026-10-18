@@ -2,7 +2,7 @@ import streamlit as st
 
 from mavericks import batch
 from mavericks.service import ServiceError
-from mavericks.ui_common import PRESET_LABELS, get_resources, llm_service, setup
+from mavericks.ui_common import PRESET_HELP, PRESET_LABELS, get_resources, llm_service, setup
 
 setup()
 st.title("Procesar varias preguntas a la vez")
@@ -17,9 +17,8 @@ st.download_button(
     "text/csv",
 )
 
-preset = st.selectbox(
-    "Modo de cálculo", ["rapido_sin_llm", "recomendado", "llm_completo"], format_func=PRESET_LABELS.get
-)
+preset = st.radio("Modo", ["rapido_sin_llm", "llm_completo"], format_func=PRESET_LABELS.get, horizontal=True)
+st.caption(PRESET_HELP)
 uploaded = st.file_uploader("Archivo de preguntas", type=["csv", "xlsx", "xls"])
 
 if uploaded and st.button("Procesar", type="primary"):
@@ -34,7 +33,7 @@ if uploaded and st.button("Procesar", type="primary"):
         def progress(done, total):
             bar.progress(done / total, text=f"Pregunta {done} de {total}")
 
-        st.session_state["batch"] = batch.run_batch(rows, preset, resources, service, progress)
+        st.session_state["batch"] = batch.run_batch(rows, preset if service else "rapido_sin_llm", resources, service, progress)
         bar.empty()
     except ServiceError as exc:
         st.session_state.pop("batch", None)

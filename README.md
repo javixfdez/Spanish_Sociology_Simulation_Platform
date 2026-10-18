@@ -142,11 +142,16 @@ Páginas (en español, sin parámetros técnicos a la vista; todo lo avanzado es
   cobertura de los intervalos y predicho frente a observado.
 - **Metodología** y **Población** (márgenes de los 50 000 adultos frente a los objetivos del INE).
 
-| Modo de cálculo | Necesita GPU/Ollama | Qué hace |
+| Modo | Necesita GPU/Ollama | Qué hace |
 |---|---|---|
-| `rapido_sin_llm` | No (≈2 s) | Ancla directa o prior por analogía con datos del CIS |
-| `recomendado` | Solo si Ollama está disponible; si no, cae al rápido con un aviso | Estadística + modelo de lenguaje como ajuste |
-| `llm_completo` | Sí (Ollama con el modelo configurado) | Pipeline completo con agentes por segmento |
+| **Rápido** (`rapido_sin_llm`, por defecto) | No (≈2 s) | Directo si la pregunta existe en el CIS; si no, prior = media 50/50 de las preguntas parecidas (KNN) y un MLP sobre e5. Explicación con plantillas |
+| **Con LLM** (`llm_completo`) | Sí (Ollama) | Números = 0,3·LLM + 0,7·prior (en preguntas repetidas, estadística directa); el LLM redacta la explicación a partir de las cifras, que se comprueban. Si Ollama no responde, cae al modo rápido |
+
+Precisión honesta: con w elegido por validación cruzada dejando un estudio fuera, la mezcla da **15,06** puntos de error frente a **14,84** del prior solo
+(44 casos de desarrollo): en precisión los dos modos son equivalentes dentro del error de medida. El valor del modo con LLM es la explicación redactada y el
+criterio cualitativo. El modo por defecto se cambia con `DEFAULT_PRESET` en `.env` (ver `.env.example`; `LLM_BLEND_WEIGHT` fija el peso del LLM).
+La explicación del LLM solo se acepta si todas sus cifras (con % o puntos) coinciden con las calculadas (tolerancia de 1 punto) y llega en
+menos de `EXPLANATION_TIMEOUT` s; si no, se muestra la plantilla y se registra el motivo.
 
 Flujo de Simular: el usuario solo escribe la pregunta. «Analizar pregunta» clasifica su cobertura (respaldada por el CIS,
 basada en preguntas parecidas, sin datos comparables o fuera de alcance; en este caso no se simula y se sugiere una

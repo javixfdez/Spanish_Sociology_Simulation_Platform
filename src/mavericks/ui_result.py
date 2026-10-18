@@ -3,7 +3,7 @@
 import pandas as pd
 import streamlit as st
 
-from . import batch
+from . import batch, explain
 from .assist import SPONTANEOUS_NOTE, display_label, is_spontaneous
 from .ui_charts import distribution_bars, heatmap, stacked_groups
 
@@ -63,7 +63,7 @@ def render_national(result):
     if node.get("interval_core") is not None:
         text = "La banda gruesa es el **rango habitual** de cada opción: la mitad de las veces el resultado real cae dentro"
         if info and info.get("coverage_50") is not None:
-            text += f" (en preguntas nuevas no vistas cayó dentro el {_pct(info['coverage_50'])} de las veces)"
+            text += f" (medido dejando fuera una ventana temporal entera, cayó dentro el {_pct(info['coverage_50'])} de las veces)"
         if info and info.get("mean_halfwidth_pp") is not None:
             text += f"; de media ±{info['mean_halfwidth_pp']:.0f} puntos"
         st.caption(text + ".")
@@ -74,7 +74,7 @@ def render_national(result):
                 for o, (lo, hi) in node["interval"].items()
             ]
             st.dataframe(pd.DataFrame(rows).round(1), hide_index=True, use_container_width=True)
-            cover = f" (en preguntas nuevas no vistas: {_pct(info['coverage_90'])})" if info and info.get("coverage_90") is not None else ""
+            cover = f" (medido dejando fuera una ventana temporal entera: {_pct(info['coverage_90'])})" if info and info.get("coverage_90") is not None else ""
             st.caption(f"Con este rango el resultado real debería quedar dentro 9 de cada 10 veces{cover}.")
     if result.get("spontaneous"):
         names = ", ".join(f"«{o}»" for o in result["spontaneous"])
@@ -160,7 +160,24 @@ def render_downloads(result, key="dl"):
     )
 
 
-def render(result, key="res"):
+def show_text(slot, result):
+    info = result.get("explanation_text")
+    if not info:
+        return
+    with slot.container():
+        st.markdown("**Resumen**")
+        st.write(info["texto"])
+        if info["origen"] == "llm":
+            st.caption("Texto redactado por el modelo de lenguaje a partir de las cifras calculadas; las cifras se han comprobado.")
+        elif info.get("motivo"):
+            st.caption(f"Resumen automático (no se usó el texto del modelo: {info['motivo']}).")
+        else:
+            st.caption("Resumen automático a partir de las cifras calculadas.")
+
+
+def render(result, key="res", llm=None, timeout=20.0):
+    """Muestra el resultado. Los números salen primero; si hay ``llm`` (modo con LLM), el texto redactado sustituye
+    a la plantilla al final, sin retrasar nada de lo anterior."""
     st.markdown(f"### {result['question']}")
     if result.get("coverage"):
         render_coverage(result["coverage"])
@@ -168,6 +185,13 @@ def render(result, key="res"):
     for warning in result["warnings"]:
         st.warning(warning)
     render_national(result)
+    slot = st.empty()
+    show_text(slot, result)
     render_subgroups(result, key)
     render_evidence(result)
     render_downloads(result, key)
+    info = result.get("explanation_text") or {}
+    if llm is not None and "segundos" not in info:
+        with st.spinner("Redactando la explicación con el modelo de lenguaje…"):
+            explain.add_llm_text(result, llm, timeout)
+        show_text(slot, result)

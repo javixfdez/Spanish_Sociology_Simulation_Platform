@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     llm_max_concurrency: int = Field(1, ge=1, le=32)
     llm_retries: int = Field(2, ge=0, le=5)
     simulation_timeout: float = Field(900, gt=0)
+    default_preset: Literal["rapido_sin_llm", "llm_completo"] = "rapido_sin_llm"  # preset por defecto de la interfaz
+    llm_blend_weight: float = Field(0.3, ge=0, le=1)  # peso del LLM en el modo con LLM (el resto es el prior)
+    explanation_timeout: float = Field(20.0, gt=0)  # segundos máximos para la explicación redactada por el LLM
     embedding_model_path: str = ""
     chroma_path: str = "data/processed/chroma"
     external_model: str = ""
@@ -83,6 +86,10 @@ class ScopeJudgement(BaseModel):
     category: Literal["opinion", "hechos", "prediccion", "persona_concreta", "poblacion_distinta", "no_es_pregunta"]
     reason: str = ""
     reformulation: str = ""
+
+
+class ResultNarrative(BaseModel):
+    summary: str = Field(min_length=20)
 
 
 class AssessmentItem(BaseModel):

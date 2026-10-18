@@ -1,8 +1,9 @@
 import streamlit as st
 
-from mavericks.ui_common import configure
+from mavericks.ui_common import configure, preload
 
 configure()
+preload()
 navigation = st.navigation(
     [
         st.Page("views/simular.py", title="Simular", icon="📊", default=True),

@@ -21,15 +21,14 @@ def run(path):
 
 def test_simular_page_and_example():
     at = run("views/simular.py")
-    assert at.sidebar.selectbox[1].options[0] == "—"
-    at.sidebar.selectbox[1].select(at.sidebar.selectbox[1].options[2]).run()
+    assert at.sidebar.selectbox[0].options[0] == "—"
+    at.sidebar.selectbox[0].select(at.sidebar.selectbox[0].options[2]).run()
     assert not at.exception
     assert at.session_state["result"]["options"]
 
 
 def analyse(question):
     at = run("views/simular.py")
-    at.sidebar.selectbox[0].select("rapido_sin_llm")
     at.text_area(key="q").set_value(question)
     at.button[0].click().run()
     assert not at.exception, [e.value for e in at.exception]

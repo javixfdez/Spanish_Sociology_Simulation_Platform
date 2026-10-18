@@ -8,6 +8,7 @@ Presets:
 
 import asyncio
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import assist, fastcal
+from . import assist, explain, fastcal
 from . import categories as cat
 from .analog import AnalogConfig, analog_for_question, load_national_table
 from .analog_segments import group_estimates
@@ -26,6 +27,7 @@ from .schemas import Prediction, Question, Settings
 from .statistics import aggregate, load_calibration, select_stratum
 from .topics import TOPICS, classify_topic
 
+log = logging.getLogger("mavericks.service")
 PRESETS = ("recomendado", "rapido_sin_llm", "llm_completo")
 SUBGROUP_DIMENSIONS = {
     "sexo": "Sexo",
@@ -45,6 +47,7 @@ MODE_LABELS = {"direct": "directo", "prior": "prior", "none": "sin ancla"}
 CONFIDENCE = {"direct": "alta", "prior": "media", "none": "baja"}
 ALPHA = 0.1
 CONTRACTION = 0.5  # fracción de la diferencia empírica de las análogas que se aplica a cada grupo
+LLM_RANGE_NOTE = "Los rangos están calibrados para la estimación estadística; con el modelo de lenguaje no se han calibrado por separado."
 TWO_OPTIONS_NOTE = "En preguntas de sí/no sin datos parecidos, el reparto real es difícil de anticipar; tómalo como orientación."
 SUBGROUP_NOTE = "Diferencias estimadas a partir de preguntas parecidas del CIS; confianza baja."
 # Umbral del modo directo validado con el backtest (153 casos) y con pares de preguntas del CIS: ver README
@@ -192,7 +195,7 @@ def _prior_intervals(calib, group, options, national, subgroup_ratio):
     coverage = calib.get("coverage", {})
 
     def covered(level):
-        return coverage.get(f"confirmaciones_{level}", {}).get(group, {}).get("cobertura")
+        return coverage.get(f"fuera_un_conjunto_{level}", {}).get(group, {}).get("cobertura")
 
     info = {
         "group": group,
@@ -528,10 +531,14 @@ def predict(
     if not scope["in_scope"]:
         raise OutOfScopeError(assist.coverage_card("none", None, scope))
 
-    used_llm = preset == "llm_completo" or (preset == "recomendado" and service is not None)
-    if used_llm:
-        if service is None:
-            raise ServiceError("El preset con LLM necesita un modelo disponible (Ollama).")
+    wants_llm = preset == "llm_completo" or (preset == "recomendado" and service is not None)
+    if wants_llm and service is None:
+        raise ServiceError("El modo con LLM necesita un modelo disponible (Ollama).")
+    used_llm = False  # ¿las cifras mezclan la salida del LLM?
+    legacy_llm = question_type != "single"  # preguntas de respuesta múltiple: solo el pipeline completo con LLM
+    if legacy_llm:
+        if not wants_llm:
+            raise ServiceError("Sin LLM solo se pueden estimar preguntas de respuesta única.")
         result = _llm_path(resources, question, options, question_type, settings, service, n_segments)
         if result["execution_metadata"]["status"] != "completed":
             raise ServiceError("El modelo no pudo completar todos los segmentos; inténtalo de nuevo.")
@@ -539,15 +546,13 @@ def predict(
         mode = spec["mode"] if spec else "none"
         national = result["national_distribution"]
         items = [
-            {"evidence_id": h["evidence"]["evidence_id"], "similarity": None}
-            for h in result["retrieved_evidence"][:5]
+            {"evidence_id": h["evidence"]["evidence_id"], "similarity": None} for h in result["retrieved_evidence"][:5]
         ]
         group_specs = [(1.0, spec)] if spec else None
         prior_used = {"metodo": "llm"}
+        used_llm = True
         warnings += [w for w in result.get("warnings", []) if "DEMO" not in w]
     else:
-        if question_type != "single":
-            raise ServiceError("Sin LLM solo se pueden estimar preguntas de respuesta única.")
         mode, national, spec, group_specs, items, extra, similarity, prior_used = _fast(
             resources,
             question,
@@ -558,14 +563,30 @@ def predict(
             settings.anchor_prior_similarity,
         )
         warnings += extra
+        if wants_llm and mode != "direct":
+            # Modo con LLM: LLM (peso w) + prior estadístico (1 − w). Las preguntas repetidas ya son estadística directa.
+            try:
+                result = _llm_path(resources, question, options, question_type, settings, service, n_segments)
+                if result["execution_metadata"]["status"] != "completed":
+                    raise ServiceError("segmentos sin completar")
+                w = settings.llm_blend_weight
+                llm_national = result["national_distribution"]
+                national = {o: w * float(llm_national[o]) + (1 - w) * float(national[o]) for o in options}
+                prior_used = {"metodo": "mezcla_llm", "w_llm": w, "prior": prior_used}
+                used_llm = True
+            except Exception as exc:
+                log.warning("El modo con LLM no pudo completar la estimación: %s", exc)
+                warnings.append(
+                    "El modelo de lenguaje no pudo completar la estimación; se muestra la estimación estadística (modo rápido)."
+                )
 
     calibration = resources.calibration
-    fast_payload = resources.fast if not used_llm else None
+    fast_payload = resources.fast if not legacy_llm else None
     fast_model = fast_payload["by_buckets" if fast_payload.get("chosen") == "by_buckets" else "by_mode"]["model"] if fast_payload else None
     radius = sub_radius = core_radius = interval_info = None
     group = "2 opciones" if len(options) == 2 else "3 o más"
     calib = resources.prior_intervals
-    if not used_llm and mode in ("prior", "none") and calib and group in calib["groups"]:
+    if not legacy_llm and mode in ("prior", "none") and calib and group in calib["groups"]:
         _, block = select_stratum(calibration, mode, min_cases=1)
         ratio = 1.0
         if block:
@@ -594,11 +615,13 @@ def predict(
             "sin equivalente en el CIS, por lo que es más amplio."
         )
     notes = []
+    if used_llm:
+        notes.append(LLM_RANGE_NOTE)
     if len(options) == 2 and mode in ("prior", "none"):
         notes.append(TWO_OPTIONS_NOTE)
     evidence = _evidence_entries(resources.evidence, resources.table, items)
     subgroups = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius)
-    return {
+    output = {
         "question": question,
         "options": options,
         "question_type": question_type,
@@ -626,6 +649,7 @@ def predict(
         "warnings": warnings,
         "seconds": time.monotonic() - started,
     }
+    return explain.add_template(output)
 
 
 def suggest_options(question, resources=None, service=None, topic=None):

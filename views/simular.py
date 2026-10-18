@@ -10,7 +10,7 @@ from mavericks.service import (
     suggest_options,
 )
 from mavericks.topics import TOPICS
-from mavericks.ui_common import PRESET_LABELS, get_resources, llm_service, ollama_ready, setup, warm_embedder
+from mavericks.ui_common import PRESET_HELP, PRESET_LABELS, get_resources, llm_service, setup, warm_embedder
 from mavericks.ui_result import render, render_coverage
 
 setup()
@@ -41,16 +41,9 @@ def pick_example():
 with st.sidebar:
     st.header("Opciones")
     defaults = Settings()
-    ready = ollama_ready(defaults.ollama_base_url, defaults.ollama_model)
-    preset = st.selectbox(
-        "Modo de cálculo",
-        ["rapido_sin_llm", "recomendado", "llm_completo"],
-        index=1 if ready else 0,
-        format_func=PRESET_LABELS.get,
-        key="preset",
-    )
-    if not ready:
-        st.caption("El modelo de lenguaje no responde: se usa el modo rápido.")
+    modes = ["rapido_sin_llm", "llm_completo"]
+    preset = st.radio("Modo", modes, index=modes.index(defaults.default_preset), format_func=PRESET_LABELS.get, key="preset")
+    st.caption(PRESET_HELP)
     if examples["items"]:
         st.selectbox("Ejemplos listos", ["—", *by_label], key="example", on_change=pick_example)
         st.caption("Los ejemplos se muestran al instante porque ya están calculados.")
@@ -109,9 +102,10 @@ if analysis:
                     st.info(notice)
                 with st.spinner("Calculando…"):
                     st.session_state["result"] = predict(
-                        question, options, "single", preset, topic=chosen_topic, resources=resources,
-                        service=service, n_segments=segments,
+                        question, options, "single", preset if service else "rapido_sin_llm", topic=chosen_topic,
+                        resources=resources, service=service, n_segments=segments,
                     )
+                st.session_state["text_service"] = service
             except OutOfScopeError as exc:
                 st.session_state.pop("result", None)
                 render_coverage(exc.coverage)
@@ -123,6 +117,6 @@ if analysis:
                 st.error("No se pudo completar la simulación. Prueba con el modo rápido o revisa las opciones.")
 
 if "result" in st.session_state and analysis:
-    render(st.session_state["result"])
+    render(st.session_state["result"], llm=st.session_state.get("text_service"), timeout=Settings().explanation_timeout)
 elif not analysis:
     st.info("Escribe una pregunta y pulsa **Analizar pregunta**, o abre un ejemplo en la barra lateral.")

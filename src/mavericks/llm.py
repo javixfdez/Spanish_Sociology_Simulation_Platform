@@ -13,7 +13,15 @@ from typing import Literal, Protocol
 import httpx
 from pydantic import BaseModel, Field, create_model
 
-from .schemas import Assessment, Methodology, Narrative, OptionSuggestion, Prediction, ScopeJudgement
+from .schemas import (
+    Assessment,
+    Methodology,
+    Narrative,
+    OptionSuggestion,
+    Prediction,
+    ResultNarrative,
+    ScopeJudgement,
+)
 from .topics import classify_topic
 
 logger = logging.getLogger(__name__)
@@ -56,6 +64,7 @@ ROLES = {
     "población adulta residente en España (opinion) o si es otra cosa: hechos objetivos, predicción de sucesos futuros, "
     "una persona concreta, otra población distinta, o algo que no es una pregunta. Si no es opinión, propón en "
     "reformulation una pregunta de opinión equivalente.",
+    "ResultNarrative": "Rol: redactor de resultados de encuesta. Recibes cifras ya calculadas (national_percent, usual_range_percent, group_differences, support, typical_error_points). Redacta en español 3 o 4 frases: opción más probable con su porcentaje y su rango habitual, las diferencias entre grupos SOLO si aparecen en group_differences, y de qué se apoya la estimación. Usa exclusivamente cifras presentes en los datos; no calcules, no redondees de otra forma, no inventes ni menciones grupos que no estén en group_differences.",
     "Narrative": "Rol: analista. Interpreta sin alterar ninguna cifra; señala límites y advertencias.",
 }
 
@@ -204,6 +213,9 @@ class MockLLMProvider:
                 evidence_ids=[],
                 limitations=["Sin validez sociológica"],
             )
+        if schema is ResultNarrative:
+            top = max(payload["national_percent"], key=payload["national_percent"].get)
+            return ResultNarrative(summary=f"La opción más probable es «{top}» con un {payload['national_percent'][top]:.0f} %. DEMO / SYNTHETIC.")
         if schema is OptionSuggestion:
             return OptionSuggestion(options=["Mucho", "Bastante", "Poco", "Nada"])
         if schema is ScopeJudgement:

@@ -85,7 +85,10 @@ def leave_one_study_out(rows, predictor, n_tramos):
 
 
 def summarize(stats):
-    return {k: {"coverage": v["hit"] / v["n"], "width_pp": 100 * v["width"] / v["n"], "cases": v["cases"]} for k, v in stats.items()}
+    return {
+        k: {"coverage": v["hit"] / v["n"], "width_pp": 100 * v["width"] / v["n"], "cases": v["cases"], "options": v["n"]}
+        for k, v in stats.items()
+    }
 
 
 def report_block(name, rows, predictor):

@@ -1,17 +1,19 @@
 """Piezas comunes de la interfaz Streamlit: recursos en caché, estilo y avisos de error."""
 
+import time
+
 import httpx
 import streamlit as st
 
 from .llm import LLMService, check_ollama, create_provider
 from .schemas import Settings
-from .service import ServiceError, get_embedder, load_resources
+from .service import ServiceError, get_embedder, load_resources, predict
 
-PRESET_LABELS = {
-    "recomendado": "Recomendado (estadística + modelo de lenguaje si está disponible)",
-    "rapido_sin_llm": "Rápido, sin modelo de lenguaje (instantáneo, sin GPU)",
-    "llm_completo": "Modelo de lenguaje completo (necesita GPU y Ollama)",
-}
+PRESET_LABELS = {"rapido_sin_llm": "Rápido", "llm_completo": "Con LLM"}
+PRESET_HELP = (
+    "**Rápido**: estimación estadística validada, al instante. "
+    "**Con LLM**: añade el criterio del modelo de lenguaje y una explicación redactada; tarda más."
+)
 CSS = """
 <style>
 .block-container {padding-top: 2rem; max-width: 1200px;}
@@ -45,9 +47,36 @@ def ollama_ready(base_url, model, timeout=2.0):
         return False
 
 
-@st.cache_resource(show_spinner="Cargando población y datos del CIS…")
+WARMUP_QUESTION = ("¿Cree Ud. que el precio de la vivienda durante el próximo año subirá, se mantendrá o bajará?", ["Subirá", "Se mantendrá", "Bajará"])
+
+
+def warm_up(resources):
+    """Carga e5 y el MLP y ejecuta una pregunta de prueba para construir los índices: la primera pregunta real tarda como las demás."""
+    started = time.monotonic()
+    try:
+        get_embedder()
+        predict(WARMUP_QUESTION[0], WARMUP_QUESTION[1], resources=resources)
+    except Exception:  # sin e5 o sin modelo la aplicación sigue con el KNN; el aviso lo da cada resultado
+        pass
+    return time.monotonic() - started
+
+
+@st.cache_resource(show_spinner=False)
 def cached_resources():
-    return load_resources()
+    """Recursos + calentamiento, una vez por proceso. Devuelve (recursos, segundos de calentamiento)."""
+    started = time.monotonic()
+    resources = load_resources()
+    seconds = warm_up(resources)
+    return resources, seconds, time.monotonic() - started
+
+
+def preload():
+    """Se llama al cargar la página principal: carga todo mientras se muestra «Cargando modelos…»."""
+    try:
+        with st.spinner("Cargando modelos…"):
+            return cached_resources()
+    except ServiceError:
+        return None
 
 
 @st.cache_resource(show_spinner="Cargando el modelo de lenguaje e5 (solo la primera vez)…")
@@ -59,23 +88,19 @@ def warm_embedder():
 def get_resources():
     """Recursos o un mensaje de error comprensible (y se detiene la página)."""
     try:
-        return cached_resources()
+        return cached_resources()[0]
     except ServiceError as exc:
         st.error(str(exc))
         st.stop()
 
 
 def llm_service(preset, model="qwen3:8b"):
-    """Devuelve (servicio o None, aviso). Solo se conecta a Ollama si el preset lo necesita."""
+    """(servicio o None, aviso). Solo se conecta a Ollama en el modo con LLM; si no responde, se usa el modo rápido."""
     if preset == "rapido_sin_llm":
         return None, None
     settings = Settings(llm_provider="ollama", ollama_model=model)
     try:
         check_ollama(settings)
     except RuntimeError:
-        if preset == "llm_completo":
-            raise ServiceError(
-                "El modelo de lenguaje no está disponible. Arranca Ollama o elige el preset «Rápido, sin modelo de lenguaje»."
-            ) from None
-        return None, "El modelo de lenguaje no está disponible: se ha usado el modo rápido, basado solo en datos del CIS."
+        return None, "El modelo de lenguaje no responde: se muestra el resultado del modo rápido, con explicación automática."
     return LLMService(create_provider(settings), settings), None
