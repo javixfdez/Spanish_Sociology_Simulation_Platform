@@ -138,6 +138,13 @@ def parser():
     full.add_argument("--min-sim", type=float, default=0.0)
     full.add_argument("--shrink", type=float, default=0.0)
     full.add_argument("--sim-mode", default="lex")
+    tr = commands.add_parser("translate-external", help="Traduce al español (una vez, con caché) las fuentes europeas")
+    tr.add_argument("--in", dest="source", default="data/processed_v2/external_evidence.json")
+    tr.add_argument("--out", default="data/processed_v2/external_evidence_es.json")
+    tr.add_argument("--cache", default="data/processed_v2/translations_es.json")
+    tr.add_argument("--model")
+    tr.add_argument("--batch", type=int, default=25)
+    tr.add_argument("--limit", type=int, help="Solo los primeros N registros (prueba)")
     nz = commands.add_parser("noise-floor", help="Suelo de ruido de los subgrupos frente a plano, desviaciones empíricas y LLM")
     nz.add_argument("--cases", nargs="+", required=True)
     nz.add_argument("--baseline", nargs="+", required=True, help="backtest.json de la línea base (oficial y, si existe, desarrollo)")
@@ -267,6 +274,22 @@ def run(args):
             "by_topic": dict(collections.Counter(c["topic"] for c in built)),
             "studies": sorted({c["estudio_id"] for c in built}),
         }
+    if args.command == "translate-external":
+        from .translate import apply_translation, load_cache, save_cache, texts_to_translate, translate_texts
+
+        records = json.loads(Path(args.source).read_text(encoding="utf-8"))[: args.limit]
+        cache = load_cache(args.cache)
+        wanted = texts_to_translate(records)
+        todo = len([t for t in wanted if t not in cache])
+        if todo:
+            service = LLMService(create_provider(settings), settings)
+            cache = asyncio.run(
+                translate_texts(wanted, service, cache, args.batch, on_batch=lambda c: save_cache(args.cache, c))
+            )
+            save_cache(args.cache, cache)
+        translated = [apply_translation(r, cache) for r in records]
+        save_json(args.out, translated)
+        return {"records": len(translated), "texts": len(wanted), "translated_now": todo, "out": args.out}
     if args.command == "noise-floor":
         import numpy as np
 

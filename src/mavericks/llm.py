@@ -46,6 +46,8 @@ ROLES = {
     "segmento: parte de ella y desvíate como máximo anchor.max_shift por opción solo si la evidencia lo justifica. "
     'Sin ancla, apóyate en "empirical_national" de la evidencia y declara incertidumbre en limitations. '
     "Diferencia al segmento solo cuando la evidencia lo respalde; evita estereotipos.",
+    "Translation": "Rol: traductor. Traduce al español de España cada texto de la lista, en el mismo orden y sin añadir "
+    "ni omitir elementos; conserva los números y las siglas y no expliques nada.",
     "Narrative": "Rol: analista. Interpreta sin alterar ninguna cifra; señala límites y advertencias.",
 }
 
