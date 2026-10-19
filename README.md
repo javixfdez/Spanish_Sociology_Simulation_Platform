@@ -33,7 +33,7 @@ descargar Python o paquetes, `UV_SYSTEM_CERTS=1`; en PowerShell `$env:UV_SYSTEM_
 
 ```sh
 uv sync --extra embed      # --extra embed: sentence-transformers para e5 (prior aprendido); sin él la demo usa solo el KNN
-uv run pytest -q           # 275 tests (12 necesitan los datos reales y se omiten sin ellos)
+uv run pytest -q           # 285 tests (12 necesitan los datos reales y se omiten sin ellos)
 uv run ruff check src tests app.py main.py
 ```
 
@@ -244,6 +244,19 @@ Además del rango del 90 % se dibuja el rango habitual (50 %). Si Ollama no resp
 Los ejemplos de la barra lateral están precalculados en `data/examples/ejemplos_demo.json` (modo rápido) para que la demo no
 espere; se regeneran con `uv run mavericks build-examples [--preset recomendado]`. Los objetivos del INE de la página de
 población se generan una vez con `uv run mavericks population-targets`.
+
+## Subgrupos y cruces con MRP
+
+Cuando la pregunta existe en el CIS (**modo directo**), los repartos por grupo salen de un **MRP rápido** (`src/mavericks/mrp.py`, sin MCMC): regresión multinomial con penalización L2, efectos de sexo, edad, comunidad, estudios e ingresos
+(los que haya en la oleada; si faltan, se omiten, sin imputar) y cuatro variables por comunidad derivadas de la población sintética calibrada con el INE; se ajusta con los microdatos de la oleada de la pregunta, se postestratifica con
+la población sintética y se recalibra al nacional del modo activo. Evaluación **prerregistrada** (`docs/prereg_mrp.md`, resultado en `docs/mrp_resultados.md`): 279 pares de preguntas repetidas, 7.542 subgrupos, error por subgrupo
+3,22 → **2,64 puntos** (−0,58 [−0,93; −0,32]); mejora edad (−1,91), sexo, estudios e ingresos; **empata en comunidad autónoma** (+0,07 [−0,03; +0,16]). Solo se validó entre oleadas de la misma pregunta y con subgrupos de una variable.
+
+- Sin ancla se mantiene el método anterior (diferencias de preguntas análogas); en modo ajustado, los grupos los da el modelo ajustado. La interfaz indica qué método produjo los grupos. Los rangos de los grupos son los del método anterior.
+- **Cruces de varias variables** (p. ej., mujeres de 18-24 años de Andalucía): solo con MRP y pregunta existente; **experimentales** («los cruces de varias variables no están validados»); se muestra el número de encuestados del CIS y se avisa en amarillo si es < 50.
+  En Simular: «Analizar pregunta» → «Subgrupo o cruce de varias variables». Con Ollama, un plan estructurado de qwen3:8b (`assist.plan_question`, 20 s como máximo) sugiere tema y grupo, validados contra el esquema del CIS.
+- Rendimiento: el ajuste del MRP tarda 1,6–3 s la primera vez por pregunta y ≈ 0,1 s después (caché en `outputs/cache/mrp`, fuera de git); `build-examples` la calienta para los ejemplos. `USE_MRP=0` en el entorno lo desactiva.
+- No añade archivos al paquete de datos: usa los microdatos y la población que ya incluye `mavericks_assets_v1.zip`.
 
 ## Modo ajustado (opcional; resultado: positivo en desarrollo, NO CUMPLE por poco en los 88)
 

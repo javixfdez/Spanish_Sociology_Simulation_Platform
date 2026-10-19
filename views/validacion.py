@@ -81,6 +81,31 @@ if prior:
             "5. Los intervalos de confianza se calculan remuestreando estudios completos, porque las preguntas de un mismo estudio están correlacionadas."
         )
 
+with st.expander("Subgrupos: MRP frente al método anterior (prerregistrado)"):
+    st.markdown(
+        "Tarea: con los microdatos de la oleada anterior de una misma pregunta del CIS y el reparto nacional real de la oleada nueva, predecir el reparto de cada subgrupo (≥ 100 encuestados). "
+        "**279 pares** de preguntas repetidas (71 series, trabajo de campo de 2024-07 a 2025-06), **7.542 subgrupos**. Error por subgrupo en puntos; IC 95 % remuestreando series de preguntas."
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                ["Todos", 7542, 4.45, 3.22, 2.64, "−0,58 [−0,93; −0,32]"],
+                ["Sexo", 558, 2.20, 1.38, 1.00, "−0,39 [−0,63; −0,21]"],
+                ["Edad", 1924, 7.02, 4.41, 2.49, "−1,91 [−3,22; −0,85]"],
+                ["Comunidad autónoma", 2845, 3.34, 3.03, 3.10, "+0,07 [−0,03; +0,16]  (empate)"],
+                ["Estudios", 1286, 3.84, 2.58, 2.30, "−0,28 [−0,49; −0,11]"],
+                ["Ingresos", 929, 4.72, 3.36, 3.01, "−0,35 [−0,55; −0,20]"],
+            ],
+            columns=["Dimensión", "Subgrupos", "Sin diferencias", "Método anterior", "MRP", "MRP − anterior [IC 95 %]"],
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.info(
+        "Criterio prerregistrado (mejora ≥ 0,3 puntos con el IC entero por debajo de 0): **cumple**. Por eso el MRP se usa en el modo directo. Límites: solo se validó entre oleadas de la misma pregunta y con subgrupos de una variable "
+        "(los cruces de varias variables son experimentales); en comunidad autónoma no mejora; los ingresos faltaban en 123 de los 279 pares y el modelo los omite en esas oleadas. "
+        "Los rangos de los grupos son los del método anterior: no se recalibraron con esta evaluación."
+    )
 with st.expander("Modo ajustado (opcional): un modelo pequeño ajustado con encuestas reales"):
     st.markdown(
         "Qwen3-4B-Instruct-2507 con un adaptador QLoRA (r=8, alpha=32) entrenado para que la probabilidad de su primer token sobre las opciones A, B, C… coincida con el reparto **real** "

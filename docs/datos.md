@@ -70,6 +70,11 @@ Los mismos archivos del modo rápido, más:
 | `Qwen/Qwen3-4B-Instruct-2507`, revisión `cdbee75f…`, en la caché de Hugging Face | 7,6 GB | Modelo base | Hugging Face (descarga única, ver `docs/finetuning.md`) |
 | Entorno `.venv_ft` (torch, transformers, peft, bitsandbytes) | varios GB | Servidor del modelo (GPU NVIDIA con ~3 GB libres) | `docs/finetuning.md` |
 
+## MRP (subgrupos y cruces)
+
+No necesita archivos nuevos: usa `cis_respondents.parquet`, `cis_responses.parquet` y `synthetic_population.parquet` del paquete. Guarda una caché por pregunta en `outputs/cache/mrp/*.npz` (probabilidades por persona, ≈ 1 MB;
+se crea sola, no se versiona ni se empaqueta). Por eso el paquete sigue siendo `mavericks_assets_v1.zip`.
+
 ## Lo que NO es necesario para ejecutar la app
 
 `maverick_data/` (6,6 GB de originales), `data/processed/cis_questions.parquet` y `cis_studies.parquet` (solo para regenerar), `data/processed_v2/` embeddings y cachés de análogos, `data/processed_v2/frozen/`

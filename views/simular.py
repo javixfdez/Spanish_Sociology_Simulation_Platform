@@ -110,7 +110,7 @@ if analysis:
             st.info(warning)
         plan = analysis.get("plan")
         if plan and plan["ok"]:
-            st.caption(f"Plan del modelo de lenguaje: tema «{plan['plan']['tema']}»" + (f"; grupo pedido: {mrp_service.cross_label([(i['var'], i['val']) for i in plan['plan']['cruce']])}" if plan["plan"]["cruce"] else "") + ".")
+            st.caption(f"Plan del modelo de lenguaje (es una sugerencia: revisa los selectores): tema «{plan['plan']['tema']}»" + (f"; grupo pedido: {mrp_service.cross_label([(i['var'], i['val']) for i in plan['plan']['cruce']])}" if plan["plan"]["cruce"] else "") + ".")
             if not plan["plan"]["respondible"]:
                 st.info(f"El modelo duda de que sea una pregunta de opinión: {plan['plan']['motivo']}")
         elif plan:

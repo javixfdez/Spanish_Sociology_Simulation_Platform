@@ -47,6 +47,18 @@ st.markdown(
     "**No es el modo por defecto**: en la evaluación final de los 88 casos reservados mejora 1,28 puntos frente al rápido, pero el intervalo roza el cero y no cumple el criterio fijado de antemano (ver «Validación»)."
 )
 
+st.subheader("Subgrupos y cruces (MRP)")
+st.markdown(
+    "- **Cuando la pregunta existe en el CIS (modo directo)**, los repartos por grupo salen de un **MRP**: un modelo multinomial con efectos de sexo, edad, comunidad, estudios e ingresos (los que haya en esa oleada) y cuatro variables por comunidad, "
+    "con penalización L2 en lugar de MCMC; se ajusta con los microdatos de la oleada de la pregunta, se postestratifica con la población sintética y se recalibra para que el total coincida con el nacional del modo activo.\n"
+    "- **Validación** (prerregistrada, 279 pares de preguntas repetidas del CIS, 7.542 subgrupos): el MRP reduce el error por grupo de 3,22 a 2,64 puntos (−0,58, IC 95 % por series [−0,93; −0,32]). Mejora sobre todo la edad; en comunidad autónoma empata. "
+    "Solo se validó **entre oleadas de la misma pregunta**, con subgrupos de **una** variable.\n"
+    "- **Sin ancla** (pregunta nueva) se mantiene el método anterior (diferencias de preguntas análogas); en el **modo ajustado** los grupos los da el modelo ajustado. La interfaz dice siempre qué método produjo los grupos. "
+    "Los rangos de los grupos siguen siendo los del método anterior (conservadores).\n"
+    "- **Cruces de varias variables** (por ejemplo, mujeres de 18-24 años de Andalucía): solo con MRP y con pregunta ya existente en el CIS. **Experimentales**: no están validados. Se muestra el número de encuestados del CIS en ese cruce y se avisa si es menor de 50.\n"
+    "- Con Ollama, un **plan estructurado** (qwen3:8b, 20 s como máximo) puede proponer opciones, tema y el grupo que pide la pregunta; solo se aceptan variables y valores del esquema del CIS y, si falla, se usan las reglas y los selectores manuales."
+)
+
 st.subheader("Reglas")
 st.markdown(
     "- Solo se usa información **anterior** a la fecha del estudio que se predice.\n"

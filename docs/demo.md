@@ -117,3 +117,19 @@ reintenta ahora una vez antes de rendirse (el servidor tiene además una cola de
 4. **Poca masa en la opción intermedia** del modo ajustado en escalas de acuerdo («Regular» 0,6 % en vivienda y 1,0 % en medio ambiente): en las escalas de acuerdo del CIS la opción central suele recibir bastante más; no se ha investigado la causa y conviene vigilarlo.
 5. **El modo con LLM tarda unos 100 s por pregunta**, y en el registro aparecen «Event loop is closed» al primer intento de la narración de cada pregunta (se repite solo y sale bien): ruido conocido del cliente asíncrono, sin efecto en las cifras. Sin el modelo de lenguaje el resto del sistema no se ve afectado.
 6. **Las explicaciones del LLM** son correctas en cifras (se comprueban) pero genéricas; en el modo ajustado el modelo de lenguaje llegó a escribir «se apoya en estudios similares», lo cual no es exacto: las cifras vienen del modelo ajustado. La plantilla ya lo dice bien; el texto libre del LLM no se puede garantizar.
+
+## Ejemplo de cruce de varias variables (experimental; solo con una pregunta que existe en el CIS)
+
+Pregunta: «Refiriéndonos a la situación económica general de España actualmente, ¿cómo la calificaría Ud.: muy buena, buena, mala o muy mala?»  ·  modo calculado: directo  ·  subgrupos con **MRP (modelo multinivel con los microdatos de la oleada de la pregunta)**  ·  3.8 s (con el ajuste del MRP ya en caché: ≈ 0,1 s; sin caché: 1,6–3 s).
+
+En la interfaz: tras «Analizar pregunta», el desplegable «Subgrupo o cruce de varias variables (experimental)» → Sexo, Edad, Comunidad autónoma… → «Simular».
+
+| Grupo | Encuestados del CIS (oleada de la pregunta) | Muy buena | Buena | Regular | Mala | Muy mala |
+|---|---|---|---|---|---|---|
+| Todos los adultos | — | 4 % | 35 % | 6 % | 37 % | 19 % |
+| Sexo: hombre · Estudios: superiores | 1030 | 3 % | 42 % | 5 % | 34 % | 16 % |
+| Sexo: mujer · Edad: 18-24 · Comunidad autónoma: Andalucía | 13 (menos de 50: aviso amarillo) | 4 % | 25 % | 5 % | 48 % | 18 % |
+
+Etiqueta visible: «Experimental: los cruces de varias variables no están validados; la validación cubre subgrupos de una variable.». Los rangos son los de los subgrupos de una variable. Con una pregunta sin ancla (por ejemplo, la de la IA y el empleo) los cruces no se ofrecen y la interfaz explica por qué.
+
+Con Ollama, el plan estructurado de qwen3:8b (≈ 2–4 s) rellena los selectores si la pregunta pide un grupo («¿Qué opinan las mujeres con estudios superiores de Cataluña sobre…?» → sexo mujer, estudios superiores, Cataluña); es una sugerencia que se puede cambiar, y si falla o tarda más de 20 s se usan solo los selectores manuales.

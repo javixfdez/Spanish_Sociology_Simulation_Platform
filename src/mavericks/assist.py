@@ -318,10 +318,17 @@ def scope_check(question, service=None):
 
 PLAN_TIMEOUT = 20.0  # segundos; pasado ese tiempo se usan las reglas de siempre
 PLAN_INSTRUCTIONS = (
-    "Rol: planificador de consultas de encuesta sobre adultos residentes en España. Devuelve un plan con: opciones (2 a 7 opciones de respuesta cerradas, sin N.S./N.C.; vacío si no procede), "
-    "tipo (escala, si_no o categorias), tema (uno de los temas permitidos), subgrupo_o_cruce (lista de {var, val} SOLO si la pregunta pide un grupo concreto de población, "
-    "usando exclusivamente las variables y valores de esquema; lista vacía si no pide ninguno), respondible (true si es una pregunta de opinión, actitud o comportamiento de esa población) y motivo. "
-    "No inventes variables ni valores: si el grupo pedido no encaja en el esquema, deja subgrupo_o_cruce vacío y explícalo en motivo."
+    "Rol: planificador de consultas de encuesta sobre adultos residentes en España. Devuelve un plan con estos campos. "
+    "opciones: 2 a 7 opciones de respuesta cerradas, sin N.S./N.C. (lista vacía si no estás seguro). "
+    "tipo: escala, si_no o categorias. tema: uno de los temas permitidos (temas). "
+    "subgrupo_o_cruce: lista de {var, val} SOLO si la pregunta pide opinar a un grupo concreto de población. Usa EXCLUSIVAMENTE las variables de esquema y sus valores EXACTOS, "
+    "tal como aparecen en esquema (por ejemplo mujer, 25-34, Andalucía). Si el grupo es vago (jóvenes, mayores, ricos) o no está en el esquema, no lo traduzcas: omítelo y dilo en motivo. "
+    "Si la pregunta no pide ningún grupo concreto, la lista va vacía. "
+    "respondible: true solo si es una pregunta de opinión, actitud o comportamiento de la población adulta residente en España; false si pide predecir un suceso futuro "
+    "(elecciones, resultados), un dato objetivo, una persona concreta u otra población. motivo: una frase corta. "
+    "Ejemplo: «¿Qué opinan los hombres de 25-34 años de Madrid sobre limitar el alquiler?» -> tipo escala, tema vivienda, "
+    "subgrupo_o_cruce [{var: sexo, val: hombre}, {var: grupo_edad, val: 25-34}, {var: ccaa, val: Madrid (Comunidad de)}], respondible true. "
+    "Ejemplo: «¿Quién ganará las próximas elecciones?» -> subgrupo_o_cruce [], respondible false, motivo: predice un suceso futuro."
 )
 
 
