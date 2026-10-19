@@ -378,7 +378,7 @@ def run_case(env, case, mode, by_id):
         p = result["producido_por"]
         if result["mode"] != "direct" and not (p["fallback"] and p["modo"] == "rapido"):
             fails.append("con el servidor apagado debía caer al modo rápido con aviso")
-        if result["mode"] != "direct" and not any("no respondió" in w for w in result["warnings"]):
+        if result["mode"] != "direct" and not any("modo rápido" in w for w in result["warnings"]):
             fails.append("el fallback no muestra aviso visible")
     # comparaciones con otro caso (permutación, paráfrasis, negada, texto)
     if kind == "ok":

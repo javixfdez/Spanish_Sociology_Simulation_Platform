@@ -72,3 +72,18 @@ def test_vague_group_warning_only_when_the_model_guessed_a_value():
     assert "suposición" in assist.vague_group_warning("¿Qué opinan las mujeres jóvenes de Andalucía sobre la salud?", cross)
     assert assist.vague_group_warning("¿Qué opinan las mujeres de 18-24 años de Andalucía?", cross) is None
     assert assist.vague_group_warning("¿Qué opinan los jóvenes?", [{"var": "ccaa", "val": "Galicia"}]) is None
+
+
+def test_llm_scope_verdict_hechos_is_ignored_for_questions_about_the_respondents_behaviour():
+    import asyncio as aio
+
+    from mavericks.schemas import ScopeJudgement
+
+    class Judge:
+        async def call(self, schema, payload, **kwargs):
+            assert schema is ScopeJudgement
+            await aio.sleep(0)
+            return ScopeJudgement(category="hechos", reason="x", reformulation="")
+
+    assert assist.scope_check("¿Dónde compra principalmente sus alimentos?", Judge())["in_scope"]
+    assert not assist.scope_check("¿Quién diseñó el puente de Triana?", Judge())["in_scope"]

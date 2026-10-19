@@ -320,6 +320,9 @@ _SCOPE_TEXT = {
 }
 
 
+_ADDRESSES_RESPONDENT = re.compile(r"\b(usted|ud|su|sus|le|les|te|tu|tus|suele|suelen|compra|compran|usa|utiliza|utilizan|prefiere|prefieren|practica|va a|viaja)\b")
+
+
 def scope_check(question, service=None):
     """Reglas y, si hay modelo, su juicio: {in_scope, kind, reason, reformulation}."""
     plain = norm(question).strip(" ¿?¡!.")
@@ -342,7 +345,9 @@ def scope_check(question, service=None):
     if kind is None and service is not None:
         try:
             value = asyncio.run(service.call(ScopeJudgement, {"task": "judge_scope", "question": question}))
-            if value.category != "opinion":
+            if value.category == "hechos" and _ADDRESSES_RESPONDENT.search(plain):
+                pass  # «¿Dónde compra usted…?» es un comportamiento del encuestado, no un dato objetivo: el juicio del modelo se descarta
+            elif value.category != "opinion":
                 kind, reformulation = value.category, value.reformulation or _REFORMULATIONS.get(value.category, "")
         except Exception:  # sin respuesta útil del modelo: solo reglas
             pass

@@ -1803,7 +1803,7 @@
     modo: any
 - id: M7-14
   categoria: modos
-  base: C2-05
+  base: C2-06
   modos:
   - ajustado
   servidor_apagado: true
