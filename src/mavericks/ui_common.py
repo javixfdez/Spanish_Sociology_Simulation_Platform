@@ -9,10 +9,11 @@ from .llm import LLMService, check_ollama, create_provider
 from .schemas import Settings
 from .service import ServiceError, get_embedder, load_resources, predict
 
-PRESET_LABELS = {"rapido_sin_llm": "Rápido", "llm_completo": "Con LLM"}
+PRESET_LABELS = {"rapido_sin_llm": "Rápido", "llm_completo": "Con LLM", "ajustado": "Ajustado"}
 PRESET_HELP = (
     "**Rápido**: estimación estadística validada, al instante. "
-    "**Con LLM**: añade el criterio del modelo de lenguaje y una explicación redactada; tarda más."
+    "**Con LLM**: añade el criterio del modelo de lenguaje y una explicación redactada; tarda más. "
+    "**Ajustado** (si el servidor está arrancado): un modelo pequeño ajustado con encuestas reales da el reparto de las preguntas sin equivalente en el CIS."
 )
 CSS = """
 <style>
@@ -102,5 +103,7 @@ def llm_service(preset, model="qwen3:8b"):
     try:
         check_ollama(settings)
     except RuntimeError:
+        if preset == "ajustado":
+            return None, "El modelo de lenguaje no responde: la explicación será la automática."
         return None, "El modelo de lenguaje no responde: se muestra el resultado del modo rápido, con explicación automática."
     return LLMService(create_provider(settings), settings), None

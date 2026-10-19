@@ -28,7 +28,7 @@ from .statistics import aggregate, load_calibration, select_stratum
 from .topics import TOPICS, classify_topic
 
 log = logging.getLogger("mavericks.service")
-PRESETS = ("recomendado", "rapido_sin_llm", "llm_completo")
+PRESETS = ("recomendado", "rapido_sin_llm", "llm_completo", "ajustado")
 SUBGROUP_DIMENSIONS = {
     "sexo": "Sexo",
     "grupo_edad": "Edad",
@@ -94,6 +94,8 @@ class Resources:
     prior_model_error: str | None = None
     prior_intervals: dict | None = None
     prior_validation: dict | None = None
+    ft_intervals: dict | None = None  # rangos del modo ajustado (residuos de a1 en dev_grande)
+    ft_validation: dict | None = None
 
 
 def load_resources(paths=None):
@@ -128,6 +130,8 @@ def load_resources(paths=None):
         prior_error,
         _read_json(Path(paths.models) / "prior_intervals.json"),
         _read_json(Path(paths.models) / "prior_validation.json"),
+        _read_json(Path(paths.models) / "ft_intervals.json"),
+        _read_json(Path(paths.models) / "ft_validation.json"),
     )
 
 
@@ -219,7 +223,7 @@ def _confidence(calibration, mode, fast_rows=None, prior_validation=None, n_opti
             "level": CONFIDENCE[mode],
             "typical_error": cell["mae"],
             "backtest_cases": cell["preguntas"],
-            "basis": f"preguntas nuevas de {group} en tres conjuntos no vistos",
+            "basis": cell.get("basis") or f"preguntas nuevas de {group} en tres conjuntos no vistos",
         }
     if fast_rows is not None:
         own = [r["mae"] for r in fast_rows if r["mode"] == mode]
@@ -325,7 +329,7 @@ def _population_share(frame, dimension, category):
     return float(frame.loc[mask, "peso"].sum() / frame["peso"].sum())
 
 
-def _subgroups(resources, options, mode, spec, group_specs, national, radius):
+def _subgroups(resources, options, mode, spec, group_specs, national, radius, override=None):
     """Distribución por categoría de cada dimensión.
 
     Directo: microdatos de la pregunta repetida. Prior y sin ancla: diferencias empíricas de las preguntas análogas,
@@ -341,7 +345,9 @@ def _subgroups(resources, options, mode, spec, group_specs, national, radius):
             }
             labels[dimension] = label
     estimated = None
-    if mode != "direct" and group_specs:
+    if override is not None:  # modo ajustado: el modelo ajustado da cada subgrupo directamente
+        estimated = override
+    elif mode != "direct" and group_specs:
         estimated = group_estimates(group_specs, options, shares, resources.anchors, national, CONTRACTION)
     out = {}
     for dimension, categories in shares.items():
@@ -352,7 +358,7 @@ def _subgroups(resources, options, mode, spec, group_specs, national, radius):
                 estimate = resources.anchors.segment_distribution(spec, {dimension: [category]})
                 distribution = {o: float(estimate["probabilities"][o]) for o in options}
                 n_cis = estimate["finest"]["n"] if estimate["finest"]["level"] != "nacional" else 0
-            elif estimated is not None:
+            elif estimated is not None and category in estimated.get(dimension, {}):
                 distribution = estimated[dimension][category]
             else:
                 distribution = {o: float(national[o]) for o in options}
@@ -501,6 +507,35 @@ def _llm_path(resources, question, options, question_type, settings, service, n_
     return result
 
 
+def _ft_estimate(question, options, shares_of, ft, year=None):
+    """Reparto nacional y por subgrupo del modelo ajustado (un servidor aparte). Lanza ``FtError`` si no responde o responde mal."""
+    from .ft import data as ft_data
+
+    shown = [assist.display_label(o) for o in options]
+    items = [{"question": question, "options": shown, "profile": ft_data.profile_text(None, None), "year": year}]
+    keys = [(None, None)]
+    for dimension, categories in shares_of.items():
+        for category in categories:
+            items.append({"question": question, "options": shown, "profile": ft_data.profile_text(dimension, category), "year": year})
+            keys.append((dimension, category))
+    probs, seconds = ft.predict_batch(items)
+    national = dict(zip(options, probs[0], strict=True))
+    groups = {}
+    for (dimension, category), p in zip(keys[1:], probs[1:], strict=True):
+        groups.setdefault(dimension, {})[category] = dict(zip(options, p, strict=True))
+    return national, groups, seconds
+
+
+def _shares(resources):
+    frame = resources.population.frame
+    out = {}
+    for dimension in SUBGROUP_DIMENSIONS:
+        if dimension in frame:
+            present = set(frame[dimension].dropna())
+            out[dimension] = {c: _population_share(frame, dimension, c) for c in _ORDER[dimension] if c in present}
+    return out
+
+
 def predict(
     question,
     options,
@@ -511,6 +546,7 @@ def predict(
     settings=None,
     service=None,
     n_segments=10,
+    ft=None,
 ):
     """Predicción completa. Devuelve un dict serializable (ver la clave de cada sección)."""
     started = time.monotonic()
@@ -527,7 +563,7 @@ def predict(
     resources = resources or load_resources()
     topic = topic if topic in TOPICS else classify_topic(question)
     warnings = []
-    scope = assist.scope_check(question, service if preset != "rapido_sin_llm" else None)
+    scope = assist.scope_check(question, service if preset not in ("rapido_sin_llm", "ajustado") else None)
     if not scope["in_scope"]:
         raise OutOfScopeError(assist.coverage_card("none", None, scope))
 
@@ -535,6 +571,8 @@ def predict(
     if wants_llm and service is None:
         raise ServiceError("El modo con LLM necesita un modelo disponible (Ollama).")
     used_llm = False  # ¿las cifras mezclan la salida del LLM?
+    ft_groups = ft_info = None
+    ft_fallback = False
     legacy_llm = question_type != "single"  # preguntas de respuesta múltiple: solo el pipeline completo con LLM
     if legacy_llm:
         if not wants_llm:
@@ -563,6 +601,18 @@ def predict(
             settings.anchor_prior_similarity,
         )
         warnings += extra
+        if preset == "ajustado" and mode != "direct":
+            from .ft.client import FtClient, FtError
+
+            try:
+                ft_national, ft_groups, ft_seconds = _ft_estimate(question, options, _shares(resources), ft or FtClient())
+                ft_info = {"seconds": ft_seconds, "rapid_national": {o: float(national[o]) for o in options}}
+                national = ft_national
+                prior_used = {"metodo": "modelo_ajustado", "prior_rapido": prior_used}
+            except FtError as exc:
+                log.warning("Modo ajustado: %s", exc)
+                ft_fallback = True
+                warnings.append("El modelo ajustado no respondió; se muestra la estimación del modo rápido.")
         if wants_llm and mode != "direct":
             # Modo con LLM: LLM (peso w) + prior estadístico (1 − w). Las preguntas repetidas ya son estadística directa.
             try:
@@ -586,7 +636,12 @@ def predict(
     radius = sub_radius = core_radius = interval_info = None
     group = "2 opciones" if len(options) == 2 else "3 o más"
     calib = resources.prior_intervals
-    if not legacy_llm and mode in ("prior", "none") and calib and group in calib["groups"]:
+    ft_calib = resources.ft_intervals
+    if ft_groups is not None:  # nunca los rangos del prior con las cifras del modelo ajustado
+        if ft_calib and group in ft_calib["groups"]:
+            radius, sub_radius, core_radius, interval_info = _prior_intervals(ft_calib, group, options, national, 1.0)
+        fast_model = None
+    elif not legacy_llm and mode in ("prior", "none") and calib and group in calib["groups"]:
         _, block = select_stratum(calibration, mode, min_cases=1)
         ratio = 1.0
         if block:
@@ -603,7 +658,7 @@ def predict(
             base = _radius(block["option_errors"])
             ratio = max(1.0, sub_overall / base) if sub_overall and base else 1.0
         radius, sub_radius, core_radius, interval_info = _fast_intervals(fast_model, mode, options, national, ratio)
-    if radius is None and not fast_model and interval_info is None:
+    if radius is None and not fast_model and interval_info is None and ft_groups is None:
         _, block = select_stratum(calibration, mode)
         radius = _radius(block["option_errors"]) if block else None
         sub_radius = _subgroup_radius(calibration, mode)
@@ -620,7 +675,7 @@ def predict(
     if len(options) == 2 and mode in ("prior", "none"):
         notes.append(TWO_OPTIONS_NOTE)
     evidence = _evidence_entries(resources.evidence, resources.table, items)
-    subgroups = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius)
+    subgroups = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius, ft_groups)
     output = {
         "question": question,
         "options": options,
@@ -631,8 +686,11 @@ def predict(
         "mode_label": MODE_LABELS[mode],
         "explanation": _explain(mode, evidence),
         "confidence": _confidence(
-            calibration, mode, fast_payload["rows"] if fast_payload else None, resources.prior_validation, len(options)
+            calibration, mode, fast_payload["rows"] if fast_payload else None,
+            resources.ft_validation if ft_groups is not None and resources.ft_validation else resources.prior_validation, len(options),
         ),
+        "fallback": ft_fallback,
+        "ajustado": ft_info,
         "prior_usado": prior_used,
         "notes": notes,
         "national": {

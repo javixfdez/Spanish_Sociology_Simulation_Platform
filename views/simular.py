@@ -1,6 +1,7 @@
 import streamlit as st
 
 from mavericks.examples import load_examples
+from mavericks.ft.client import FtClient
 from mavericks.schemas import Settings
 from mavericks.service import (
     OutOfScopeError,
@@ -42,6 +43,8 @@ with st.sidebar:
     st.header("Opciones")
     defaults = Settings()
     modes = ["rapido_sin_llm", "llm_completo"]
+    if FtClient(timeout=1.0).healthy():  # el modo ajustado solo se ofrece si su servidor está arrancado
+        modes.append("ajustado")
     preset = st.radio("Modo", modes, index=modes.index(defaults.default_preset), format_func=PRESET_LABELS.get, key="preset")
     st.caption(PRESET_HELP)
     if examples["items"]:
@@ -102,7 +105,7 @@ if analysis:
                     st.info(notice)
                 with st.spinner("Calculando…"):
                     st.session_state["result"] = predict(
-                        question, options, "single", preset if service else "rapido_sin_llm", topic=chosen_topic,
+                        question, options, "single", preset if (service or preset == "ajustado") else "rapido_sin_llm", topic=chosen_topic,
                         resources=resources, service=service, n_segments=segments,
                     )
                 st.session_state["text_service"] = service
