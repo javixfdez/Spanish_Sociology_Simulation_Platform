@@ -486,7 +486,7 @@ def write_outputs(rows, tag=""):
 def merge(tags):
     """Une varias ejecuciones (p. ej., rápido+ajustado con el servidor y con LLM sin él, para no solapar la GPU) en resultados.csv e informe.md."""
     frames = [pd.read_csv(OUT / f"resultados_{t}.csv") for t in tags]
-    df = pd.concat(frames, ignore_index=True).fillna({"fallos": "", "avisos": "", "notas": ""})
+    df = pd.concat(frames, ignore_index=True).drop_duplicates(["id", "modo_ejecucion"], keep="last").fillna({"fallos": "", "avisos": "", "notas": ""})  # una repetición posterior sustituye a la anterior
     df.to_csv(OUT / "resultados.csv", index=False)
     (OUT / "informe.md").write_text(report(df.to_dict("records")), encoding="utf-8")
     return df

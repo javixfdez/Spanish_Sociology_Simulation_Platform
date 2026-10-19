@@ -47,6 +47,13 @@ st.markdown(
     "**No es el modo por defecto**: en la evaluación final de los 88 casos reservados mejora 1,28 puntos frente al rápido, pero el intervalo roza el cero y no cumple el criterio fijado de antemano (ver «Validación»)."
 )
 
+st.subheader("Dato medido y estimación")
+st.markdown(
+    "- Si la pregunta existe en el CIS, se muestran **dos bloques**: «Lo que midió el CIS» (el reparto ponderado de los microdatos de esa oleada, con su margen de error muestral y el número de encuestados; sin ningún modelo) y «Estimación del modelo para hoy». "
+    "Si no existe, solo hay estimación y se dice expresamente que no hay dato medido.\n"
+    "- Con muestras pequeñas (menos de 50 encuestados) el dato medido es poco fiable y se avisa. La explicación nombra cada cosa por separado y no mezcla sus cifras."
+)
+
 st.subheader("Subgrupos y cruces (MRP)")
 st.markdown(
     "- **Cuando la pregunta existe en el CIS (modo directo)**, los repartos por grupo salen de un **MRP**: un modelo multinomial con efectos de sexo, edad, comunidad, estudios e ingresos (los que haya en esa oleada) y cuatro variables por comunidad, "

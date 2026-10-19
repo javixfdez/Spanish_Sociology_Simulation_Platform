@@ -33,7 +33,7 @@ descargar Python o paquetes, `UV_SYSTEM_CERTS=1`; en PowerShell `$env:UV_SYSTEM_
 
 ```sh
 uv sync --extra embed      # --extra embed: sentence-transformers para e5 (prior aprendido); sin él la demo usa solo el KNN
-uv run pytest -q           # 285 tests (12 necesitan los datos reales y se omiten sin ellos)
+uv run pytest -q           # 322 tests (12 necesitan los datos reales y se omiten sin ellos)
 uv run ruff check src tests app.py main.py
 ```
 
@@ -244,6 +244,15 @@ Además del rango del 90 % se dibuja el rango habitual (50 %). Si Ollama no resp
 Los ejemplos de la barra lateral están precalculados en `data/examples/ejemplos_demo.json` (modo rápido) para que la demo no
 espere; se regeneran con `uv run mavericks build-examples [--preset recomendado]`. Los objetivos del INE de la página de
 población se generan una vez con `uv run mavericks population-targets`.
+
+## Dato medido y estimación (dos respuestas distintas)
+
+Cuando la pregunta existe en el CIS (modo directo) la interfaz muestra dos bloques separados: **«Lo que midió el CIS»** (estudio, fecha de campo y n; reparto ponderado de los microdatos de esa oleada, sin ningún modelo, y la tabla cruzada si se pide un subgrupo o cruce,
+con su margen de error muestral al 95 % ±1,96·√(p(1−p)/n efectivo de Kish); con n < 50 avisa de que el dato es poco fiable) y **«Estimación del modelo para hoy»**. Sin ancla solo hay estimación y lo dice: «No hay dato medido: esta pregunta no se ha hecho en el CIS».
+Si la pregunta es sobre lo medido («¿qué respondieron…?», «según el CIS…»; con Ollama lo decide el plan del LLM, y sin él, reglas de palabras clave) el bloque medido va primero. La explicación nombra cada cosa por separado y la comprobación de cifras impide mezclarlas.
+Los tests comparan el bloque medido con un cálculo independiente de pandas sobre los microdatos (igualdad exacta).
+
+Batería de unas 150 preguntas (`tests/battery/preguntas.yaml`, `python -m mavericks.battery run`): resumen, tiempos y limitaciones en [docs/pruebas.md](docs/pruebas.md).
 
 ## Subgrupos y cruces con MRP
 
