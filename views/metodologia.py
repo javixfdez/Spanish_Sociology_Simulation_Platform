@@ -54,6 +54,12 @@ st.markdown(
     "- Con muestras pequeñas (menos de 50 encuestados) el dato medido es poco fiable y se avisa. La explicación nombra cada cosa por separado y no mezcla sus cifras."
 )
 
+st.subheader("Corrección posterior a la evaluación oficial")
+st.markdown(
+    "- Tras la evaluación final oficial se corrigió un fallo de la búsqueda de la pregunta repetida: no reconocía «N.S./N.R.», «N.R.» ni «No responde» como respuestas no sustantivas, y unas 138 preguntas del CIS no reservadas (≈ 2 %) con esa opción no se encontraban con las opciones habituales («Sí / No»). Ahora se responden con el dato directo."
+    "- **La evaluación oficial (8,11 puntos en el modo rápido) se hizo con el comportamiento anterior y no se repite.** El prior de las preguntas sin ancla no cambia: se comprobó que su reparto es idéntico al de la configuración congelada."
+)
+
 st.subheader("Subgrupos y cruces (MRP)")
 st.markdown(
     "- **Cuando la pregunta existe en el CIS (modo directo)**, los repartos por grupo salen de un **MRP**: un modelo multinomial con efectos de sexo, edad, comunidad, estudios e ingresos (los que haya en esa oleada) y cuatro variables por comunidad, "

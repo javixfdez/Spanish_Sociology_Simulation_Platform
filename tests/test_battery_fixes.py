@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from mavericks import assist, explain
@@ -101,3 +103,45 @@ def test_llm_hechos_verdict_ignored_for_personal_experience_questions():
 
     assert assist.scope_check("¿Ha tenido ansiedad o tristeza durante más de dos semanas seguidas en el último año?", Judge())["in_scope"]
     assert assist.scope_check("¿Ha comprado ropa de segunda mano en el último año?", Judge())["in_scope"]
+
+
+NS_VARIANTS = ["N.S.", "N.C.", "N.R.", "N.S./N.C.", "N.S./N.R.", "No sabe", "No contesta", "No responde", "No sabe/No contesta", "NS/NC", "(NO LEER) N.S.", "NO SABE / NO CONTESTA", "n.s. / n.r.", "No sabé", "NSNC"]
+NOT_NS = ["Sí", "No", "A veces", "No sabría decir", "N.S./No sé cómo estaba hace dos años", "Nada", "Ninguno", "Depende", "No procede"]
+
+
+def test_one_shared_function_recognises_every_non_substantive_variant():
+    from mavericks import anchor
+
+    assert assist.is_non_substantive is anchor.is_non_substantive  # una sola función: ancla y opciones del usuario no divergen
+    assert [o for o in NS_VARIANTS if not anchor.is_non_substantive(o)] == []
+    assert [o for o in NOT_NS if anchor.is_non_substantive(o)] == []
+
+
+def test_option_mapping_tolerates_any_ns_variant_in_the_evidence_but_not_other_extras():
+    from mavericks.anchor import option_mapping
+
+    for ns in ("N.S./N.R.", "N.S./N.C.", "No responde", "N.R.", "No sabe/No contesta"):
+        assert option_mapping(["Sí", "No"], ["Sí", "No", ns]) == {"Sí": "Sí", "No": "No"}, ns
+    assert option_mapping(["Sí", "No"], ["Sí", "No", "Depende"]) is None
+    assert option_mapping(["Sí", "No"], ["Sí", "No", "N.S.", "N.C.", "N.S./N.R."]) == {"Sí": "Sí", "No": "No"}
+
+
+DEV_NSNR = Path("data/processed_v2/backtest_cases_dev.json")
+
+
+@pytest.mark.skipif(not (DEV_NSNR.exists() and Path("data/processed_v2/evidence_v2.sqlite").exists()), reason="necesita los datos reales")
+def test_question_with_nsnr_in_the_cis_finds_the_direct_anchor_with_or_without_the_ns_option():
+    import json
+
+    case = next(c for c in json.loads(DEV_NSNR.read_text(encoding="utf-8-sig")) if c["evidence_id"] == "CIS3531_P5D_3")
+    resources = svc.load_resources()
+    question = " ".join(case["question"].split())
+    plain = svc.predict(question, ["Sí", "No"], preset="rapido_sin_llm", resources=resources)
+    with_ns = svc.predict(question, ["Sí", "No", "N.S./N.R."], preset="rapido_sin_llm", resources=resources)
+    for out in (plain, with_ns):
+        assert out["mode"] == "direct" and out["measured"] is not None
+        assert list(out["national"]["distribution"]) == ["Sí", "No"] and out["options"] == ["Sí", "No"]
+        assert not any(assist.is_non_substantive(o) for o in out["national"]["distribution"])
+        assert out["measured"]["national"]["distribution"].keys() == {"Sí", "No"}
+    assert not any("N.S./N.C." in w for w in plain["warnings"]) and any("N.S./N.C." in w for w in with_ns["warnings"])  # solo avisa cuando el usuario la escribió
+    assert plain["national"]["distribution"] == with_ns["national"]["distribution"]

@@ -76,19 +76,29 @@ Tolerancia 1e-9 sobre cada porcentaje; también se exige el mismo modo y las mis
 |---|---|---|---|
 | Consulta de dato (batería) | 20 | 19 | 1 |
 | Predicción (batería) | 40 | 40 | 0 |
-| Desarrollo no reservado | 50 | 49 | 1 |
-| **Total** | **110** | **108** | **2** |
+| Desarrollo no reservado | 50 | 45 | 5 |
+| **Total** | **110** | **104** | **6** |
 
-Ninguna pregunta cambió por las reglas de alcance nuevas (ninguna de las 110 pasó de simularse a rechazarse) y el MRP no altera ningún reparto nacional (solo toca subgrupos).
+**Las 6 que no coinciden son intencionadas:**
 
-**Las dos que no coinciden:**
+1. **C1-08** (prefijo «Según el CIS, …»): con `3cb71f0` el prefijo impedía encontrar la pregunta repetida y salía como pregunta sin ancla; ahora se quita para buscar y sale en modo directo (diferencia máxima 3,3 pp).
+2. **5 casos de desarrollo con una opción no sustantiva escrita por el usuario** (`N.R.` en los tres de participación electoral y en la consulta P5C; `N.S./N.R.` en CIS3531_P5D_3): las opciones N.S./N.C./N.R. nunca se estiman, así que se ignoran con aviso y el reparto se renormaliza sin ellas
+   (p. ej., «Votó» 80,1 % → 80,7 %). El modo sigue siendo directo.
 
-1. **C1-08, intencionado.** «Según el CIS, la vivienda en la que vive Ud. es…»: con `3cb71f0` el prefijo impedía encontrar la pregunta repetida y salía como pregunta sin ancla; ahora se quita el prefijo para buscar y sale en modo directo (diferencia máxima 3,3 pp, porque pasa del prior a la última medición real). Es el cambio «Según el CIS» de la ronda 1 de la batería.
-2. **DEV-CIS3531_P5D_3, NO intencionado.** La pregunta llega con tres opciones, `Sí / No / N.S./N.R.`. Con `3cb71f0` encuentra el ancla directo y da el reparto medido (Sí 20,2 %, No 79,5 %, N.S./N.R. 0,3 %). Con `HEAD` la opción `N.S./N.R.` se ignora (cambio intencionado: N.S./N.C. nunca se estiman), pero las dos opciones que quedan ya no casan con la pregunta del CIS porque
-   `anchor.py` no trata «N.S./N.R.» como respuesta no sustantiva (solo N.S., N.C., «No sabe», «No contesta» y N.P.). Resultado: pasa a modo sin ancla (Sí 37,6 %, No 62,4 %). Es un efecto colateral del filtro de N.S./N.C. de la ronda 1, no un cambio buscado.
-   Alcance: 138 de las 6.829 preguntas del CIS no reservadas (≈ 2 %) incluyen «N.S./N.R.» entre sus opciones y solo se encuentran como ancla si el usuario también la escribe. **Pendiente de decisión** (no se ha cambiado nada): la corrección mínima sería no tratar «N.S./N.R.» como opción a ignorar en `assist.is_non_substantive`, que restablece el comportamiento de `3cb71f0` sin tocar `anchor.py`.
+Ninguna pregunta cambió por las reglas de alcance nuevas, el MRP no altera ningún reparto nacional (solo toca subgrupos) y **el prior de las preguntas sin ancla es idéntico**: las 40 de predicción coinciden. Lo blinda `tests/test_prior_unchanged.py` (6 preguntas sin ancla, entre ellas C2-28, con valores calculados con `3cb71f0`, a 1e-9).
 
-Condiciones: el worktree de `3cb71f0` usó los mismos `data/processed*` y `outputs/` (enlazados), de modo que cualquier diferencia viene del código. Las comparaciones son del reparto nacional en modo rápido; no cubren subgrupos (ahí el MRP sí cambia las cifras a propósito) ni los modos con LLM y ajustado, que no existían en la configuración congelada del modo rápido.
+### Corrección posterior a la evaluación oficial (N.S./N.R.)
+
+Al comparar apareció un fallo de fondo de `anchor.py`: la búsqueda del ancla solo toleraba como opciones extra de la pregunta del CIS N.S., N.C., «No sabe», «No contesta» y N.P.; no reconocía «N.S./N.R.», «N.R.», «No responde» ni «No sabe/No contesta». Por eso **unas 138 preguntas del CIS no reservadas
+(de 6.829, ≈ 2 %) con «N.S./N.R.» entre sus opciones solo se encontraban como ancla si el usuario escribía también esa opción; con «Sí / No», lo normal, nunca**, tampoco en `3cb71f0`. Se corrige con una única función compartida (`anchor.is_non_substantive`, la misma que usa `assist.is_non_substantive` para las opciones del usuario)
+que reconoce todas las variantes (con o sin puntos, mayúsculas o tildes). Ahora esas preguntas se responden con el dato directo (p. ej., CIS3531_P5D_3 con «Sí / No»: antes modo sin ancla, Sí 37,6 %; ahora modo directo, Sí 20,3 %).
+
+- La tolerancia ampliada se aplica **solo a la búsqueda del ancla** (`option_mapping` por defecto). El prior por analogía (`analog.py`), la evaluación (`evaluation.py`) y el conjunto prerregistrado del MRP (`mrp_eval.py`) siguen con el criterio de `3cb71f0` (`legacy_extras=True`). Una primera versión del arreglo, sin esta separación, cambiaba el prior de C2-28 en 0,6 pp; se detectó con esta regresión y se corrigió antes de publicar.
+- **La evaluación oficial (modo rápido 8,11 pp, modo con LLM 7,91 pp) se hizo con el comportamiento anterior y no se repite.** Esta corrección es posterior a ella: no cambia sus cifras ni su configuración congelada.
+
+**Batería en modo rápido tras la corrección:** 148 ejecuciones, 144 pasan, 4 avisos (paráfrasis que dejan de ser directas) y 0 fallos; el reparto nacional, el modo y la etiqueta de las 148 son idénticos a los de la ejecución anterior a la corrección (los cinco casos de lenguaje natural que antes marcaban aviso por el plan del LLM ahora salen como «plan no evaluado», porque esta ejecución no usa Ollama).
+
+Condiciones: el worktree de `3cb71f0` usó los mismos `data/processed*` y `outputs/` (enlazados), de modo que cualquier diferencia viene del código. Las comparaciones son del reparto nacional en modo rápido; no cubren subgrupos (ahí el MRP sí cambia las cifras a propósito) ni los modos con LLM y ajustado, que no existían en la configuración congelada.
 
 ## Limitaciones conocidas (no se arreglan porque implicarían tocar modelos o predicciones)
 

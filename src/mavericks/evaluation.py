@@ -150,7 +150,7 @@ def national_baseline(result, case, anchors):
             continue
         if not n:
             continue
-        mapping = option_mapping(options, e.get("options") or [])
+        mapping = option_mapping(options, e.get("options") or [], legacy_extras=True)
         source = "etiqueta"
         if mapping is None:
             substantive = [o for o in (e.get("options") or []) if option_key(o) not in {"ns", "nc", "np", "no sabe", "no contesta"}]

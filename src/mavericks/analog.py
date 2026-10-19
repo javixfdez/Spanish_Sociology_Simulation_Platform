@@ -72,7 +72,7 @@ def align_options(question_options, evidence_options, embedder=None):
     label: etiquetas equivalentes; semantic: biyección por embeddings (mejor pareja mutua); ordinal: mismo número
     de opciones sustantivas alineadas por posición (escalas de graduación).
     """
-    mapping = option_mapping(question_options, evidence_options)
+    mapping = option_mapping(question_options, evidence_options, legacy_extras=True)  # el prior por analogía no cambia respecto a 3cb71f0
     if mapping is not None:
         return mapping, "label"
     sub = substantive(evidence_options)

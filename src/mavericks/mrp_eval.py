@@ -62,7 +62,7 @@ def build_pairs(repo=None, table=None, t_window=T_WINDOW):
                 continue
             earlier = [p for p in items if PREVIOUS_FROM <= p.fieldwork_date[:10] < date and str(p.study_id) != str(e.study_id)]
             for p in reversed(earlier):  # la más reciente primero
-                mapping = option_mapping(keep, list(p.options or []))
+                mapping = option_mapping(keep, list(p.options or []), legacy_extras=True)  # el conjunto prerregistrado no cambia
                 if mapping is None or question_similarity(e.question_text, p.question_text) < MIN_SIMILARITY or not same_item(e.question_text, p.question_text):
                     continue
                 pairs.append({"series": key, "t_id": e.evidence_id, "t_study": str(e.study_id), "t_date": date, "p_id": p.evidence_id, "p_study": str(p.study_id),

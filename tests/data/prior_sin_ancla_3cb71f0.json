@@ -1,0 +1,100 @@
+{
+ "C2-28": {
+  "pregunta": "¿Ha recurrido a un seguro médico privado por las listas de espera de la sanidad pública?",
+  "opciones": [
+   "Sí",
+   "No"
+  ],
+  "modo": "none",
+  "nacional": [
+   0.37480397082091155,
+   0.6251960291790885
+  ]
+ },
+ "C2-02": {
+  "pregunta": "¿Está de acuerdo con que los ayuntamientos limiten los pisos turísticos?",
+  "opciones": [
+   "Muy de acuerdo",
+   "De acuerdo",
+   "Ni de acuerdo ni en desacuerdo",
+   "En desacuerdo",
+   "Muy en desacuerdo"
+  ],
+  "modo": "none",
+  "nacional": [
+   0.31939263388566436,
+   0.48882860772959774,
+   0.041218409414351495,
+   0.12275069730097266,
+   0.027809651669413724
+  ]
+ },
+ "C2-11": {
+  "pregunta": "¿Con quién habla más a menudo cuando necesita compañía?",
+  "opciones": [
+   "Con mi pareja",
+   "Con mis hijos u otros familiares",
+   "Con amigos",
+   "Con vecinos",
+   "Con compañeros de trabajo",
+   "Con nadie en particular"
+  ],
+  "modo": "none",
+  "nacional": [
+   0.3941426410938027,
+   0.16093911895078222,
+   0.15220860555941787,
+   0.1575243624871966,
+   0.10226497382887897,
+   0.03292029807992173
+  ]
+ },
+ "C2-21": {
+  "pregunta": "¿Cree que la inteligencia artificial debería estar regulada por ley?",
+  "opciones": [
+   "Muy de acuerdo",
+   "De acuerdo",
+   "Ni de acuerdo ni en desacuerdo",
+   "En desacuerdo",
+   "Muy en desacuerdo"
+  ],
+  "modo": "none",
+  "nacional": [
+   0.20899340082876194,
+   0.35832615695368897,
+   0.09333903379385781,
+   0.20178664964227058,
+   0.13755475878142062
+  ]
+ },
+ "C2-33": {
+  "pregunta": "¿Ha tenido ansiedad o tristeza durante más de dos semanas seguidas en el último año?",
+  "opciones": [
+   "Sí",
+   "No"
+  ],
+  "modo": "none",
+  "nacional": [
+   0.18462507113515367,
+   0.8153749288648463
+  ]
+ },
+ "C2-37": {
+  "pregunta": "¿Con qué frecuencia compra por internet?",
+  "opciones": [
+   "Nunca",
+   "Menos de una vez al mes",
+   "Una o dos veces al mes",
+   "Una vez a la semana",
+   "Varias veces a la semana"
+  ],
+  "modo": "none",
+  "nacional": [
+   0.5252335989969048,
+   0.12305116360393477,
+   0.2051983578016127,
+   0.12005320429547463,
+   0.026463675302073084
+  ]
+ }
+}

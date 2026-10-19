@@ -17,7 +17,15 @@ import pyarrow.parquet as pq
 from .categories import norm
 
 DEMOGRAPHICS = ["grupo_edad", "sexo", "nivel_estudios", "ccaa", "tamuni", "ingresos_hogar_tramo"]
-_NON_SUBSTANTIVE = {"ns", "nc", "no sabe", "no contesta", "np"}
+_NS_TOKEN = r"(?:ns|nc|nr|np|nsnc|nsnr|nsncnr|no sabe|no contesta|no responde)"
+_NS_PATTERN = re.compile(rf"^{_NS_TOKEN}(?: {_NS_TOKEN})*$")
+
+
+def is_non_substantive(option):
+    """¿Es una respuesta no sustantiva? N.S., N.C., N.R., N.P., N.S./N.C., N.S./N.R., «No sabe», «No contesta», «No responde», «No sabe/No contesta»…
+    con o sin puntos, mayúsculas, tildes o la marca (NO LEER). Una sola función para el ancla y para las opciones del usuario (``assist``): no deben divergir."""
+    text = norm(str(option)).replace("(no leer)", " ").replace(".", "")
+    return bool(_NS_PATTERN.match(re.sub(r"[^a-z0-9]+", " ", text).strip()))
 
 
 def option_key(option):
@@ -45,10 +53,15 @@ def same_item(a, b):
     return item_a == item_b or question_similarity(item_a, item_b) >= 0.6
 
 
-def option_mapping(question_options, evidence_options):
+_LEGACY_EXTRAS = {"ns", "nc", "no sabe", "no contesta", "np"}  # lo que toleraba la configuración congelada de la evaluación oficial (3cb71f0)
+
+
+def option_mapping(question_options, evidence_options, legacy_extras=False):
     """Opciones de la pregunta -> etiquetas de la evidencia, o None si no son equivalentes.
 
-    Se admite que la evidencia tenga además N.S./N.C. (se renormaliza sin ellas).
+    Se admite que la evidencia tenga además opciones no sustantivas (N.S., N.C., N.R., N.S./N.R., «No sabe/No contesta»…; se renormaliza sin ellas).
+    ``legacy_extras=True`` conserva el criterio de 3cb71f0 (solo N.S., N.C., «No sabe», «No contesta», N.P.): lo usan el prior por analogía y la evaluación para que el prior de las preguntas
+    sin ancla no cambie; la tolerancia ampliada es solo para la búsqueda del ancla.
     """
     by_key = {option_key(o): o for o in evidence_options}
     mapping = {}
@@ -58,7 +71,10 @@ def option_mapping(question_options, evidence_options):
             return None
         mapping[option] = by_key[key]
     extras = set(by_key) - {option_key(o) for o in question_options}
-    if not extras <= _NON_SUBSTANTIVE:
+    if legacy_extras:
+        if not extras <= _LEGACY_EXTRAS:
+            return None
+    elif not all(is_non_substantive(by_key[k]) for k in extras):
         return None
     return mapping
 

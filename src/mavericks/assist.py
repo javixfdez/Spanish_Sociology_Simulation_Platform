@@ -9,9 +9,9 @@ import asyncio
 import re
 
 from .anchor import (
-    _NON_SUBSTANTIVE,
     RECENCY_WINDOW,
     content_coverage,
+    is_non_substantive,
     norm,
     option_key,
     prior_compatible,
@@ -66,7 +66,7 @@ def clean_options(options):
     out = []
     for option in options or []:
         key = option_key(option)
-        if not key or key in _NON_SUBSTANTIVE or key.startswith("no procede") or key in {"nr", "no recuerda"}:
+        if not key or is_non_substantive(option) or key.startswith("no procede") or key == "no recuerda":
             continue
         label = re.sub(r"^\(NO LEER\)\s*", "", str(option), flags=re.I).strip()
         if label and label not in out:
@@ -222,7 +222,7 @@ def suggest_options(question, resources, service=None, topic=None, reference=Non
 
             def check(value):
                 keys = [option_key(o) for o in value.options]
-                if len(set(keys)) != len(keys) or any(k in _NON_SUBSTANTIVE or not k for k in keys):
+                if len(set(keys)) != len(keys) or any(is_non_substantive(o) or not k for o, k in zip(value.options, keys, strict=True)):
                     raise ValueError("Opciones repetidas o no sustantivas")
 
             value = asyncio.run(service.call(OptionSuggestion, payload, check))
@@ -375,11 +375,6 @@ def strip_source_prefix(question):
     """«Según el CIS, …» / «En el último barómetro: …» no forma parte de la pregunta: se quita para buscar la pregunta repetida (el texto mostrado no cambia)."""
     cleaned = _SOURCE_PREFIX.sub("", question, count=1)
     return cleaned[:1].upper() + cleaned[1:] if cleaned != question else question
-
-
-def is_non_substantive(option):
-    """N.S./N.C. y variantes: no son respuestas sustantivas y nunca se estiman."""
-    return option_key(option) in {"ns", "nc", "nsnc", "ns nc", "no sabe", "no contesta", "no sabe no contesta", "np", "nsnr"}
 
 
 def detect_intent(question):
