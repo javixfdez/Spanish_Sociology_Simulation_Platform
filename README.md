@@ -145,6 +145,7 @@ Páginas (en español, sin parámetros técnicos a la vista; todo lo avanzado es
 | Modo | Necesita GPU/Ollama | Qué hace |
 |---|---|---|
 | **Rápido** (`rapido_sin_llm`, por defecto) | No (≈2 s) | Directo si la pregunta existe en el CIS; si no, prior = media 50/50 de las preguntas parecidas (KNN) y un MLP sobre e5. Explicación con plantillas |
+| **Ajustado** (`ajustado`, opcional) | Sí (GPU, servidor local) | Directo igual que arriba; si no, el reparto lo da un Qwen3-4B ajustado con encuestas reales (primer token, <1 s). Cae al modo rápido si el servidor no responde. Ver «Modo ajustado» |
 | **Con LLM** (`llm_completo`) | Sí (Ollama) | Números = 0,3·LLM + 0,7·prior (en preguntas repetidas, estadística directa); el LLM redacta la explicación a partir de las cifras, que se comprueban. Si Ollama no responde, cae al modo rápido |
 
 Evaluación final oficial (una sola ejecución, configuración congelada en el commit `3cb71f0`, 88 casos de 11 estudios reservados; error en puntos, IC 95 % por estudio):
@@ -191,6 +192,22 @@ Además del rango del 90 % se dibuja el rango habitual (50 %). Si Ollama no resp
 Los ejemplos de la barra lateral están precalculados en `data/examples/ejemplos_demo.json` (modo rápido) para que la demo no
 espere; se regeneran con `uv run mavericks build-examples [--preset recomendado]`. Los objetivos del INE de la página de
 población se generan una vez con `uv run mavericks population-targets`.
+
+## Modo ajustado (opcional; resultado: positivo en desarrollo, NO CUMPLE por poco en los 88)
+
+Un LLM pequeño (`Qwen/Qwen3-4B-Instruct-2507`, revisión `cdbee75f…`) ajustado con QLoRA (r=8, alpha=32) para que la probabilidad de su primer token sobre las letras A, B, C… de las opciones coincida
+con el reparto **real** de la pregunta (método de Cao et al. 2025; datos reales del CIS, Eurobarómetro y ESS, nunca generados). El modelo B (corte < 2026-04-01) se entrenó en Kaggle (2×T4, fp16, 5.792 pasos).
+
+- **dev_grande** (a1, corte < 2025-07-01; 703 preguntas nuevas de 23 estudios; prerregistrado): MAE 12,44 pp frente a 18,63 del prior de producción, **−6,18 pp [−8,67; −2,37]**; la media 50/50 con el prior, −3,85 [−5,00; −2,07].
+  Los dos criterios **CUMPLEN**. Comprobación de fuga: sin los 36 casos con texto idéntico al entrenamiento, −5,93 pp.
+- **88 oficiales** (B, una sola ejecución): MAE 6,84 pp frente a 8,11 del modo rápido y 7,91 del modo con LLM, **−1,28 pp [−2,62; +0,01]: NO CUMPLE** el criterio prerregistrado (el IC roza el cero). Sin ancla: 12,05 frente a 14,57;
+  cobertura del rango del 90 % en los no directos: 86,5 %. Solo 2–7 opciones (con 8 usa el modo rápido; regla fijada antes de ver resultados, commit `174cb82`).
+- **Decisión:** el modo rápido sigue por defecto; el ajustado es opcional. La variante «B también con ancla directa» (6,55 pp) es secundaria y queda como trabajo futuro.
+- **Uso:** pesos en `outputs/ft/runs/b1/adapter_final/` (fuera de git, sha256 `f6a4dd94…`); `powershell -File outputs\ft\run_server.ps1` arranca el servidor (puerto 8765, `/health`); en Simular aparece «Ajustado» si responde.
+  Si falla o no responde en 30 s, se muestra el modo rápido con aviso (`fallback=true`).
+- **Limitaciones:** potencia baja (41 casos informativos, 9 estudios), checkpoints intermedios de a1 no conservados, fp16 en B frente a bf16 en a1, VRAM justa con Ollama a la vez (≈245 MiB de margen; sin memoria la explicación usa la plantilla).
+
+Detalle completo, tablas y reproducción en [docs/finetuning.md](docs/finetuning.md); fechas de los modelos usados en [docs/llm_fechas.md](docs/llm_fechas.md).
 
 ## Estructura
 

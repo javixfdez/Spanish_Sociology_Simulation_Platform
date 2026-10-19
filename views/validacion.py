@@ -81,6 +81,55 @@ if prior:
             "5. Los intervalos de confianza se calculan remuestreando estudios completos, porque las preguntas de un mismo estudio están correlacionadas."
         )
 
+with st.expander("Modo ajustado (opcional): un modelo pequeño ajustado con encuestas reales"):
+    st.markdown(
+        "Qwen3-4B-Instruct-2507 con un adaptador QLoRA (r=8, alpha=32) entrenado para que la probabilidad de su primer token sobre las opciones A, B, C… coincida con el reparto **real** "
+        "(CIS, Eurobarómetro y ESS; método de Cao et al. 2025). Dos modelos: **a1** (trabajo de campo anterior a 2025-07-01) para evaluar en datos de desarrollo y **B** (anterior a 2026-04-01) para la evaluación final.\n\n"
+        "**1) Desarrollo (a1, prerregistrado):** 703 preguntas nuevas de 23 estudios (2025-07 a 2026-03), error en puntos; Δ frente al prior de producción con IC 95 % por estudio."
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                ["Reparto uniforme", 24.22, "+5,60 [+3,85; +7,04]"],
+                ["KNN actual", 20.72, "+2,09 [+0,61; +3,24]"],
+                ["Prior de producción (50/50 KNN + MLP)", 18.63, "—"],
+                ["Qwen base sin ajustar", 34.19, "+15,56 [+13,76; +18,87]"],
+                ["a1 (ajustado)", 12.44, "−6,18 [−8,67; −2,37]  → CUMPLE"],
+                ["Media 50/50 a1 + prior", 14.78, "−3,85 [−5,00; −2,07]  → CUMPLE"],
+            ],
+            columns=["Sistema", "Error (pp)", "Δ frente al prior [IC 95 %]"],
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        "Búsqueda de fuga (la mejora supera los 4 puntos): entrenamiento hasta 2025-06-30 y dev_grande desde 2025-07-07; ningún identificador ni estudio compartido; 36 preguntas tienen texto idéntico a una de entrenamiento y, sin ellas, la mejora es de −5,93 puntos."
+    )
+    st.markdown("**2) Evaluación final oficial (B, una sola ejecución, 88 casos de 11 estudios reservados):** Δ frente al modo rápido.")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                ["Reparto uniforme", 17.13, "+9,02 [+6,72; +11,11]"],
+                ["Sistema anterior", 8.76, "+0,65 [−0,19; +1,56]"],
+                ["Modo rápido", 8.11, "—"],
+                ["Modo con LLM", 7.91, "−0,20 [−0,54; +0,13]"],
+                ["Modo ajustado (B)", 6.84, "−1,28 [−2,62; +0,01]  → NO CUMPLE"],
+            ],
+            columns=["Sistema", "Error (pp)", "Δ frente al modo rápido [IC 95 %]"],
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.markdown(
+        "Desglose (modo rápido → ajustado): directos (47) 2,49 → 2,49; sin ancla (40) 14,57 → 12,05; no directos (41) 14,57 → 11,82; 2 opciones (13) 17,41 → 13,91; 3 o más (28) 13,25 → 10,85. "
+        "Cobertura del rango del 90 % en los no directos: 86,5 %. Los casos de 8 opciones (el modelo cubre de 2 a 7) usan el modo rápido; la regla se fijó antes de ver resultados."
+    )
+    st.info(
+        "Decisión: el criterio prerregistrado exigía que el intervalo quedara entero por debajo de cero y llega a +0,01, así que **el modo rápido sigue por defecto**; el ajustado es opcional. "
+        "La comparación «B también con ancla directa» (6,55 puntos) es secundaria y no se adopta: queda como trabajo futuro. "
+        "Limitaciones: poca potencia (41 casos informativos de 9 estudios), solo 2–7 opciones, a1 y B no son el mismo modelo (bf16 frente a fp16) y no se conservaron los puntos intermedios de a1."
+    )
+
 st.subheader("Qué configuración respalda lo que ves en la demo")
 st.markdown(
     "La demo usa por defecto el **modo rápido sin LLM**: su validación es la fila «Modo rápido sin LLM». "

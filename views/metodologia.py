@@ -41,6 +41,12 @@ st.markdown(
     "- **Precisión**: con el peso elegido por validación cruzada dejando un estudio fuera, la mezcla da 15,06 puntos de error frente a 14,84 del prior solo (44 casos de desarrollo). En precisión, los dos modos son equivalentes dentro del error de medida; el valor del modo con LLM está en la explicación y en el criterio cualitativo del modelo."
 )
 
+st.markdown(
+    "- **Ajustado** (opcional): un modelo de lenguaje pequeño (Qwen3-4B) ajustado con repartos reales del CIS, el Eurobarómetro y la ESS da el reparto de las preguntas sin equivalente; las repetidas siguen con la estadística directa. "
+    "Cuesta menos de un segundo por pregunta, pero necesita un servidor local con GPU; si no responde, se usa el modo rápido. "
+    "**No es el modo por defecto**: en la evaluación final de los 88 casos reservados mejora 1,28 puntos frente al rápido, pero el intervalo roza el cero y no cumple el criterio fijado de antemano (ver «Validación»)."
+)
+
 st.subheader("Reglas")
 st.markdown(
     "- Solo se usa información **anterior** a la fecha del estudio que se predice.\n"
@@ -57,5 +63,6 @@ st.markdown(
     "- Para preguntas nuevas el error es mucho mayor que para repetidas; en las de sí/no ningún método se separa del reparto uniforme de forma fiable.\n"
     "- La población sintética refleja variables sociodemográficas, no actitudes individuales.\n"
     "- Las opiniones cambian: una medición antigua puede quedarse desfasada tras un acontecimiento reciente.\n"
-    "- El CIS pregunta por teléfono o cara a cara; hay sesgos de respuesta que no corregimos."
+    "- El CIS pregunta por teléfono o cara a cara; hay sesgos de respuesta que no corregimos.\n"
+    "- Modo ajustado: solo preguntas de 2 a 7 opciones; la evaluación en los 88 casos reservados tiene poca potencia (41 casos informativos de 9 estudios); sus rangos quedan algo cortos (86,5 % de cobertura al 90 %)."
 )
