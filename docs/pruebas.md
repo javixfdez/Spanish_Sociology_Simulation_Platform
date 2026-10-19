@@ -66,6 +66,30 @@ Antes de los arreglos, la primera ejecución en modo rápido tenía **15 fallos 
 9. **N4-03** [rapido] «El presidente del Gobierno, Pedro Sánchez, ¿le inspira a Ud., personalmente, mucha confian» → Ninguna confianza — sin motivo concreto. Explicación del sistema: La opción más probable es «Ninguna confianza», con un 47 %; rango habitual 45–49 %. Las mayores diferencias entre grupos: comunidad autónoma País Vasco (30 %, -17 puntos); comunidad autónoma Cataluña (33 %, -14 puntos) (método: MRP (modelo multinivel con los m
 10. **N4-10** [rapido] «Según el CIS, cambiando de tema, ¿cómo calificaría Ud. su situación económica personal en » → Buena — sin motivo concreto. Explicación del sistema: Dato medido por el CIS (estudio 3546, campo 2026-03-06, 3998 encuestados): «Buena» 61 % (±2.1 puntos). En Comunidad autónoma: Castilla y León el CIS midió «Buena» 66 % (±9.0 puntos, 203 encuestados). Estimación del modelo para hoy: la opción más probable es «B
 
+## Regresión frente a la configuración oficial
+
+Comprobación antes de congelar: el reparto **nacional** (modo rápido, sin Ollama ni GPU) de las mismas preguntas calculado con el código de la configuración congelada de la evaluación oficial (`3cb71f0`, en un worktree aparte) y con el código actual (`HEAD`),
+leyendo los mismos datos y modelos. Preguntas: las 20 de «consulta de dato» y las 40 de «predicción» de la batería, más 50 casos de desarrollo no reservados (`data/processed_v2/backtest_cases_dev.json`, tomados a intervalos regulares). No se han usado los 88 oficiales ni estudios reservados.
+Tolerancia 1e-9 sobre cada porcentaje; también se exige el mismo modo y las mismas opciones.
+
+| Grupo | Preguntas | Coinciden exactamente | Distintas |
+|---|---|---|---|
+| Consulta de dato (batería) | 20 | 19 | 1 |
+| Predicción (batería) | 40 | 40 | 0 |
+| Desarrollo no reservado | 50 | 49 | 1 |
+| **Total** | **110** | **108** | **2** |
+
+Ninguna pregunta cambió por las reglas de alcance nuevas (ninguna de las 110 pasó de simularse a rechazarse) y el MRP no altera ningún reparto nacional (solo toca subgrupos).
+
+**Las dos que no coinciden:**
+
+1. **C1-08, intencionado.** «Según el CIS, la vivienda en la que vive Ud. es…»: con `3cb71f0` el prefijo impedía encontrar la pregunta repetida y salía como pregunta sin ancla; ahora se quita el prefijo para buscar y sale en modo directo (diferencia máxima 3,3 pp, porque pasa del prior a la última medición real). Es el cambio «Según el CIS» de la ronda 1 de la batería.
+2. **DEV-CIS3531_P5D_3, NO intencionado.** La pregunta llega con tres opciones, `Sí / No / N.S./N.R.`. Con `3cb71f0` encuentra el ancla directo y da el reparto medido (Sí 20,2 %, No 79,5 %, N.S./N.R. 0,3 %). Con `HEAD` la opción `N.S./N.R.` se ignora (cambio intencionado: N.S./N.C. nunca se estiman), pero las dos opciones que quedan ya no casan con la pregunta del CIS porque
+   `anchor.py` no trata «N.S./N.R.» como respuesta no sustantiva (solo N.S., N.C., «No sabe», «No contesta» y N.P.). Resultado: pasa a modo sin ancla (Sí 37,6 %, No 62,4 %). Es un efecto colateral del filtro de N.S./N.C. de la ronda 1, no un cambio buscado.
+   Alcance: 138 de las 6.829 preguntas del CIS no reservadas (≈ 2 %) incluyen «N.S./N.R.» entre sus opciones y solo se encuentran como ancla si el usuario también la escribe. **Pendiente de decisión** (no se ha cambiado nada): la corrección mínima sería no tratar «N.S./N.R.» como opción a ignorar en `assist.is_non_substantive`, que restablece el comportamiento de `3cb71f0` sin tocar `anchor.py`.
+
+Condiciones: el worktree de `3cb71f0` usó los mismos `data/processed*` y `outputs/` (enlazados), de modo que cualquier diferencia viene del código. Las comparaciones son del reparto nacional en modo rápido; no cubren subgrupos (ahí el MRP sí cambia las cifras a propósito) ni los modos con LLM y ajustado, que no existían en la configuración congelada del modo rápido.
+
 ## Limitaciones conocidas (no se arreglan porque implicarían tocar modelos o predicciones)
 
 - **Empates exactos y reparto casi uniforme con 8 o más opciones** (p. ej., tres opciones al 11 %): la lectura del prior no distingue opciones sin información; el modo ajustado, además, devuelve logits en bf16, y los empates son por resolución.
