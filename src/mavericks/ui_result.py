@@ -7,6 +7,8 @@ from . import batch, explain
 from .assist import SPONTANEOUS_NOTE, display_label, is_spontaneous
 from .ui_charts import distribution_bars, heatmap, stacked_groups
 
+PRESET_LABELS = {"rapido_sin_llm": "Rápido", "llm_completo": "Con LLM", "recomendado": "Con LLM", "ajustado": "Ajustado"}
+
 CONFIDENCE_TEXT = {"alta": "Confianza alta", "media": "Confianza media", "baja": "Confianza baja"}
 
 
@@ -28,7 +30,22 @@ def render_coverage(card):
     )
 
 
+def render_produced_by(result):
+    """Qué modo produjo las cifras y, si hubo que volver al modo rápido, el motivo (siempre visible)."""
+    info = result.get("producido_por")
+    if not info:
+        return
+    st.markdown(f"**Modo que ha producido este resultado: {info['etiqueta']}**" + (f" (solicitado: {PRESET_LABELS.get(info['solicitado'], info['solicitado'])})" if info.get("solicitado") else ""))
+    if info.get("fallback"):
+        st.warning(f"Se ha vuelto al modo rápido: {info['motivo']}. Las cifras son las del modo rápido.")
+    if info.get("experimental"):
+        st.info(info["experimental"])
+    if info.get("nota"):
+        st.caption(info["nota"])
+
+
 def render_header(result):
+    render_produced_by(result)
     left, right = st.columns([3, 2])
     with left:
         st.markdown(

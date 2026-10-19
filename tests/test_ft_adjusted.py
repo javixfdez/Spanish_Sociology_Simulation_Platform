@@ -78,3 +78,12 @@ def test_more_than_seven_options_uses_rapid(demo):
     out = predict(QUESTION, [f"opción {i}" for i in range(8)], preset="ajustado", resources=demo, ft=ft)
     assert out["fallback"] is True and not ft.calls
     assert any("2 a 7 opciones" in w for w in out["warnings"])
+
+
+def test_result_says_which_mode_produced_it_and_whether_there_was_fallback(demo):
+    ok = predict(QUESTION, OPTIONS, preset="ajustado", resources=demo, ft=FakeFt())["producido_por"]
+    assert ok["modo"] == "ajustado" and not ok["fallback"] and "no cumplió el criterio prerregistrado" in ok["experimental"]
+    bad = predict(QUESTION, OPTIONS, preset="ajustado", resources=demo, ft=FakeFt(fail=True))["producido_por"]
+    assert bad["modo"] == "rapido" and bad["fallback"] and "no respondió" in bad["motivo"] and bad["experimental"] is None
+    plain = predict(QUESTION, OPTIONS, preset="rapido_sin_llm", resources=demo)["producido_por"]
+    assert plain["modo"] == "rapido" and not plain["fallback"]

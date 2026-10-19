@@ -104,10 +104,13 @@ if analysis:
                 if notice:
                     st.info(notice)
                 with st.spinner("Calculando…"):
-                    st.session_state["result"] = predict(
+                    result = predict(
                         question, options, "single", preset if (service or preset == "ajustado") else "rapido_sin_llm", topic=chosen_topic,
                         resources=resources, service=service, n_segments=segments,
                     )
+                    if preset == "llm_completo" and not service and result["mode"] != "direct":  # Ollama no respondía: queda constancia en el resultado
+                        result["producido_por"].update(solicitado=preset, fallback=True, motivo="Ollama no responde")
+                    st.session_state["result"] = result
                 st.session_state["text_service"] = service
             except OutOfScopeError as exc:
                 st.session_state.pop("result", None)

@@ -508,6 +508,21 @@ def _llm_path(resources, question, options, question_type, settings, service, n_
     return result
 
 
+EXPERIMENTAL_NOTE = "Experimental: menor error medido, no cumplió el criterio prerregistrado en el examen."
+MODE_NAMES = {"rapido": "Rápido", "llm": "Con LLM", "ajustado": "Ajustado (experimental)"}
+
+
+def _produced_by(preset, mode, used_llm, used_ft, ft_reason, llm_failed):
+    """Qué sistema produjo las cifras y si hubo que volver al modo rápido (con el motivo)."""
+    kind = "ajustado" if used_ft else "llm" if used_llm else "rapido"
+    reason = ft_reason if preset == "ajustado" and not used_ft else ("el modelo de lenguaje no pudo completar la estimación" if llm_failed else None)
+    note = None
+    if mode == "direct" and preset in ("ajustado", "llm_completo", "recomendado"):
+        note = "Pregunta repetida en el CIS: las cifras son estadística directa, igual en todos los modos."
+    return {"modo": kind, "etiqueta": MODE_NAMES[kind], "solicitado": preset, "fallback": reason is not None, "motivo": reason,
+            "nota": note, "experimental": EXPERIMENTAL_NOTE if used_ft else None}
+
+
 def _ft_estimate(question, options, shares_of, ft, year=None):
     """Reparto nacional y por subgrupo del modelo ajustado (un servidor aparte). Lanza ``FtError`` si no responde o responde mal."""
     from .ft import data as ft_data
@@ -574,6 +589,8 @@ def predict(
     used_llm = False  # ¿las cifras mezclan la salida del LLM?
     ft_groups = ft_info = None
     ft_fallback = False
+    ft_reason = None
+    llm_failed = False
     legacy_llm = question_type != "single"  # preguntas de respuesta múltiple: solo el pipeline completo con LLM
     if legacy_llm:
         if not wants_llm:
@@ -604,6 +621,7 @@ def predict(
         warnings += extra
         if preset == "ajustado" and mode != "direct" and len(options) > FT_MAX_OPTIONS:
             ft_fallback = True
+            ft_reason = f"el modelo ajustado cubre de 2 a {FT_MAX_OPTIONS} opciones"
             warnings.append(f"El modelo ajustado cubre de 2 a {FT_MAX_OPTIONS} opciones; se muestra la estimación del modo rápido.")
         elif preset == "ajustado" and mode != "direct":
             from .ft.client import FtClient, FtError
@@ -616,6 +634,7 @@ def predict(
             except FtError as exc:
                 log.warning("Modo ajustado: %s", exc)
                 ft_fallback = True
+                ft_reason = "el servidor del modelo ajustado no respondió"
                 warnings.append("El modelo ajustado no respondió; se muestra la estimación del modo rápido.")
         if wants_llm and mode != "direct":
             # Modo con LLM: LLM (peso w) + prior estadístico (1 − w). Las preguntas repetidas ya son estadística directa.
@@ -630,6 +649,7 @@ def predict(
                 used_llm = True
             except Exception as exc:
                 log.warning("El modo con LLM no pudo completar la estimación: %s", exc)
+                llm_failed = True
                 warnings.append(
                     "El modelo de lenguaje no pudo completar la estimación; se muestra la estimación estadística (modo rápido)."
                 )
@@ -695,6 +715,7 @@ def predict(
         ),
         "fallback": ft_fallback,
         "ajustado": ft_info,
+        "producido_por": _produced_by(preset, mode, used_llm, ft_groups is not None, ft_reason, llm_failed),
         "prior_usado": prior_used,
         "notes": notes,
         "national": {
