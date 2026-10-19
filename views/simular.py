@@ -111,6 +111,8 @@ if analysis:
         plan = analysis.get("plan")
         if plan and plan["ok"]:
             st.caption(f"Plan del modelo de lenguaje (es una sugerencia: revisa los selectores): tema «{plan['plan']['tema']}»" + (f"; grupo pedido: {mrp_service.cross_label([(i['var'], i['val']) for i in plan['plan']['cruce']])}" if plan["plan"]["cruce"] else "") + ".")
+            if plan.get("aviso"):
+                st.warning(plan["aviso"])
             if not plan["plan"]["respondible"]:
                 st.info(f"El modelo duda de que sea una pregunta de opinión: {plan['plan']['motivo']}")
         elif plan:

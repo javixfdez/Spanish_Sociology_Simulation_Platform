@@ -414,7 +414,12 @@ def run_case(env, case, mode, by_id):
             got = {(i["var"], i["val"]) for i in plan["plan"]["cruce"]}
             want = {(i["var"], i["val"]) for i in case["cruce_esperado"]}
             if case.get("vago"):
-                (notes if got <= want else fails).append(f"plan (grupo vago): {sorted(got)}")
+                if got <= want:
+                    notes.append(f"plan (grupo vago): {sorted(got)}")
+                elif plan.get("aviso"):
+                    warns.append(f"plan (grupo vago) con aviso: {plan['aviso']}")
+                else:
+                    fails.append(f"plan: traduce un grupo vago a {sorted(got)} sin avisar")
             elif got != want:
                 fails.append(f"el plan no traduce bien el grupo: {sorted(got)} en vez de {sorted(want)}")
             else:

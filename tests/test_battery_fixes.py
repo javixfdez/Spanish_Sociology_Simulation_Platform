@@ -65,3 +65,10 @@ def test_option_words_are_not_mistaken_for_groups_in_the_explanation_check():
     payload = {"national_percent": {"La atención primaria": 33.0, "Las urgencias": 20.0}, "usual_range_percent": {}, "group_differences": [], "_all_categories": ["primaria", "secundaria_2"]}
     assert explain.check_text("La opción más probable es «La atención primaria», con un 33 %.", payload) is None
     assert explain.check_text("Los de primaria opinan distinto, con un 33 %.", payload).startswith("menciona un grupo")
+
+
+def test_vague_group_warning_only_when_the_model_guessed_a_value():
+    cross = [{"var": "grupo_edad", "val": "18-24"}, {"var": "ccaa", "val": "Andalucía"}]
+    assert "suposición" in assist.vague_group_warning("¿Qué opinan las mujeres jóvenes de Andalucía sobre la salud?", cross)
+    assert assist.vague_group_warning("¿Qué opinan las mujeres de 18-24 años de Andalucía?", cross) is None
+    assert assist.vague_group_warning("¿Qué opinan los jóvenes?", [{"var": "ccaa", "val": "Galicia"}]) is None

@@ -399,6 +399,19 @@ PLAN_INSTRUCTIONS = (
 )
 
 
+_VAGUE_GROUP = re.compile(r"\b(jovenes|joven|mayores|ancianos|viejos|ricos|pobres|ingresos\s+(?:altos|bajos|medios)|gente\s+(?:rica|pobre|mayor|joven)|clase\s+(?:alta|media|baja)|adultos\s+mayores)\b")
+
+
+def vague_group_warning(question, cross):
+    """Si la pregunta usa un grupo vago («jóvenes», «mayores», «ingresos altos») y el plan lo ha traducido a un valor concreto del esquema, se avisa: es una suposición del modelo."""
+    words = _VAGUE_GROUP.findall(norm(question))
+    guessed = [i for i in cross if i["var"] in ("grupo_edad", "ingresos_hogar_tramo", "nivel_estudios")]
+    if words and guessed:
+        shown = ", ".join(f"{i['var']} = {i['val']}" for i in guessed)
+        return f"Has escrito un grupo vago ({', '.join(sorted(set(words)))}) y el modelo lo ha traducido a {shown}: es una suposición, revisa los selectores."
+    return None
+
+
 def plan_question(question, service, schema, timeout=PLAN_TIMEOUT):
     """Plan estructurado con el LLM. {ok, plan, reason}; ``ok`` falso (con el motivo) si no hay modelo, tarda más de ``timeout`` s, falla o devuelve valores fuera del esquema:
     en ese caso la interfaz usa las reglas actuales. ``schema``: {variable: [valores]} del CIS."""
@@ -425,7 +438,7 @@ def plan_question(question, service, schema, timeout=PLAN_TIMEOUT):
         except PlanError as exc:
             return {"ok": False, "plan": None, "reason": str(exc)}
     return {
-        "ok": True, "reason": "",
+        "ok": True, "reason": "", "aviso": vague_group_warning(question, cross),
         "plan": {"opciones": [o.strip() for o in plan.opciones], "tipo": plan.tipo, "tema": plan.tema, "cruce": cross, "respondible": plan.respondible, "motivo": plan.motivo,
                  "intencion": plan.intencion},
     }
