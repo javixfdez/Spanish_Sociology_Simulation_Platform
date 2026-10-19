@@ -33,7 +33,7 @@ Escrito ANTES de cualquier evaluación de a1 o b1.
 - **Checkpoints.** `save_state` sobrescribía `runs/<name>/adapter` en cada guardado, así que los checkpoints intermedios de a1 no se conservaron. El candidato único
   para evaluar es `a1/adapter_final` (paso 3315, fin de la única época). No hay selección entre checkpoints y, por tanto, no hay sesgo de selección por checkpoint.
   (Para futuros entrenamientos `save_state` guarda también una copia por paso.)
-- **Pérdidas de validación** (KL ponderada). Los guardados usan `limit=1000` ejemplos (a1) o los 1000 primeros de la muestra fija (b1); el FIN usa toda la validación
+- **Pérdidas de validación** (KL ponderada). Los guardados usan una muestra fija de `limit=1000` ejemplos (a1) o una muestra fija de 1000 (b1; random_state=0); el FIN usa toda la validación
   (a1: 1767 ejemplos de estudios no vistos; b1: 2292), por eso difieren.
 
   | modelo | paso | validación |
