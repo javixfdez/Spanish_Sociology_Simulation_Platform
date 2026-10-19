@@ -10,9 +10,7 @@ import json
 import shutil
 from pathlib import Path
 
-import pandas as pd
-
-from ..prior_v2.data import assert_no_reserved, reserved_ids
+from ..prior_v2.data import assert_no_reserved
 from . import train
 
 OUT = Path("outputs/ft/kaggle")

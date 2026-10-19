@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from . import core, train
+from . import train
 
 OUT = Path("outputs/ft/phase3")
 

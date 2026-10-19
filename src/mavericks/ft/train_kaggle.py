@@ -18,11 +18,10 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.distributed as dist
-from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
-from transformers import AutoModelForCausalLM, BitsAndBytesConfig
-
 import train  # el train.py del dataset (junto a core.py)
+from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
 from train import BASE, EFFECTIVE_BATCH, LORA, LR, WARMUP, core
+from transformers import AutoModelForCausalLM, BitsAndBytesConfig
 
 REVISION = "cdbee75f17c01a7cc42f958dc650907174af0554"  # misma revisión que a1 (Qwen/Qwen3-4B-Instruct-2507)
 DTYPE = torch.float16  # se puede cambiar a float32 con --compute fp32

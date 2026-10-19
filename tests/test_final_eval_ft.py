@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from mavericks import final_eval, final_eval_ft as ft
+from mavericks import final_eval
+from mavericks import final_eval_ft as ft
 
 
 def test_refuses_without_confirmation_or_when_done(tmp_path, monkeypatch):
@@ -22,7 +23,10 @@ def test_bootstrap_resamples_cases_when_few_studies():
     assert unit == "estudios"
 
 
-def test_report_on_synthetic_cases():
+def test_report_on_synthetic_cases(tmp_path, monkeypatch):
+    intervals = tmp_path / "ft_intervals.json"  # el archivo real está en outputs/ (fuera de git): la prueba no depende de él
+    intervals.write_text('{"groups": {"2 opciones": {"q90": 0.8, "q50": 0.3}, "3 o más": {"q90": 0.45, "q50": 0.14}}}', encoding="utf-8")
+    monkeypatch.setattr(ft, "INTERVALS", intervals)
     rng = np.random.default_rng(0)
     cases, stored, llm, b_probs = [], {"modes": {}, "base": {}, "mlp": {}}, {}, {}
     for i in range(24):
