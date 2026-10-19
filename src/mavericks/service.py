@@ -9,6 +9,7 @@ Presets:
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -16,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import assist, explain, fastcal
+from . import assist, explain, fastcal, mrp_service
 from . import categories as cat
 from .analog import AnalogConfig, analog_for_question, load_national_table
 from .analog_segments import group_estimates
@@ -46,6 +47,15 @@ _ORDER = {
 MODE_LABELS = {"direct": "directo", "prior": "prior", "none": "sin ancla"}
 CONFIDENCE = {"direct": "alta", "prior": "media", "none": "baja"}
 ALPHA = 0.1
+USE_MRP = os.environ.get("USE_MRP", "1") != "0"  # MRP para los subgrupos del modo directo (validado en docs/prereg_mrp.md)
+CROSS_EXPERIMENTAL = "Experimental: los cruces de varias variables no están validados; la validación cubre subgrupos de una variable."
+SUBGROUP_METHODS = {
+    "mrp": "MRP (modelo multinivel con los microdatos de la oleada de la pregunta)",
+    "analogas": "diferencias de preguntas análogas",
+    "ajustado": "modelo ajustado",
+    "ancla": "diferencias de la oleada de la pregunta (método anterior)",
+    "ninguno": "sin diferencias entre grupos",
+}
 FT_MAX_OPTIONS = 7  # letras A-G del entrenamiento del modelo ajustado
 CONTRACTION = 0.5  # fracción de la diferencia empírica de las análogas que se aplica a cada grupo
 LLM_RANGE_NOTE = "Los rangos están calibrados para la estimación estadística; con el modelo de lenguaje no se han calibrado por separado."
@@ -345,17 +355,27 @@ def _subgroups(resources, options, mode, spec, group_specs, national, radius, ov
                 c: _population_share(frame, dimension, c) for c in _ORDER[dimension] if c in present
             }
             labels[dimension] = label
-    estimated = None
+    estimated, sizes, method = None, None, {"clave": "ninguno"}
     if override is not None:  # modo ajustado: el modelo ajustado da cada subgrupo directamente
-        estimated = override
+        estimated, method = override, {"clave": "ajustado"}
     elif mode != "direct" and group_specs:
-        estimated = group_estimates(group_specs, options, shares, resources.anchors, national, CONTRACTION)
+        estimated, method = group_estimates(group_specs, options, shares, resources.anchors, national, CONTRACTION), {"clave": "analogas"}
+    elif mode == "direct" and spec is not None:
+        method = {"clave": "ancla"}
+        if USE_MRP and mrp_service.usable(resources):
+            try:
+                estimated, sizes, info = mrp_service.subgroup_estimates(resources, spec, options, national, {d: list(c) for d, c in shares.items()})
+                method = {"clave": "mrp", "segundos": info["segundos"], "cache": info["cache"], "dimensiones_omitidas": info["omitidas"]}
+            except Exception as exc:  # sin MRP se sigue con el método anterior de la ancla
+                log.warning("MRP no disponible (%s); se usa el método anterior", exc)
     out = {}
     for dimension, categories in shares.items():
         groups = {}
         for category, share in categories.items():
             n_cis = None
-            if mode == "direct" and spec is not None:
+            if method["clave"] == "mrp" and category in estimated.get(dimension, {}):
+                distribution, n_cis = estimated[dimension][category], sizes[dimension].get(category)
+            elif mode == "direct" and spec is not None:
                 estimate = resources.anchors.segment_distribution(spec, {dimension: [category]})
                 distribution = {o: float(estimate["probabilities"][o]) for o in options}
                 n_cis = estimate["finest"]["n"] if estimate["finest"]["level"] != "nacional" else 0
@@ -370,7 +390,8 @@ def _subgroups(resources, options, mode, spec, group_specs, national, radius, ov
                 "n_cis": n_cis,
             }
         out[dimension] = {"label": labels[dimension], "groups": groups}
-    return out
+    method["etiqueta"] = SUBGROUP_METHODS[method["clave"]]
+    return out, method
 
 
 def _national_from_segments(resources, options, spec, n_segments):
@@ -523,6 +544,37 @@ def _produced_by(preset, mode, used_llm, used_ft, ft_reason, llm_failed):
             "nota": note, "experimental": EXPERIMENTAL_NOTE if used_ft else None}
 
 
+def _crosses(resources, options, mode, spec, national, radius, crosses, legacy_llm):
+    """Cruces de varias variables: solo con MRP (modo directo). Devuelve (cruces, nota, avisos)."""
+    if mode != "direct" or spec is None or legacy_llm or not USE_MRP or not mrp_service.usable(resources):
+        reason = (
+            "Los cruces de varias variables solo se calculan cuando la pregunta existe en el CIS (modo directo): hacen falta los microdatos de la misma pregunta "
+            "para ajustar el modelo (MRP). Con una pregunta nueva solo se ofrecen los subgrupos de una variable."
+            if mode != "direct" else "El MRP no está disponible en este equipo (faltan microdatos o columnas de la población): no se pueden calcular cruces."
+        )
+        return [], reason, []
+    schema = mrp_service.schema_of(resources.population.frame)
+    normalized, warnings = [], []
+    for cross in crosses:
+        try:
+            normalized.append(mrp_service.normalize_cross(cross, schema))
+        except mrp_service.PlanError as exc:
+            warnings.append(f"Cruce descartado: {exc}.")
+    if not normalized:
+        return [], None, warnings
+    items, info = mrp_service.cross_estimates(resources, spec, options, national, normalized)
+    for item in items:
+        item["interval"] = _intervals(item["distribution"], radius)
+        item["method"] = "MRP"
+        if item["small"]:
+            warnings.append(
+                f"Cruce «{item['label']}»: solo {item['n_cis']} encuestados del CIS en la oleada de la pregunta (menos de {mrp_service.SMALL_CROSS}); la estimación se apoya sobre todo en el modelo."
+            )
+        if item["omitted_dimensions"]:
+            warnings.append(f"Cruce «{item['label']}»: la oleada de la pregunta no tiene datos válidos de {', '.join(item['omitted_dimensions'])}; el modelo no usa esa variable.")
+    return items, None, warnings
+
+
 def _ft_estimate(question, options, shares_of, ft, year=None):
     """Reparto nacional y por subgrupo del modelo ajustado (un servidor aparte). Lanza ``FtError`` si no responde o responde mal."""
     from .ft import data as ft_data
@@ -563,6 +615,7 @@ def predict(
     service=None,
     n_segments=10,
     ft=None,
+    crosses=None,
 ):
     """Predicción completa. Devuelve un dict serializable (ver la clave de cada sección)."""
     started = time.monotonic()
@@ -699,7 +752,11 @@ def predict(
     if len(options) == 2 and mode in ("prior", "none"):
         notes.append(TWO_OPTIONS_NOTE)
     evidence = _evidence_entries(resources.evidence, resources.table, items)
-    subgroups = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius, ft_groups)
+    subgroups, subgroup_method = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius, ft_groups)
+    cross_items, cross_note = [], None
+    if crosses:
+        cross_items, cross_note, cross_warnings = _crosses(resources, options, mode, spec, national, sub_radius, crosses, legacy_llm)
+        warnings += cross_warnings
     output = {
         "question": question,
         "options": options,
@@ -728,6 +785,10 @@ def predict(
         "coverage": assist.coverage_card(mode, evidence[0] if evidence else None),
         "subgroups": subgroups,
         "subgroup_note": None if mode == "direct" else SUBGROUP_NOTE,
+        "subgroups_method": subgroup_method,
+        "crosses": cross_items,
+        "cross_note": cross_note,
+        "cross_experimental": CROSS_EXPERIMENTAL if cross_items else None,
         "evidence": evidence,
         "warnings": warnings,
         "seconds": time.monotonic() - started,

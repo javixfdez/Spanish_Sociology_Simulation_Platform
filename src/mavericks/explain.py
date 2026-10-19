@@ -70,8 +70,13 @@ def template_text(result):
     diffs = subgroup_differences(result)
     if diffs:
         parts = [f"{d['dimension'].lower()} {d['category']} ({d['percent']:.0f} %, {d['difference_points']:+.0f} puntos)" for d in diffs]
-        origin = "" if result["mode"] == "direct" else " (diferencias estimadas con preguntas parecidas)"
+        method = (result.get("subgroups_method") or {}).get("etiqueta")
+        origin = f" (método: {method})" if method else ("" if result["mode"] == "direct" else " (diferencias estimadas con preguntas parecidas)")
         sentences.append("Las mayores diferencias entre grupos: " + "; ".join(parts) + origin + ".")
+    for cross in (result.get("crosses") or [])[:2]:
+        top = max(cross["distribution"], key=cross["distribution"].get)
+        small = " (muestra pequeña: la estimación se apoya sobre todo en el modelo)" if cross.get("small") else ""
+        sentences.append(f"En el cruce {cross['label']} ({cross['n_cis']} encuestados del CIS en la oleada de la pregunta){small}, la opción más probable es «{top}», con un {100 * cross['distribution'][top]:.0f} % (cruce experimental).")
     sentences.append(support_sentence(result))
     return " ".join(sentences)
 
@@ -86,6 +91,11 @@ def llm_payload(result):
         "usual_range_percent": {o: [round(100 * core[o][0], 1), round(100 * core[o][1], 1)] for o in core},
         "group_differences": [{**d, "percent": round(d["percent"], 1), "difference_points": round(d["difference_points"], 1)}
                               for d in subgroup_differences(result, top=4)],
+        "subgroup_method": (result.get("subgroups_method") or {}).get("etiqueta"),
+        "crosses": [
+            {"label": c["label"], "n_cis": c["n_cis"], "percent": {o: round(100 * v, 1) for o, v in c["distribution"].items()}, "experimental": True}
+            for c in (result.get("crosses") or [])[:2]
+        ],
         "support": {
             "mode": result["mode_label"], "prior_method": (result.get("prior_usado") or {}).get("metodo"),
             "cis_questions": [{"study": e["study_id"], "date": e["fieldwork_end"], "text": (e["question"] or "")[:160],
@@ -123,6 +133,8 @@ def check_text(text, payload):
         if not any(abs(number - a) <= TOLERANCE for a in allowed):
             return f"cifra que no cuadra con los datos: {number:g}"
     mentioned = {d["category"].lower() for d in payload["group_differences"]}
+    for cross in payload.get("crosses") or []:  # los grupos de un cruce pedido pueden nombrarse
+        mentioned |= {part.split(":", 1)[-1].strip().lower() for part in cross["label"].split("·")}
     labels = payload.get("_all_categories", [])
     lowered = text.lower()
     for label in labels:

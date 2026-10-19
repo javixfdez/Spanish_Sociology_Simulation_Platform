@@ -1,5 +1,6 @@
 import streamlit as st
 
+from mavericks import assist, mrp_service
 from mavericks.examples import load_examples
 from mavericks.ft.client import FtClient
 from mavericks.schemas import Settings
@@ -17,6 +18,7 @@ from mavericks.ui_result import render, render_coverage
 setup()
 
 AUTO = "(automático)"
+CROSS_ANY = "(cualquiera)"
 examples = load_examples()
 by_label = {item["question"][:90]: item for item in examples["items"]}
 
@@ -73,11 +75,18 @@ if st.button("Analizar pregunta", type="primary"):
             st.info(notice)
         with st.spinner("Analizando la pregunta…"):
             coverage = assess_coverage(question, resources, service, chosen_topic)
-            suggestion = None
+            suggestion, plan = None, None
             if coverage["category"] != "fuera_de_alcance":
                 suggestion = suggest_options(question, resources, service, chosen_topic)
                 st.session_state["opts"] = "\n".join(suggestion["options"])
-        st.session_state["analysis"] = {"question": question, "coverage": coverage, "suggestion": suggestion}
+                for dim in mrp_service.DIMENSIONS:
+                    st.session_state[f"cross_{dim}"] = CROSS_ANY
+                if service is not None:  # plan estructurado (20 s como máximo); si falla, se usan las reglas y los selectores manuales
+                    plan = assist.plan_question(question, service, mrp_service.schema_of(resources.population.frame))
+                    if plan["ok"] and plan["plan"]["cruce"] and coverage["category"] == "respaldada":
+                        for item in plan["plan"]["cruce"]:
+                            st.session_state[f"cross_{item['var']}"] = item["val"]
+        st.session_state["analysis"] = {"question": question, "coverage": coverage, "suggestion": suggestion, "plan": plan}
     except ServiceError as exc:
         st.session_state.pop("analysis", None)
         st.error(str(exc))
@@ -99,6 +108,28 @@ if analysis:
             st.caption(f"{names}: opción no leída por el entrevistador en el CIS.")
         for warning in analysis["suggestion"].get("warnings", []):
             st.info(warning)
+        plan = analysis.get("plan")
+        if plan and plan["ok"]:
+            st.caption(f"Plan del modelo de lenguaje: tema «{plan['plan']['tema']}»" + (f"; grupo pedido: {mrp_service.cross_label([(i['var'], i['val']) for i in plan['plan']['cruce']])}" if plan["plan"]["cruce"] else "") + ".")
+            if not plan["plan"]["respondible"]:
+                st.info(f"El modelo duda de que sea una pregunta de opinión: {plan['plan']['motivo']}")
+        elif plan:
+            st.caption(f"Plan del modelo no usado ({plan['reason']}); se aplican las reglas de siempre.")
+        crosses = []
+        if analysis["coverage"]["category"] == "respaldada":
+            with st.expander("Subgrupo o cruce de varias variables (experimental)"):
+                st.caption("Elige una o más variables para ver un grupo concreto (por ejemplo, mujeres de 18-24 años de Andalucía). Experimental: los cruces de varias variables no están validados; la validación cubre subgrupos de una variable.")
+                schema = mrp_service.schema_of(get_resources().population.frame)
+                chosen = []
+                columns = st.columns(len(schema))
+                for column, (dim, values) in zip(columns, schema.items(), strict=True):
+                    value = column.selectbox(mrp_service.DIMENSION_LABELS[dim], [CROSS_ANY, *values], key=f"cross_{dim}")
+                    if value != CROSS_ANY:
+                        chosen.append({"var": dim, "val": value})
+                if chosen:
+                    crosses = [chosen]
+        else:
+            st.caption("Los cruces de varias variables solo se ofrecen cuando la pregunta existe en el CIS (modo directo): hacen falta los microdatos de la misma pregunta para ajustar el modelo.")
         if st.button("Simular", type="primary"):
             options = [o.strip() for o in options_text.splitlines() if o.strip()]
             try:
@@ -109,7 +140,7 @@ if analysis:
                 with st.spinner("Calculando…"):
                     result = predict(
                         question, options, "single", preset if (service or preset == "ajustado") else "rapido_sin_llm", topic=chosen_topic,
-                        resources=resources, service=service, n_segments=segments,
+                        resources=resources, service=service, n_segments=segments, crosses=crosses or None,
                     )
                     if preset == "llm_completo" and not service and result["mode"] != "direct":  # Ollama no respondía: queda constancia en el resultado
                         result["producido_por"].update(solicitado=preset, fallback=True, motivo="Ollama no responde")

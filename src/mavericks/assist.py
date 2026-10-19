@@ -19,7 +19,7 @@ from .anchor import (
     same_item,
     series_key,
 )
-from .schemas import OptionSuggestion, ScopeJudgement
+from .schemas import OptionSuggestion, QueryPlan, ScopeJudgement
 
 DIRECT_SIMILARITY = 0.85
 PRIOR_SIMILARITY = 0.55
@@ -313,6 +313,46 @@ def scope_check(question, service=None):
         "in_scope": False, "kind": kind,
         "reason": f"La pregunta {_SCOPE_TEXT.get(kind, 'no es una pregunta de opinión')}.",
         "reformulation": reformulation,
+    }
+
+
+PLAN_TIMEOUT = 20.0  # segundos; pasado ese tiempo se usan las reglas de siempre
+PLAN_INSTRUCTIONS = (
+    "Rol: planificador de consultas de encuesta sobre adultos residentes en España. Devuelve un plan con: opciones (2 a 7 opciones de respuesta cerradas, sin N.S./N.C.; vacío si no procede), "
+    "tipo (escala, si_no o categorias), tema (uno de los temas permitidos), subgrupo_o_cruce (lista de {var, val} SOLO si la pregunta pide un grupo concreto de población, "
+    "usando exclusivamente las variables y valores de esquema; lista vacía si no pide ninguno), respondible (true si es una pregunta de opinión, actitud o comportamiento de esa población) y motivo. "
+    "No inventes variables ni valores: si el grupo pedido no encaja en el esquema, deja subgrupo_o_cruce vacío y explícalo en motivo."
+)
+
+
+def plan_question(question, service, schema, timeout=PLAN_TIMEOUT):
+    """Plan estructurado con el LLM. {ok, plan, reason}; ``ok`` falso (con el motivo) si no hay modelo, tarda más de ``timeout`` s, falla o devuelve valores fuera del esquema:
+    en ese caso la interfaz usa las reglas actuales. ``schema``: {variable: [valores]} del CIS."""
+    from .mrp_service import PlanError, normalize_cross
+    from .topics import TOPICS
+
+    if service is None:
+        return {"ok": False, "plan": None, "reason": "sin modelo de lenguaje"}
+    payload = {"task": "plan", "instrucciones": PLAN_INSTRUCTIONS, "question": question, "temas": TOPICS, "esquema": schema}
+    try:
+        plan = asyncio.run(asyncio.wait_for(service.call(QueryPlan, payload), timeout))
+    except (TimeoutError, asyncio.TimeoutError):
+        return {"ok": False, "plan": None, "reason": f"el modelo tardó más de {timeout:g} s"}
+    except Exception as exc:  # sin respuesta útil del modelo: reglas
+        return {"ok": False, "plan": None, "reason": f"el modelo falló ({type(exc).__name__})"}
+    if plan.tema not in TOPICS:
+        return {"ok": False, "plan": None, "reason": f"tema fuera de la lista: {plan.tema!r}"}
+    if plan.opciones and not (2 <= len(plan.opciones) <= 7 and len({o.strip().lower() for o in plan.opciones}) == len(plan.opciones)):
+        return {"ok": False, "plan": None, "reason": "opciones no válidas (2 a 7 y distintas)"}
+    cross = []
+    if plan.subgrupo_o_cruce:
+        try:
+            cross = [{"var": v, "val": c} for v, c in normalize_cross([i.model_dump() for i in plan.subgrupo_o_cruce], schema)]
+        except PlanError as exc:
+            return {"ok": False, "plan": None, "reason": str(exc)}
+    return {
+        "ok": True, "reason": "",
+        "plan": {"opciones": [o.strip() for o in plan.opciones], "tipo": plan.tipo, "tema": plan.tema, "cruce": cross, "respondible": plan.respondible, "motivo": plan.motivo},
     }
 
 

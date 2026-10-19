@@ -88,6 +88,22 @@ class ScopeJudgement(BaseModel):
     reformulation: str = ""
 
 
+class PlanItem(BaseModel):
+    var: str
+    val: str
+
+
+class QueryPlan(BaseModel):
+    """Plan estructurado de una pregunta en lenguaje natural (lo valida ``assist.plan_question`` contra el esquema del CIS)."""
+
+    opciones: list[str] = Field(default_factory=list, max_length=7)
+    tipo: Literal["escala", "si_no", "categorias"]
+    tema: str
+    subgrupo_o_cruce: list[PlanItem] = Field(default_factory=list, max_length=5)
+    respondible: bool
+    motivo: str = ""
+
+
 class ResultNarrative(BaseModel):
     summary: str = Field(min_length=20)
 

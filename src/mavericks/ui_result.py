@@ -108,6 +108,12 @@ def render_national(result):
 def render_subgroups(result, key="sub"):
     st.subheader("Por grupos de población")
     subgroups = result["subgroups"]
+    method = result.get("subgroups_method")
+    if method:
+        extra = ""
+        if method["clave"] == "mrp":
+            extra = " Los rangos son los del método anterior (calibrados con él, por tanto prudentes). Validado entre oleadas de la misma pregunta: mejora la edad, sexo, estudios e ingresos; en comunidad autónoma empata con el método anterior."
+        st.caption(f"Método de los subgrupos: **{method['etiqueta']}**.{extra}")
     if result.get("subgroup_note"):
         st.info(result["subgroup_note"])
     names = {k: v["label"] for k, v in subgroups.items()}
@@ -144,6 +150,22 @@ def render_subgroups(result, key="sub"):
             "Los grupos con pocas entrevistas en el CIS se acercan al conjunto de la población "
             "para no sacar conclusiones de muestras pequeñas."
         )
+
+
+def render_crosses(result):
+    """Cruces de varias variables (experimentales, solo MRP en modo directo) o el motivo por el que no se ofrecen."""
+    crosses = result.get("crosses") or []
+    if not crosses:
+        if result.get("cross_note"):
+            st.info(result["cross_note"])
+        return
+    st.subheader("Cruce de varias variables")
+    st.info(result["cross_experimental"])
+    for n, cross in enumerate(crosses):
+        st.markdown(f"**{cross['label']}** · {cross['n_cis']} encuestados del CIS en la oleada de la pregunta · método {cross['method']}")
+        if cross["small"]:
+            st.warning(f"Solo {cross['n_cis']} encuestados en este cruce: la estimación se apoya sobre todo en el modelo.")
+        st.plotly_chart(distribution_bars(cross["distribution"], cross.get("interval")), use_container_width=True, key=f"cross_{n}")
 
 
 def render_evidence(result):
@@ -205,6 +227,7 @@ def render(result, key="res", llm=None, timeout=20.0):
     slot = st.empty()
     show_text(slot, result)
     render_subgroups(result, key)
+    render_crosses(result)
     render_evidence(result)
     render_downloads(result, key)
     info = result.get("explanation_text") or {}

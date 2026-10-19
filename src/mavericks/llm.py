@@ -19,6 +19,7 @@ from .schemas import (
     Narrative,
     OptionSuggestion,
     Prediction,
+    QueryPlan,
     ResultNarrative,
     ScopeJudgement,
 )
@@ -216,6 +217,8 @@ class MockLLMProvider:
         if schema is ResultNarrative:
             top = max(payload["national_percent"], key=payload["national_percent"].get)
             return ResultNarrative(summary=f"La opción más probable es «{top}» con un {payload['national_percent'][top]:.0f} %. DEMO / SYNTHETIC.")
+        if schema is QueryPlan:
+            return QueryPlan(opciones=["Mucho", "Bastante", "Poco", "Nada"], tipo="escala", tema="general", respondible=True, motivo="DEMO / SYNTHETIC")
         if schema is OptionSuggestion:
             return OptionSuggestion(options=["Mucho", "Bastante", "Poco", "Nada"])
         if schema is ScopeJudgement:
