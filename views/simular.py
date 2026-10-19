@@ -42,11 +42,14 @@ def pick_example():
 with st.sidebar:
     st.header("Opciones")
     defaults = Settings()
-    modes = ["rapido_sin_llm", "llm_completo"]
-    if FtClient(timeout=1.0).healthy():  # el modo ajustado solo se ofrece si su servidor está arrancado
-        modes.append("ajustado")
+    modes = ["rapido_sin_llm", "llm_completo", "ajustado"]  # siempre los tres: si el servidor cae, la selección no cambia en silencio, el resultado avisa del fallback
     preset = st.radio("Modo", modes, index=modes.index(defaults.default_preset), format_func=PRESET_LABELS.get, key="preset")
     st.caption(PRESET_HELP)
+    if preset == "ajustado":
+        if FtClient(timeout=1.0).healthy():
+            st.caption("Servidor del modelo ajustado: activo. **Experimental**: menor error medido, no cumplió el criterio prerregistrado en el examen.")
+        else:
+            st.warning("El servidor del modelo ajustado no responde (`outputs\\ft\\run_server.ps1`): se usará el modo rápido y el resultado lo indicará.")
     if examples["items"]:
         st.selectbox("Ejemplos listos", ["—", *by_label], key="example", on_change=pick_example)
         st.caption("Los ejemplos se muestran al instante porque ya están calculados.")

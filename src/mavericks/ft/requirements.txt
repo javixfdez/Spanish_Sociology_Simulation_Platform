@@ -1,0 +1,11 @@
+# Entorno .venv_ft del modelo ajustado (entrenamiento y servidor). Versiones con las que se entrenaron y evaluaron a1 y B.
+# torch se instala aparte con CUDA: uv pip install --python .venv_ft\Scripts\python.exe torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+transformers==5.20.1
+peft==0.21.2
+bitsandbytes==0.50.2
+accelerate==1.15.0
+huggingface_hub==2.2.0
+safetensors==0.8.0
+pandas==3.0.6
+pyarrow==26.0.0
+numpy==2.5.4

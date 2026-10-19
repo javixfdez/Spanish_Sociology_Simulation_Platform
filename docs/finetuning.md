@@ -94,6 +94,16 @@ Criterio prerregistrado: mejora ≥ 0,5 pp con el IC 95 % por estudio entero por
 
 ## Cómo usarlo
 
+0. Prepara el entorno del modelo (una vez). Es un entorno aparte del de `uv sync`; necesita una GPU NVIDIA con ~3 GB libres, probado en una RTX 4060 de 8 GB.
+
+```sh
+uv venv .venv_ft --python 3.13
+uv pip install --python .venv_ft\Scripts\python.exe torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+uv pip install --python .venv_ft\Scripts\python.exe -r src/mavericks/ft/requirements.txt
+# una vez, con internet: base fijada por revisión (el servidor trabaja sin conexión)
+.venv_ft\Scripts\python.exe -c "from huggingface_hub import snapshot_download as d; d('Qwen/Qwen3-4B-Instruct-2507', revision='cdbee75f17c01a7cc42f958dc650907174af0554')"
+```
+
 1. Coloca el adaptador en `outputs/ft/runs/b1/adapter_final/` (con `adapter_config.json` y `adapter_model.safetensors`; sha256 `f6a4dd94…`). No está en git (los pesos nunca se suben).
 2. Arranca el servidor (GPU, entorno `.venv_ft`; no para Ollama):
    ```

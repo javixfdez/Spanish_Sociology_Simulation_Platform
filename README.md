@@ -28,13 +28,42 @@ backtest.
 ## Arranque
 
 Requiere Python 3.11+ y [uv](https://docs.astral.sh/uv/) (`pip install uv`; si hay un error de certificado TLS al
-descargar Python, `UV_SYSTEM_CERTS=1`).
+descargar Python o paquetes, `UV_SYSTEM_CERTS=1`; en PowerShell `$env:UV_SYSTEM_CERTS = "1"`). Si tras `pip install uv` el comando
+`uv` no está en el PATH, usa `python -m uv ...` en todos los comandos de abajo.
 
 ```sh
-uv sync
-uv run pytest -q
+uv sync --extra embed      # --extra embed: sentence-transformers para e5 (prior aprendido); sin él la demo usa solo el KNN
+uv run pytest -q           # 267 pasan y 12 se omiten sin datos reales
 uv run ruff check src tests app.py main.py
 ```
+
+### Primera instalación completa (probada en un clon limpio)
+
+Los datos no están en git: coloca los microdatos en `maverick_data/raw/` (la carpeta con `consumo/`, `general/`, `ia_tecnologia/`, `medio_ambiente/`, `salud/`, `soledad/`,
+`vivienda/`) y descarga una vez el modelo e5 (`uv run python -c "from sentence_transformers import SentenceTransformer as S; S('intfloat/multilingual-e5-base')"`; se necesita
+internet solo esta vez, la demo lo carga después con `local_files_only`). Después, en este orden (tiempos medidos en un portátil con 8 núcleos, sin GPU):
+
+```sh
+uv run python main.py etl-population --n 50000 --seed 42                    # 1,7 min
+uv run python main.py etl-cis                                               # 6,5 min
+uv run python main.py ingest-surveys --path data/processed/cis_questions.parquet                    # 9 s  (almacén v1, respaldo si falta el v2)
+uv run python main.py build-national                                        # 36 s
+uv run python main.py etl-external                                          # 3 min  (Eurobarómetro y ESS, solo España)
+uv run python main.py ingest-surveys --path data/processed/cis_questions.parquet --db data/processed_v2/evidence_v2.sqlite   # 9 s
+uv run python main.py ingest-surveys --path data/processed_v2/external_evidence.json --db data/processed_v2/evidence_v2.sqlite  # 4 s
+uv run python main.py make-backtest-cases                                   # 13 s  (88 casos oficiales)
+uv run python main.py make-backtest-cases --split dev --topics salud soledad medio_ambiente ia_tecnologia vivienda \
+  --since 2024-09-01 --max-per-study 5 --out data/processed_v2/backtest_cases_dev.json                # 29 s  (casos de desarrollo)
+uv run python main.py population-targets                                    # 3 s
+uv run python main.py train-prior                                           # crea la caché de embeddings e5 y entrena el MLP del prior (outputs/models)
+uv run python main.py fast-validation                                       # 2,5 min  (rangos y tabla de la página Validación)
+uv run python main.py build-examples                                        # 30 s  (ejemplos precalculados de la barra lateral)
+uv run streamlit run app.py
+```
+
+Sin los pasos de `fast-validation` y `train-prior` la app arranca igualmente, pero solo con el KNN y sin rangos probables («Sin calibración suficiente»). `calibrate-prior`
+(rangos y tabla del prior) necesita además las predicciones de las validaciones de investigación (`python -m mavericks.prior_v2.bigdev`, `confirm` y `confirm2`, horas de CPU) y es opcional.
+Para el modo con LLM instala [Ollama](https://ollama.com) y `ollama pull qwen3:8b`; para el modo ajustado, ver «Modo ajustado» más abajo.
 
 Demo sin datos reales (todo marcado como sintético):
 
@@ -203,7 +232,7 @@ con el reparto **real** de la pregunta (método de Cao et al. 2025; datos reales
 - **88 oficiales** (B, una sola ejecución): MAE 6,84 pp frente a 8,11 del modo rápido y 7,91 del modo con LLM, **−1,28 pp [−2,62; +0,01]: NO CUMPLE** el criterio prerregistrado (el IC roza el cero). Sin ancla: 12,05 frente a 14,57;
   cobertura del rango del 90 % en los no directos: 86,5 %. Solo 2–7 opciones (con 8 usa el modo rápido; regla fijada antes de ver resultados, commit `174cb82`).
 - **Decisión:** el modo rápido sigue por defecto; el ajustado es opcional. La variante «B también con ancla directa» (6,55 pp) es secundaria y queda como trabajo futuro.
-- **Uso:** pesos en `outputs/ft/runs/b1/adapter_final/` (fuera de git, sha256 `f6a4dd94…`); `powershell -File outputs\ft\run_server.ps1` arranca el servidor (puerto 8765, `/health`); en Simular aparece «Ajustado» si responde.
+- **Uso:** entorno `.venv_ft` y descarga de la base (3 comandos, en `docs/finetuning.md`, «Cómo usarlo»); pesos en `outputs/ft/runs/b1/adapter_final/` (fuera de git, sha256 `f6a4dd94…`); `powershell -File outputs\ft\run_server.ps1` arranca el servidor (puerto 8765, `/health`); en Simular aparece «Ajustado» si responde.
   Si falla o no responde en 30 s, se muestra el modo rápido con aviso (`fallback=true`).
 - **Limitaciones:** potencia baja (41 casos informativos, 9 estudios), checkpoints intermedios de a1 no conservados, fp16 en B frente a bf16 en a1, VRAM justa con Ollama a la vez (≈245 MiB de margen; sin memoria la explicación usa la plantilla).
 

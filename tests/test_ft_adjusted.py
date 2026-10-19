@@ -114,3 +114,26 @@ def test_client_retries_once_on_reset(monkeypatch):
     calls.clear()
     monkeypatch.setattr("mavericks.ft.client.urllib.request.urlopen", lambda r, timeout=None: (_ for _ in ()).throw(ConnectionResetError("siempre")))
     assert FtClient("http://x").healthy() is False
+
+
+def test_banner_shows_mode_fallback_and_experimental_note():
+    from streamlit.testing.v1 import AppTest
+
+    def app():
+        import streamlit as st
+
+        from mavericks.ui_result import render_produced_by
+
+        render_produced_by(st.session_state["r"])
+
+    ok = {"modo": "ajustado", "etiqueta": "Ajustado (experimental)", "solicitado": "ajustado", "fallback": False, "motivo": None, "nota": None,
+          "experimental": "Experimental: menor error medido, no cumplió el criterio prerregistrado en el examen."}
+    at = AppTest.from_function(app)
+    at.session_state["r"] = {"producido_por": ok}
+    at.run()
+    assert "Ajustado (experimental)" in at.markdown[0].value and "no cumplió el criterio prerregistrado" in at.info[0].value and not at.warning
+    bad = {**ok, "modo": "rapido", "etiqueta": "Rápido", "fallback": True, "motivo": "el servidor del modelo ajustado no respondió", "experimental": None}
+    at.session_state["r"] = {"producido_por": bad}
+    at.run()
+    assert "Rápido" in at.markdown[0].value and "solicitado: Ajustado" in at.markdown[0].value
+    assert "Se ha vuelto al modo rápido: el servidor del modelo ajustado no respondió" in at.warning[0].value

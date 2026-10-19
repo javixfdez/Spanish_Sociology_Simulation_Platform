@@ -52,6 +52,9 @@ def support_sentence(result):
     first = (result.get("evidence") or [None])[0]
     if mode == "direct" and first:
         return f"Se apoya en la propia pregunta del CIS (estudio {first['study_id']}, {first['fieldwork_end'] or 's/f'}), con su resultado real más reciente."
+    if used.get("metodo") == "modelo_ajustado":
+        return ("Es una pregunta nueva, sin equivalente en el CIS; el reparto lo da un modelo de lenguaje pequeño ajustado con encuestas reales (modo experimental) "
+                "y tiene confianza baja.")
     where = f"la más parecida es del estudio {first['study_id']}" if first else "no hay ninguna muy parecida"
     base = "preguntas parecidas del CIS" + (" y un modelo aprendido de todas las preguntas anteriores" if used.get("metodo") == "media_knn_mlp" else "")
     if mode == "prior":

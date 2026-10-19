@@ -123,3 +123,10 @@ def test_gpu_memory_error_falls_back_to_template_with_reason():
         assert out["origen"] == "plantilla" and "memoria de la GPU" in out["motivo"] and out["texto"]
     other = explain.add_llm_text(make_result(), FakeLLM(error=RuntimeError("sin modelo")))["explanation_text"]
     assert "memoria" not in other["motivo"]
+
+
+def test_adjusted_mode_template_names_the_fine_tuned_model_not_the_analogs():
+    result = make_result()
+    result["prior_usado"] = {"metodo": "modelo_ajustado"}
+    text = explain.template_text(result)
+    assert "modelo de lenguaje pequeño ajustado" in text and "preguntas parecidas del CIS" not in text
