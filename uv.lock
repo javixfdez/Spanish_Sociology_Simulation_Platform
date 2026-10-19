@@ -841,6 +841,7 @@ dependencies = [
 [package.optional-dependencies]
 embed = [
     { name = "sentence-transformers" },
+    { name = "truststore" },
 ]
 external = [
     { name = "langchain-openai" },
@@ -880,6 +881,7 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'embed'", specifier = ">=3" },
     { name = "sentence-transformers", marker = "extra == 'semantic'", specifier = ">=3" },
     { name = "streamlit", specifier = ">=1.40" },
+    { name = "truststore", marker = "extra == 'embed'", specifier = ">=0.9" },
 ]
 provides-extras = ["semantic", "embed", "spss", "external"]
 

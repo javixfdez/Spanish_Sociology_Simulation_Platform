@@ -87,3 +87,30 @@ def test_result_says_which_mode_produced_it_and_whether_there_was_fallback(demo)
     assert bad["modo"] == "rapido" and bad["fallback"] and "no respondió" in bad["motivo"] and bad["experimental"] is None
     plain = predict(QUESTION, OPTIONS, preset="rapido_sin_llm", resources=demo)["producido_por"]
     assert plain["modo"] == "rapido" and not plain["fallback"]
+
+
+def test_client_retries_once_on_reset(monkeypatch):
+    calls = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self, *a):
+            return b'{"ok": true}'
+
+    def flaky(request, timeout=None):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ConnectionResetError("simulado")
+        return Response()
+
+    monkeypatch.setattr("mavericks.ft.client.urllib.request.urlopen", flaky)
+    monkeypatch.setattr("mavericks.ft.client.time.sleep", lambda s: None)
+    assert FtClient("http://x").healthy() is True and len(calls) == 2
+    calls.clear()
+    monkeypatch.setattr("mavericks.ft.client.urllib.request.urlopen", lambda r, timeout=None: (_ for _ in ()).throw(ConnectionResetError("siempre")))
+    assert FtClient("http://x").healthy() is False

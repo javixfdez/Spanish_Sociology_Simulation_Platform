@@ -16,6 +16,13 @@ class SentenceTransformerEmbedder:
     def __init__(self, model, device="cpu", local_files_only=False, batch_size=32):
         from sentence_transformers import SentenceTransformer
 
+        if not local_files_only:  # redes con inspección TLS (antivirus, proxy): usa los certificados del sistema para descargar el modelo
+            try:
+                import truststore
+
+                truststore.inject_into_ssl()
+            except ImportError:
+                pass
         self.model = SentenceTransformer(model, device=device, local_files_only=local_files_only)
         self.name = f"{model}@{device}"
         self.batch_size = batch_size

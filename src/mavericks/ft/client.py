@@ -1,7 +1,9 @@
 """Cliente (solo biblioteca estándar) del servidor del modelo ajustado (``mavericks.ft.server``)."""
 
+import http.client
 import json
 import os
+import time
 import urllib.request
 
 DEFAULT_URL = "http://127.0.0.1:8765"
@@ -20,11 +22,16 @@ class FtClient:
     def _call(self, path, payload=None):
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(self.url + path, data=data, headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return json.load(response)
-        except Exception as exc:  # red, tiempo agotado o respuesta mal formada
-            raise FtError(f"el servidor del modelo ajustado no respondió ({type(exc).__name__}: {exc})") from exc
+        for attempt in (1, 2):
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    return json.load(response)
+            except Exception as exc:  # red, tiempo agotado o respuesta mal formada
+                reset = isinstance(exc, (ConnectionError, http.client.RemoteDisconnected)) or isinstance(getattr(exc, "reason", None), ConnectionError)
+                if attempt == 1 and reset:  # conexión cortada de forma esporádica: la lectura es idempotente, se repite una vez
+                    time.sleep(0.5)
+                    continue
+                raise FtError(f"el servidor del modelo ajustado no respondió ({type(exc).__name__}: {exc})") from exc
 
     def healthy(self):
         try:

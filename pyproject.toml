@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 semantic = ["sentence-transformers>=3", "chromadb>=1"]
-embed = ["sentence-transformers>=3"]
+embed = ["sentence-transformers>=3", "truststore>=0.9"]
 spss = ["pyreadstat>=1.2"]
 external = ["langchain-openai>=1"]
 

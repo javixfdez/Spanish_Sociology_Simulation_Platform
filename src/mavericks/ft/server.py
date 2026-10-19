@@ -13,8 +13,10 @@ original, sin barajar y sin promediar permutaciones. Las opciones llegan ya con 
 
 import argparse
 import json
+import sys
 import threading
 import time
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pandas as pd
@@ -102,13 +104,22 @@ def make_handler(model, adapter):
     return Handler
 
 
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 64  # la cola por defecto (5) puede cortar conexiones si llegan varias peticiones a la vez
+
+    def handle_error(self, request, client_address):
+        traceback.print_exc()  # al server_err.log; una conexión rota de un cliente no tumba el servidor
+        sys.stderr.flush()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--adapter", default="outputs/ft/runs/b1/adapter_final")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     model = Model(args.adapter)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(model, args.adapter))
+    server = Server(("127.0.0.1", args.port), make_handler(model, args.adapter))
     print(f"servidor listo en http://127.0.0.1:{args.port} ({args.adapter})", flush=True)
     server.serve_forever()
 
