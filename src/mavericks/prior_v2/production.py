@@ -45,8 +45,20 @@ def fit(questions, emb, dims=PCA_DIMS, hidden=HIDDEN, seed=SEED):
     return featurizer, learned.make_model("mlp", hidden, seed).fit(x, y)
 
 
+def ensure_embeddings(emb_dir, evidence_path, table_path):
+    """Crea la caché de embeddings e5 (preguntas y etiquetas de opción) si no existe: en una instalación nueva no hay nada que reutilizar."""
+    from . import embcache
+
+    directory = Path(emb_dir)
+    if not (directory / "questions.npz").exists():
+        embcache.build(evidence_path, table_path, directory)
+    if not (directory / "options_query.npz").exists():
+        embcache.build_query_options(evidence_path, table_path, directory)
+
+
 def train(evidence_path, table_path, emb_dir, out_dir=MODEL_DIR, dims=PCA_DIMS, hidden=HIDDEN, seed=SEED):
     """Entrena con todo el almacén del CIS y guarda modelo + metadatos. Devuelve los metadatos."""
+    ensure_embeddings(emb_dir, evidence_path, table_path)
     repository = EvidenceRepository(evidence_path)
     emb = EmbCache(emb_dir)
     questions = learned.train_questions(repository, load_national_table(table_path), emb)
