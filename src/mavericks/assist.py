@@ -320,7 +320,7 @@ _SCOPE_TEXT = {
 }
 
 
-_ADDRESSES_RESPONDENT = re.compile(r"\b(usted|ud|su|sus|le|les|te|tu|tus|suele|suelen|compra|compran|usa|utiliza|utilizan|prefiere|prefieren|practica|va a|viaja)\b")
+_ADDRESSES_RESPONDENT = re.compile(r"\b(usted|ud|su|sus|le|les|te|tu|tus|suele|suelen|compra|compran|usa|utiliza|utilizan|prefiere|prefieren|practica|va a|viaja|ha\s+\w{3,}(?:ado|ido|to|cho)|se\s+ha\s+\w+)\b")
 
 
 def scope_check(question, service=None):
