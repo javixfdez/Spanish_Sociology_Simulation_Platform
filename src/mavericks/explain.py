@@ -218,6 +218,8 @@ def check_text(text, payload):
     reason = _mixing(text, payload)
     if reason:
         return reason
+    for label in sorted(payload.get("national_percent") or {}, key=len, reverse=True):  # las palabras de las propias opciones no son grupos («La atención primaria»)
+        text = re.sub(re.escape(label), " ", text, flags=re.I)
     mentioned = {d["category"].lower() for d in payload["group_differences"]}
     for cross in payload.get("crosses") or []:  # los grupos de un cruce pedido pueden nombrarse
         mentioned |= {part.split(":", 1)[-1].strip().lower() for part in cross["label"].split("·")}

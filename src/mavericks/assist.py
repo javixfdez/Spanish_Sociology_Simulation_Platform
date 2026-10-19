@@ -266,11 +266,33 @@ _RULES = [
     ("hechos", r"^(cuando|donde)\s+(fue|es|esta|nacio|murio|se fundo|se firmo|empezo|termino)\b"),
     ("hechos", r"^(quien)\s+(es|fue|era|escribio|gano|invento|descubrio)\b"),
     ("hechos", r"^(cuanto)\s+(cuesta|mide|pesa|es|son|vale|dura|gana|cobra)\b"),
-    ("hechos", r"^(que dia|que hora|que año|en que ano|en que año)\b"),
+    ("hechos", r"^(que dia|que hora|que año|en que ano|en que año)\b(?!.*\b(prefiere|prefiero|preferiria|le gusta|gustaria|elegiria|suele|usa|cree)\b)"),
     ("poblacion_distinta", rf"\b(en|de)\s+({_COUNTRIES})\b"),
-    ("poblacion_distinta", rf"\blos\s+({_DEMONYMS})\b"),
+    ("poblacion_distinta", rf"\b({_DEMONYMS})\b"),
     ("poblacion_distinta", r"\b(los|las)\s+(ninos|ninas|menores|bebes|adolescentes|turistas|ancianos de mas de 100)\b"),
     ("poblacion_distinta", r"\b(menores de 18|de menos de 18|menores de edad)\b"),
+    # elecciones futuras
+    ("prediccion", r"\b(proximas|siguientes)\s+elecciones\b"),
+    ("prediccion", r"\b(tendra|tendran|sacara|sacaran|conseguira|conseguiran)\b.*\b(escanos|votos|diputados|mayoria)\b"),
+    # periodo posterior a los datos (julio de 2026 en adelante)
+    ("fuera_de_periodo", r"\b(julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+2026\b"),
+    ("fuera_de_periodo", r"\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+(202[7-9]|20[3-9]\d)\b"),
+    ("fuera_de_periodo", r"\b(barometro|encuesta|referendum|elecciones|resultados?)\s+(de|del)\s+(202[7-9]|20[3-9]\d)\b"),
+    # datos personales de encuestados o votantes
+    ("datos_personales", r"\b(dni|telefono|direccion|domicilio|correo electronico|email|nombre y apellidos|apellidos|datos personales)\b.*\b(encuestad\w+|entrevistad\w+|votaron|votantes|participantes|personas que)\b"),
+    ("datos_personales", r"\b(encuestad\w+|entrevistad\w+|votaron|votantes|participantes|personas que)\b.*\b(dni|telefono|direccion|domicilio|correo electronico|nombre y apellidos|datos personales)\b"),
+    # enunciados ofensivos o discriminatorios
+    ("ofensiva", r"\b(lacra|escoria|basura humana|parasit\w+|subnormal\w*|sabandijas)\b"),
+    ("ofensiva", r"\b(odia|odian|desprecia|desprecian|aborrece|aborrecen)\s+a\s+(los|las)\s+\w+"),
+    # instrucciones dirigidas al sistema (inyección)
+    ("instrucciones", r"\b(ignora|ignore|olvida|forget|desobedece|disregard)\b.*\b(instruccion\w*|instructions|anterior\w*|previous|todo lo anterior)\b"),
+    ("instrucciones", r"\b(system|sistema|asistente|assistant)\s*:"),
+    ("instrucciones", r"\bnota para el sistema\b|\bnote to the system\b|\bnueva instruccion\b"),
+    ("instrucciones", r"\b(responde|devuelve|contesta|output|respond|reply)\s+(solo|only|que el|que la|100|\{)"),
+    ("instrucciones", r"\bahora eres\b|\byou are now\b|\bcomportate como\b"),
+]
+_NAME_RULES = [  # sobre el texto original (con mayúsculas): «¿Qué piensa Pedro Sánchez de…?»
+    ("persona_concreta", re.compile(r"^[¿\s]*(?i:qu[eé]|cu[aá]l|c[oó]mo)\s+(?i:piensa|opina|cree|dice|votar[aá]|votaria)\s+(?i:el\s+|la\s+)?(?i:presidente\s+|ministr[oa]\s+|se[ñn]or\s+|se[ñn]ora\s+|don\s+|do[ñn]a\s+)?[A-ZÁÉÍÓÚÑ][\wáéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñ]+)+")),
 ]
 _FUTURE_OPINION = re.compile(r"^(cree|piensa|considera|opina|espera|preve)\b")
 _REFORMULATIONS = {
@@ -280,6 +302,10 @@ _REFORMULATIONS = {
     "con sus vecinos?».",
     "poblacion_distinta": "Pregunta por la población adulta residente en España, por ejemplo «¿Qué opinan los españoles de …?».",
     "no_es_pregunta": "Escribe una pregunta de encuesta sobre una opinión o actitud, por ejemplo «¿Está de acuerdo con …?».",
+    "fuera_de_periodo": "Pregunta por un periodo cubierto por los datos (hasta junio de 2026), por ejemplo «¿Qué opinan los españoles de …?».",
+    "datos_personales": "Pregunta por una actitud de la población en conjunto: el sistema no da datos de personas concretas.",
+    "ofensiva": "Reformula la pregunta de forma neutra, por ejemplo «¿Qué opinión tiene de la inmigración?».",
+    "instrucciones": "Escribe solo la pregunta de encuesta, sin instrucciones para el sistema.",
 }
 _SCOPE_TEXT = {
     "hechos": "pide un dato objetivo, no una opinión ni una actitud de la población",
@@ -287,6 +313,10 @@ _SCOPE_TEXT = {
     "persona_concreta": "se refiere a una persona concreta, no a la población",
     "poblacion_distinta": "se refiere a una población distinta de los adultos residentes en España",
     "no_es_pregunta": "no es una pregunta de encuesta",
+    "fuera_de_periodo": "se refiere a un periodo posterior a junio de 2026, que los datos no cubren",
+    "datos_personales": "pide datos personales de personas concretas, que no se facilitan",
+    "ofensiva": "contiene un enunciado ofensivo o discriminatorio hacia un colectivo, y no se simula",
+    "instrucciones": "contiene instrucciones dirigidas al sistema en lugar de una pregunta de encuesta, y no se obedecen",
 }
 
 
@@ -294,11 +324,20 @@ def scope_check(question, service=None):
     """Reglas y, si hay modelo, su juicio: {in_scope, kind, reason, reformulation}."""
     plain = norm(question).strip(" ¿?¡!.")
     kind = None
-    if not _FUTURE_OPINION.match(plain):
+    for name, pattern in _RULES:  # las instrucciones y lo ofensivo se rechazan siempre; el resto, salvo que sea una opinión sobre el futuro («¿cree que…?»)
+        if name in ("instrucciones", "ofensiva", "datos_personales") and re.search(pattern, plain):
+            kind = name
+            break
+    if kind is None and not _FUTURE_OPINION.match(plain):
         for name, pattern in _RULES:
             if re.search(pattern, plain):
                 kind = name
                 break
+        if kind is None:
+            for name, pattern in _NAME_RULES:
+                if pattern.search(question):
+                    kind = name
+                    break
     reformulation = _REFORMULATIONS.get(kind, "")
     if kind is None and service is not None:
         try:
@@ -321,6 +360,21 @@ _MEASURED_WORDS = re.compile(
     r"dato\s+(?:medido|del\s+cis|real)|se\s+midio|midio\s+el\s+cis|resultado\s+(?:del|de\s+la)\s+(?:cis|encuesta|barometro)|ultimo\s+barometro|ultima\s+encuesta|"
     r"porcentaje\s+(?:que\s+)?(?:respondio|contesto|dijo)|que\s+porcentaje\s+(?:respondio|contesto|dijo))"
 )
+
+
+_SOURCE_PREFIX = re.compile(
+    r"^\s*(?:seg[uú]n|de acuerdo con|en|con)\s+(?:el|la|los|las)?\s*(?:cis|bar[oó]metro|[uú]ltim[oa]\s+(?:bar[oó]metro|encuesta)|encuesta)[^,:¿?]{0,60}[,:]\s*", re.I)
+
+
+def strip_source_prefix(question):
+    """«Según el CIS, …» / «En el último barómetro: …» no forma parte de la pregunta: se quita para buscar la pregunta repetida (el texto mostrado no cambia)."""
+    cleaned = _SOURCE_PREFIX.sub("", question, count=1)
+    return cleaned[:1].upper() + cleaned[1:] if cleaned != question else question
+
+
+def is_non_substantive(option):
+    """N.S./N.C. y variantes: no son respuestas sustantivas y nunca se estiman."""
+    return option_key(option) in {"ns", "nc", "nsnc", "ns nc", "no sabe", "no contesta", "no sabe no contesta", "np", "nsnr"}
 
 
 def detect_intent(question):

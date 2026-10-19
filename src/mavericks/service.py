@@ -643,17 +643,29 @@ def predict(
     started = time.monotonic()
     if preset not in PRESETS:
         raise ServiceError(f"Preset desconocido: {preset}")
+    question = " ".join(str(question or "").split())
     options = [o.strip() for o in options if o and o.strip()]
+    warnings = []
+    substantive = [o for o in options if not assist.is_non_substantive(o)]
+    if len(substantive) != len(options):  # N.S./N.C. nunca se estiman
+        warnings.append("Se han ignorado las opciones N.S./N.C.: el sistema estima solo respuestas sustantivas.")
+        options = substantive
+    if sum(c.isalpha() for c in question) < 5:
+        raise ServiceError("Escribe una pregunta con texto (al menos cinco letras).")
     try:
         Question(question=question, options=options, question_type=question_type)
     except ValueError as exc:
         raise ServiceError(
             "Revisa la pregunta y las opciones: mínimo dos opciones distintas y una pregunta de 5 caracteres."
         ) from exc
+    if len(question) > 400:
+        warnings.append("Pregunta muy larga: las preguntas de encuesta son más cortas y el resultado puede ser poco fiable.")
+    if question.count("?") >= 2:
+        warnings.append("Parece que hay varias preguntas en una: el resultado se refiere al conjunto; mejor pregunta una cada vez.")
     settings = settings or Settings()
     resources = resources or load_resources()
-    topic = topic if topic in TOPICS else classify_topic(question)
-    warnings = []
+    search_question = assist.strip_source_prefix(question)  # «Según el CIS, …» no forma parte de la pregunta
+    topic = topic if topic in TOPICS else classify_topic(search_question)
     scope = assist.scope_check(question, service if preset not in ("rapido_sin_llm", "ajustado") else None)
     if not scope["in_scope"]:
         raise OutOfScopeError(assist.coverage_card("none", None, scope))
@@ -686,7 +698,7 @@ def predict(
     else:
         mode, national, spec, group_specs, items, extra, similarity, prior_used = _fast(
             resources,
-            question,
+            search_question,
             options,
             topic,
             n_segments,
