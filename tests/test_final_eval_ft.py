@@ -26,7 +26,7 @@ def test_report_on_synthetic_cases():
     rng = np.random.default_rng(0)
     cases, stored, llm, b_probs = [], {"modes": {}, "base": {}, "mlp": {}}, {}, {}
     for i in range(24):
-        n = 2 + i % 3
+        n = 8 if i == 1 else 2 + i % 3
         options = [f"op{j}" for j in range(n)]
         obs = rng.dirichlet(np.ones(n))
         eid = f"CIS{i}_X"
@@ -36,8 +36,10 @@ def test_report_on_synthetic_cases():
         stored["base"][eid] = dict(zip(options, rng.dirichlet(np.ones(n)), strict=True))
         stored["mlp"][eid] = rng.dirichlet(np.ones(n))
         llm[eid] = dict(zip(options, rng.dirichlet(np.ones(n)), strict=True))
-        b_probs[eid] = list(rng.dirichlet(np.ones(n)))
+        b_probs[eid] = None if n > 7 else list(rng.dirichlet(np.ones(n)))
     text, summary, rows = ft.report(cases, stored, llm, b_probs, [0.3] * 24, [0.2] * 24, 7900, {"vram_gb": 2.6})
     assert "CUMPLE" in text and "Cobertura" in text and summary["casos"] == 24
     direct = [r for r in rows if r["mode"] == "direct"]
     assert all(np.allclose(r["ajustado"], r["rapid"]) for r in direct)  # con ancla directa el modo ajustado no cambia nada
+    assert any(not r["supported"] for r in rows) and "más de 7 opciones" in text
+    assert all(np.allclose(r["ajustado"], r["rapid"]) for r in rows if not r["supported"])  # sin respuesta de B: modo rápido

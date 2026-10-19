@@ -46,6 +46,7 @@ _ORDER = {
 MODE_LABELS = {"direct": "directo", "prior": "prior", "none": "sin ancla"}
 CONFIDENCE = {"direct": "alta", "prior": "media", "none": "baja"}
 ALPHA = 0.1
+FT_MAX_OPTIONS = 7  # letras A-G del entrenamiento del modelo ajustado
 CONTRACTION = 0.5  # fracción de la diferencia empírica de las análogas que se aplica a cada grupo
 LLM_RANGE_NOTE = "Los rangos están calibrados para la estimación estadística; con el modelo de lenguaje no se han calibrado por separado."
 TWO_OPTIONS_NOTE = "En preguntas de sí/no sin datos parecidos, el reparto real es difícil de anticipar; tómalo como orientación."
@@ -601,7 +602,10 @@ def predict(
             settings.anchor_prior_similarity,
         )
         warnings += extra
-        if preset == "ajustado" and mode != "direct":
+        if preset == "ajustado" and mode != "direct" and len(options) > FT_MAX_OPTIONS:
+            ft_fallback = True
+            warnings.append(f"El modelo ajustado cubre de 2 a {FT_MAX_OPTIONS} opciones; se muestra la estimación del modo rápido.")
+        elif preset == "ajustado" and mode != "direct":
             from .ft.client import FtClient, FtError
 
             try:

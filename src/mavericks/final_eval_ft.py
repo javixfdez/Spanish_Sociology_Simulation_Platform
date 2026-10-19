@@ -34,8 +34,9 @@ DRAWS, SEED, MIN_GAIN_PP, MIN_STUDIES = 10_000, 0, 0.5, 8
 NAMES = {
     "uniform": "Reparto uniforme", "knn": "Sistema anterior (directo / KNN actual)", "rapid": "Modo rápido (directo / KNN + MLP)",
     "with_llm": "Modo con LLM (directo / 0,3·LLM + 0,7·prior) — referencia", "ajustado": "Modo AJUSTADO (directo / modelo B)",
-    "b_all": "B en los 88 (incluso con ancla) — secundaria", "b_mix": "Media 50/50 B + prior rápido en los no directos — secundaria",
 }
+SECONDARY = {"b_all": "B solo (incluso con ancla directa)", "b_mix": "Media 50/50 B + prior rápido"}
+MAX_OPTIONS = 7  # letras A-G del entrenamiento: con más opciones B no puede responder y el modo ajustado usa el modo rápido (como el MLP, max_options)
 
 
 def sha256(path):
@@ -79,6 +80,9 @@ def query_b(cases, client):
     """Reparto de B para los 88 casos, uno a uno (prompt del entrenamiento; año = año del trabajo de campo del caso). Cualquier fallo aborta."""
     probs, wall, server = {}, [], []
     for c in cases:
+        if len(c["options"]) > MAX_OPTIONS:
+            probs[c["evidence_id"]] = None
+            continue
         started = time.time()
         p, seconds = client.predict(c["question"], [display_label(o) for o in c["options"]], year=c["fieldwork_date"][:4])
         wall.append(time.time() - started)
@@ -122,11 +126,15 @@ def fmt_p(p):
 def rows_with_b(cases, stored, llm, b_probs):
     rows = final_eval.build_rows(cases, stored, llm)
     for r in rows:
-        b = np.asarray(b_probs[r["evidence_id"]], dtype=float)
-        r["b"] = b
-        r["b_all"] = b
-        r["ajustado"] = r["rapid"] if r["mode"] == "direct" else b
-        r["b_mix"] = r["rapid"] if r["mode"] == "direct" else 0.5 * b + 0.5 * r["rapid"]
+        raw = b_probs[r["evidence_id"]]
+        r["supported"] = raw is not None
+        r["ajustado"] = r["rapid"]  # directo, o sin respuesta de B (más de 7 opciones): modo rápido
+        if raw is not None:
+            b = np.asarray(raw, dtype=float)
+            r["b_all"] = b
+            r["b_mix"] = 0.5 * b + 0.5 * r["rapid"]
+            if r["mode"] != "direct":
+                r["ajustado"] = b
     return rows
 
 
@@ -185,11 +193,29 @@ def report(cases, stored, llm, b_probs, wall, server, vram, health):
     for title, part in segments.items():
         if part:
             lines += [*(table(part, title)[0] if title.startswith(("Sin", "Resto", "No")) else _direct_line(part, title)), ""]
+    unsupported = [r for r in rows if not r["supported"]]
+    lines += [f"Casos con más de {MAX_OPTIONS} opciones (B no puede responder; el modo ajustado usa el modo rápido): {len(unsupported)} "
+              f"({sum(r['mode'] != 'direct' for r in unsupported)} no directos).", ""]
+    sup_all = [r for r in rows if r["supported"]]
+    sup_hard = [r for r in sup_all if r["mode"] != "direct"]
+    for title, part, keys in (("Secundaria: B en todos los casos con ≤ 7 opciones, incluso con ancla directa", sup_all, ["rapid", "ajustado", "b_all"]),
+                              ("Secundaria: media 50/50 B + prior rápido en los no directos con ≤ 7 opciones", sup_hard, ["rapid", "ajustado", "b_mix"])):
+        names = {**NAMES, **SECONDARY}
+        studies_p = [r["study"] for r in part]
+        errs = {k: np.array([mae(r[k], r["observed"]) for r in part]) for k in keys}
+        lines += [f"### {title} ({len(part)} casos, {len(set(studies_p))} estudios)", "| Sistema | MAE (pp) | Δ frente al modo rápido [IC 95 %] | mejoran / empeoran / empatan |", "|---|---|---|---|"]
+        for k in keys:
+            if k == "rapid":
+                lines.append(f"| {names[k]} | {100 * errs[k].mean():.2f} | — | — |")
+            else:
+                c = compare(errs["rapid"], errs[k], studies_p)
+                lines.append(f"| {names[k]} | {c['mae']:.2f} | {c['delta']:+.2f} [{c['low']:+.2f}, {c['high']:+.2f}] | {c['better']} / {c['worse']} / {c['ties']} |")
+        lines.append("")
     lines += ["### Por número de opciones (no directos)"]
     hard = segments["No directos (sin ancla + resto)"]
     for label, sel in (("2 opciones", [r for r in hard if r["n_options"] == 2]), ("3 o más", [r for r in hard if r["n_options"] >= 3])):
         if sel:
-            lines += ["", *table(sel, label, keys=["uniform", "knn", "rapid", "with_llm", "ajustado", "b_mix"])[0]]
+            lines += ["", *table(sel, label, keys=["uniform", "knn", "rapid", "with_llm", "ajustado"])[0]]
     word = {}
     main_result = results["ajustado"]
     gain = -main_result["delta"]
@@ -209,9 +235,9 @@ def report(cases, stored, llm, b_probs, wall, server, vram, health):
 
 def _direct_line(part, title):
     e = np.array([mae(r["rapid"], r["observed"]) for r in part])
-    b = np.array([mae(r["b_all"], r["observed"]) for r in part])
+    b = np.array([mae(r["b_all"], r["observed"]) for r in part if r["supported"]])
     u = np.array([mae(r["uniform"], r["observed"]) for r in part])
-    return [f"### {title} ({len(part)} casos)", f"MAE de la estadística directa {100 * e.mean():.2f} pp (uniforme {100 * u.mean():.2f}). Secundaria: B en estos mismos casos {100 * b.mean():.2f} pp."]
+    return [f"### {title} ({len(part)} casos)", f"MAE de la estadística directa {100 * e.mean():.2f} pp (uniforme {100 * u.mean():.2f}). Secundaria: B en los {len(b)} con ≤ 7 opciones {100 * b.mean():.2f} pp."]
 
 
 def main(argv=None):

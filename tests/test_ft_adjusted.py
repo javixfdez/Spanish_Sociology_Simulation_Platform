@@ -71,3 +71,10 @@ def test_client_validates_and_reports_unreachable():
     assert client.healthy() is False
     with pytest.raises(FtError):
         client.predict("pregunta", ["Sí", "No"])
+
+
+def test_more_than_seven_options_uses_rapid(demo):
+    ft = FakeFt()
+    out = predict(QUESTION, [f"opción {i}" for i in range(8)], preset="ajustado", resources=demo, ft=ft)
+    assert out["fallback"] is True and not ft.calls
+    assert any("2 a 7 opciones" in w for w in out["warnings"])

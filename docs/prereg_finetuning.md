@@ -84,3 +84,7 @@ nacionales de a1 en las 703 preguntas de dev_grande (a1 no las vio; B sí, por e
 sus intervalos actuales).
 
 **Marcador.** `outputs/final_eval_ft/DONE`: tras él no se repite ni se cambia nada. La evaluación de los 88 de `outputs/final_eval/DONE` no se toca.
+
+**Aclaración (2026-10-19, antes de ejecutar la evaluación y de ver ningún resultado de B).** B responde con las letras A–G, es decir, a preguntas de 2 a 7 opciones (como el MLP, `max_options=7`).
+Siete de los 88 casos oficiales tienen 8 opciones (4 directos y 3 sin ancla). Regla: con más de 7 opciones el modo ajustado usa el modo rápido (en el servicio, con aviso y `fallback`; en la evaluación, en los
+3 casos no directos, sin fallback de servidor). Las comparaciones secundarias («B solo en los 88» y «media 50/50 B + prior») se calculan solo con los casos de ≤ 7 opciones y se indica su número. El resto del anexo no cambia.
