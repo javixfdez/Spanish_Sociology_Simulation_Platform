@@ -107,7 +107,7 @@ uv pip install --python .venv_ft\Scripts\python.exe -r src/mavericks/ft/requirem
 1. Coloca el adaptador en `outputs/ft/runs/b1/adapter_final/` (con `adapter_config.json` y `adapter_model.safetensors`; sha256 `f6a4dd94…`). No está en git (los pesos nunca se suben).
 2. Arranca el servidor (GPU, entorno `.venv_ft`; no para Ollama):
    ```
-   powershell -NoProfile -ExecutionPolicy Bypass -File outputs\ft\run_server.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_server.ps1
    ```
    Escucha en `127.0.0.1:8765` (`-Port` lo cambia; el cliente usa `MAVERICKS_FT_URL`). `GET /health` devuelve `{"ok": true, ...}`; `POST /predict` y `POST /predict_batch` devuelven las probabilidades.
 3. En la página **Simular** aparece el modo **Ajustado** solo si el servidor responde. Desde código: `predict(..., preset="ajustado")`.

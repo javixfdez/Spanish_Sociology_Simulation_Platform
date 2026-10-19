@@ -111,6 +111,15 @@ def parser():
     tp.add_argument("--seed", type=int, default=0)
     cp = commands.add_parser("calibrate-prior", help="Cuantiles de los rangos y tabla de validación del prior (outputs/models)")
     cp.add_argument("--out", default="outputs/models")
+    pa = commands.add_parser("pack-assets", help="Crea dist/mavericks_assets_v1.zip con los archivos fuera de git que necesita la app (sin el adaptador)")
+    pa.add_argument("--out", default="dist/mavericks_assets_v1.zip")
+    fa = commands.add_parser("fetch-assets", help="Descarga de Hugging Face (o de un zip local) los archivos que necesita la app y verifica sus sha256")
+    fa.add_argument("--from", dest="local_zip", help="Zip local en vez de Hugging Face")
+    fa.add_argument("--repo", default="JaviPica/mavericks-assets")
+    fa.add_argument("--dest", default=".")
+    fd = commands.add_parser("fetch-adapter", help="Descarga el adaptador B (modo ajustado) de Hugging Face y verifica su sha256")
+    fd.add_argument("--repo", default="JaviPica/mavericks-qwen3-4b-cis")
+    fd.add_argument("--dest", default="outputs/ft/runs/b1/adapter_final")
     pt = commands.add_parser("population-targets", help="Objetivos de la ECP (sexo, edad, CCAA) para la página de población")
     pt.add_argument("--raw", default="maverick_data/raw")
     pt.add_argument("--period", default="1 de enero de 2026")
@@ -318,6 +327,18 @@ def run(args):
         payload["chosen"] = "by_mode"
         fastcal.save(args.out, payload)
         return {"cases": len(rows), "cv_by_mode": payload["by_mode"]["cv"], "cv_by_buckets": payload["by_buckets"]["cv"]}
+    if args.command == "pack-assets":
+        from . import assets
+
+        return assets.pack(args.out)
+    if args.command == "fetch-assets":
+        from . import assets
+
+        return assets.fetch_assets(args.local_zip, args.repo, dest=args.dest)
+    if args.command == "fetch-adapter":
+        from . import assets
+
+        return assets.fetch_adapter(args.repo, args.dest)
     if args.command == "train-prior":
         from .prior_v2 import production
 

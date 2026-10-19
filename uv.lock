@@ -846,6 +846,10 @@ embed = [
 external = [
     { name = "langchain-openai" },
 ]
+hub = [
+    { name = "huggingface-hub" },
+    { name = "truststore" },
+]
 semantic = [
     { name = "chromadb" },
     { name = "sentence-transformers" },
@@ -864,6 +868,7 @@ dev = [
 requires-dist = [
     { name = "chromadb", marker = "extra == 'semantic'", specifier = ">=1" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "huggingface-hub", marker = "extra == 'hub'", specifier = ">=0.30" },
     { name = "langchain-ollama", specifier = ">=1.0,<2" },
     { name = "langchain-openai", marker = "extra == 'external'", specifier = ">=1" },
     { name = "langgraph", specifier = ">=1.0,<2" },
@@ -882,8 +887,9 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'semantic'", specifier = ">=3" },
     { name = "streamlit", specifier = ">=1.40" },
     { name = "truststore", marker = "extra == 'embed'", specifier = ">=0.9" },
+    { name = "truststore", marker = "extra == 'hub'", specifier = ">=0.9" },
 ]
-provides-extras = ["semantic", "embed", "spss", "external"]
+provides-extras = ["semantic", "embed", "hub", "spss", "external"]
 
 [package.metadata.requires-dev]
 dev = [

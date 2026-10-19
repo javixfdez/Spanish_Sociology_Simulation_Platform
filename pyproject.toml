@@ -23,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 semantic = ["sentence-transformers>=3", "chromadb>=1"]
 embed = ["sentence-transformers>=3", "truststore>=0.9"]
+hub = ["huggingface_hub>=0.30", "truststore>=0.9"]  # fetch-assets y fetch-adapter (descarga desde Hugging Face)
 spss = ["pyreadstat>=1.2"]
 external = ["langchain-openai>=1"]
 

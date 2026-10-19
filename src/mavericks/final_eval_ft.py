@@ -1,6 +1,6 @@
 """Evaluación ÚNICA del modo ajustado (modelo B) en los 88 casos oficiales (estudios reservados). Definida en docs/prereg_finetuning.md (anexo del 2026-10-19).
 
-    python -m mavericks.final_eval_ft --confirm-final        # con el servidor de B arrancado (outputs/ft/run_server.ps1)
+    python -m mavericks.final_eval_ft --confirm-final        # con el servidor de B arrancado (scripts/run_server.ps1)
 
 Reutiliza los casos, el modo de cada caso, el prior (KNN y MLP por mes) y la métrica de ``final_eval`` (``outputs/final_eval/priors.pkl``, solo lectura; esa evaluación no se
 toca ni se repite). Modo ajustado = estadística directa si hay ancla directa; si no, el reparto del modelo B (primer token, orden original, sin fallback). Se niega a correr
@@ -247,7 +247,7 @@ def main(argv=None):
     guard(args.confirm_final)
     client = FtClient()
     if not client.healthy():
-        raise final_eval.FinalEvalError("El servidor de B no responde (arráncalo con outputs/ft/run_server.ps1).")
+        raise final_eval.FinalEvalError("El servidor de B no responde (arráncalo con scripts/run_server.ps1).")
     cases = json.loads(Path(final_eval.CASES).read_text(encoding="utf-8-sig"))
     assert len(cases) == 88
     stored = pickle.loads((final_eval.OUT / "priors.pkl").read_bytes())

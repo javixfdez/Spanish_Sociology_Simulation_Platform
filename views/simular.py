@@ -49,7 +49,7 @@ with st.sidebar:
         if FtClient(timeout=1.0).healthy():
             st.caption("Servidor del modelo ajustado: activo. **Experimental**: menor error medido, no cumplió el criterio prerregistrado en el examen.")
         else:
-            st.warning("El servidor del modelo ajustado no responde (`outputs\\ft\\run_server.ps1`): se usará el modo rápido y el resultado lo indicará.")
+            st.warning("El servidor del modelo ajustado no responde (`scripts\\run_server.ps1`): se usará el modo rápido y el resultado lo indicará.")
     if examples["items"]:
         st.selectbox("Ejemplos listos", ["—", *by_label], key="example", on_change=pick_example)
         st.caption("Los ejemplos se muestran al instante porque ya están calculados.")

@@ -33,7 +33,7 @@ descargar Python o paquetes, `UV_SYSTEM_CERTS=1`; en PowerShell `$env:UV_SYSTEM_
 
 ```sh
 uv sync --extra embed      # --extra embed: sentence-transformers para e5 (prior aprendido); sin él la demo usa solo el KNN
-uv run pytest -q           # 270 tests (12 necesitan los datos reales y se omiten sin ellos)
+uv run pytest -q           # 275 tests (12 necesitan los datos reales y se omiten sin ellos)
 uv run ruff check src tests app.py main.py
 ```
 
@@ -72,6 +72,29 @@ uv run python main.py create-demo
 uv run python main.py simulate --provider mock --question "¿Pagarías por una aplicación con IA?" --options "Sí" "No" "No estoy seguro" --segments 5
 uv run streamlit run app.py
 ```
+
+## Datos y modelo
+
+La app necesita archivos que **no están en git** (inventario con tamaños y fuentes en [docs/datos.md](docs/datos.md)). Tres caminos:
+
+**A. Descargarlos (lo más rápido, ≈ 2 minutos).** Los repositorios de Hugging Face son **privados**: pide acceso a `JaviPica` y entra con tu cuenta.
+
+```sh
+uv sync --extra embed --extra hub
+uv run hf auth login                      # token con permiso de lectura (se guarda en tu usuario, no en el proyecto)
+uv run mavericks fetch-assets             # dataset JaviPica/mavericks-assets: zip de 43 MB (82 MB descomprimido); verifica los sha256 del manifest
+uv run mavericks fetch-adapter            # solo modo ajustado: modelo JaviPica/mavericks-qwen3-4b-cis (63 MB) -> outputs/ft/runs/b1/adapter_final, sha256 f6a4dd94...
+uv run streamlit run app.py
+```
+
+`fetch-assets --from ruta/mavericks_assets_v1.zip` usa un zip local (sin internet). El paquete contiene solo agregados y datos procesados (población sintética, microdatos procesados del CIS de estudios **no reservados**,
+almacén de evidencia, modelo del prior y resultados de validación); no incluye `maverick_data/` ni los ficheros originales del Eurobarómetro o la ESS. Quien mantiene el paquete lo regenera con `uv run mavericks pack-assets`.
+El modo con LLM necesita además Ollama, y el ajustado el entorno `.venv_ft`, la base Qwen y `scripts\run_server.ps1` (ver «Modo ajustado»).
+
+**B. Regenerarlo todo desde los datos originales.** Descarga `maverick_data/raw` del Google Drive del equipo (6,6 GB, no se redistribuye) y ejecuta los comandos de «Primera instalación completa» (≈ 20 minutos
+más la caché de embeddings). Es el camino de referencia para auditar de dónde sale cada archivo.
+
+**C. Demo sintética sin datos.** `uv run python main.py create-demo` y `uv run streamlit run app.py` (todo marcado como DEMO / SYNTHETIC, sin validez sociológica).
 
 ## Pipeline con datos reales
 
@@ -232,7 +255,7 @@ con el reparto **real** de la pregunta (método de Cao et al. 2025; datos reales
 - **88 oficiales** (B, una sola ejecución): MAE 6,84 pp frente a 8,11 del modo rápido y 7,91 del modo con LLM, **−1,28 pp [−2,62; +0,01]: NO CUMPLE** el criterio prerregistrado (el IC roza el cero). Sin ancla: 12,05 frente a 14,57;
   cobertura del rango del 90 % en los no directos: 86,5 %. Solo 2–7 opciones (con 8 usa el modo rápido; regla fijada antes de ver resultados, commit `174cb82`).
 - **Decisión:** el modo rápido sigue por defecto; el ajustado es opcional. La variante «B también con ancla directa» (6,55 pp) es secundaria y queda como trabajo futuro.
-- **Uso:** entorno `.venv_ft` y descarga de la base (3 comandos, en `docs/finetuning.md`, «Cómo usarlo»); pesos en `outputs/ft/runs/b1/adapter_final/` (fuera de git, sha256 `f6a4dd94…`); `powershell -File outputs\ft\run_server.ps1` arranca el servidor (puerto 8765, `/health`); en Simular aparece «Ajustado» si responde.
+- **Uso:** entorno `.venv_ft` y descarga de la base (3 comandos, en `docs/finetuning.md`, «Cómo usarlo»); pesos en `outputs/ft/runs/b1/adapter_final/` (fuera de git, sha256 `f6a4dd94…`); `powershell -File scripts\run_server.ps1` arranca el servidor (puerto 8765, `/health`); en Simular aparece «Ajustado» si responde.
   Si falla o no responde en 30 s, se muestra el modo rápido con aviso (`fallback=true`).
 - **Limitaciones:** potencia baja (41 casos informativos, 9 estudios), checkpoints intermedios de a1 no conservados, fp16 en B frente a bf16 en a1, VRAM justa con Ollama a la vez (≈245 MiB de margen; sin memoria la explicación usa la plantilla).
 
