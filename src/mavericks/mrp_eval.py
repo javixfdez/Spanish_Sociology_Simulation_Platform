@@ -37,7 +37,7 @@ def valid_category(value):
     return value is not None and str(value).strip().lower() not in INVALID
 
 
-def build_pairs(repo=None, table=None):
+def build_pairs(repo=None, table=None, t_window=T_WINDOW):
     """Pares (t, t−1) de la misma serie. Sin leer ningún resultado: solo identificadores, fechas, textos y opciones."""
     from .analog import load_national_table
 
@@ -55,7 +55,7 @@ def build_pairs(repo=None, table=None):
         items.sort(key=lambda e: e.fieldwork_date)
         for e in items:
             date = e.fieldwork_date[:10]
-            if not T_WINDOW[0] <= date <= T_WINDOW[1]:
+            if not t_window[0] <= date <= t_window[1]:
                 continue
             keep = _substantive(list(e.options or []), table[e.evidence_id]["dist"])
             if not keep:
@@ -69,7 +69,7 @@ def build_pairs(repo=None, table=None):
                               "p_date": p.fieldwork_date[:10], "options": keep, "mapping": mapping, "question": " ".join(e.question_text.split())})
                 break
     assert_no_reserved([x for p in pairs for x in (p["t_id"], p["p_id"])], "pares del MRP", reserved_ids(CIS_DIR))
-    assert all(p["t_date"] <= T_WINDOW[1] and p["p_date"] < p["t_date"] for p in pairs)
+    assert all(p["t_date"] <= t_window[1] and p["p_date"] < p["t_date"] for p in pairs)
     return pairs
 
 
@@ -115,11 +115,125 @@ def counts():
             "fechas_t": [min(p["t_date"] for p in pairs), max(p["t_date"] for p in pairs)], "fechas_t_menos_1": [min(p["p_date"] for p in pairs), max(p["p_date"] for p in pairs)]}
 
 
+def population_shares(population):
+    w = population["peso"]
+    return {d: (population.groupby(d)["peso"].sum() / w.sum()).to_dict() for d in DIMENSIONS}
+
+
+def evaluate(pairs, anchors, population, log=print):
+    """Una fila por subgrupo con los tres sistemas y el error de cada uno (puntos), más la información descriptiva por par."""
+    from .analog_segments import group_estimates
+    from .mrp import MRP
+
+    shares = population_shares(population)
+    rows, info = [], []
+    started = time.time()
+    for n, pair in enumerate(pairs):
+        frame_t = anchors._frame(pair["t_study"], pair["t_id"])
+        frame_p = anchors._frame(pair["p_study"], pair["p_id"])
+        tr = truth(frame_t, pair)
+        if not tr:
+            continue
+        options = pair["options"]
+        goal = national(frame_t, pair)
+        spec = {"study_id": pair["p_study"], "evidence_id": pair["p_id"], "mapping": pair["mapping"], "question_type": "single"}
+        current = group_estimates([(1.0, spec)], options, shares, anchors, dict(zip(options, goal.tolist(), strict=True)), 0.5)
+        back = {prev: option for option, prev in pair["mapping"].items()}
+        train = frame_p.assign(answer=frame_p["answer"].map(back))
+        model = MRP(population).fit(train, options)
+        post = model.postratify(goal)
+        for (dim, category), (size, observed) in tr.items():
+            if category not in shares[dim] or dim not in current or category not in current[dim] or ((dim, category),) not in post:
+                info.append({"series": pair["series"], "skipped": f"{dim}={category}"})
+                continue
+            cur = np.array([current[dim][category][o] for o in options])
+            mrp = post[((dim, category),)]
+            rows.append({"series": pair["series"], "t_id": pair["t_id"], "dim": dim, "category": category, "n": size, "n_options": len(options),
+                         "err_current": 100 * float(np.abs(cur - observed).mean()), "err_mrp": 100 * float(np.abs(mrp - observed).mean()),
+                         "err_none": 100 * float(np.abs(goal - observed).mean())})
+        info.append({"series": pair["series"], "t_id": pair["t_id"], "omitted": list(model.omitted), "C": model.C, "used": list(model.used)})
+        anchors._frames.pop((pair["t_study"], pair["t_id"]), None)
+        anchors._frames.pop((pair["p_study"], pair["p_id"]), None)
+        if (n + 1) % 20 == 0:
+            log(f"{n + 1}/{len(pairs)} pares ({time.time() - started:.0f} s)")
+    return pd.DataFrame(rows), info
+
+
+def summarize(df, info, pairs):
+    from scipy.stats import wilcoxon
+
+    from .prior_v2.bigdev_eval import study_bootstrap
+
+    def block(d):
+        delta = (d.err_mrp - d.err_current).to_numpy()
+        low, high = study_bootstrap(delta, d.series.to_numpy(), draws=DRAWS, seed=SEED)
+        p = float(wilcoxon(d.err_mrp, d.err_current).pvalue) if len(d) >= 10 and np.any(delta != 0) else None
+        return {"subgrupos": len(d), "series": int(d.series.nunique()), "actual": float(d.err_current.mean()), "mrp": float(d.err_mrp.mean()), "sin_diferencias": float(d.err_none.mean()),
+                "delta": float(delta.mean()), "ic": [float(low), float(high)], "p": p, "mrp_mejor": int((delta < 0).sum()), "mrp_peor": int((delta > 0).sum())}
+
+    total = block(df)
+    by_dim = {d: block(g) for d, g in df.groupby("dim")}
+    gain = -total["delta"]
+    verdict = "CUMPLE" if gain >= MIN_GAIN_PP and total["ic"][1] < 0 else "NO CUMPLE"
+    omitted = {d: sum(d in i.get("omitted", []) for i in info if "omitted" in i) for d in DIMENSIONS}
+    c_values = pd.Series([i["C"] for i in info if i.get("C") is not None]).value_counts().sort_index().to_dict()
+    return {"total": total, "por_dimension": by_dim, "veredicto": verdict, "mejora_pp": gain, "pares": len(pairs), "pares_evaluados": len({i["t_id"] for i in info if "t_id" in i}),
+            "dimensiones_omitidas": omitted, "C_elegidos": {str(k): int(v) for k, v in c_values.items()}, "saltados": sum("skipped" in i for i in info)}
+
+
+def fmt_p(p):
+    return "—" if p is None else ("<0,001" if p < 0.001 else f"{p:.3f}")
+
+
+def report_text(res):
+    t = res["total"]
+    lines = ["# MRP frente al método actual de subgrupos (evaluación prerregistrada)", "",
+             f"{res['pares_evaluados']} pares ({res['pares']} en el recuento), {t['series']} series, {t['subgrupos']} subgrupos (con ≥ {MIN_SUBGROUP} encuestados en t). Error en puntos porcentuales por subgrupo; "
+             f"IC 95 % remuestreando series ({DRAWS} réplicas, semilla {SEED}).", "",
+             "| Sistema | MAE (pp) |", "|---|---|", f"| Sin diferencias (nacional para todos) | {t['sin_diferencias']:.2f} |", f"| Método actual | {t['actual']:.2f} |", f"| MRP | {t['mrp']:.2f} |", "",
+             f"**MRP − método actual: {t['delta']:+.2f} pp, IC 95 % [{t['ic'][0]:+.2f}, {t['ic'][1]:+.2f}], Wilcoxon p = {fmt_p(t['p'])}; MRP mejor en {t['mrp_mejor']} y peor en {t['mrp_peor']} subgrupos.**", "",
+             f"## Criterio (mejora ≥ {MIN_GAIN_PP} pp con el IC entero por debajo de 0): **{res['veredicto']}** (mejora de {res['mejora_pp']:+.2f} pp)", "",
+             "## Por dimensión", "| Dimensión | Subgrupos | Sin diferencias | Actual | MRP | MRP − actual [IC 95 %] | Wilcoxon p |", "|---|---|---|---|---|---|---|"]
+    for d in DIMENSIONS:
+        b = res["por_dimension"].get(d)
+        if b:
+            lines.append(f"| {d} | {b['subgrupos']} | {b['sin_diferencias']:.2f} | {b['actual']:.2f} | {b['mrp']:.2f} | {b['delta']:+.2f} [{b['ic'][0]:+.2f}, {b['ic'][1]:+.2f}] | {fmt_p(b['p'])} |")
+    lines += ["", "## Descriptivo", f"- Dimensiones omitidas por oleada t−1 (menos del 50 % de valores válidos), en número de pares: {res['dimensiones_omitidas']}",
+              f"- Valores de C elegidos por validación cruzada (número de pares): {res['C_elegidos']}", f"- Subgrupos saltados por no existir en la población o en el método: {res['saltados']}"]
+    return "\n".join(lines)
+
+
+def run(smoke=False):
+    import subprocess
+
+    from .anchor import AnchorStore
+
+    if not smoke and LOCK.exists():
+        sys.exit(f"La evaluación del MRP ya se ejecutó ({LOCK.read_text(encoding='utf-8').strip()}): no se repite.")
+    window = ("2024-04-01", "2024-06-30") if smoke else T_WINDOW  # el modo --smoke usa pares FUERA del conjunto prerregistrado, solo para probar el código
+    pairs = build_pairs(t_window=window)
+    population = pd.read_parquet(Path(CIS_DIR) / "synthetic_population.parquet")
+    anchors = AnchorStore(CIS_DIR)
+    df, info = evaluate(pairs[:12] if smoke else pairs, anchors, population)
+    res = summarize(df, info, pairs[:12] if smoke else pairs)
+    text = report_text(res)
+    out = OUT / ("smoke" if smoke else ".")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "report.md").write_text(text, encoding="utf-8")
+    (out / "result.json").write_text(json.dumps(res, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
+    df.to_csv(out / "subgroups.csv", index=False)
+    if not smoke:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        LOCK.write_text(f"ejecutada {time.strftime('%Y-%m-%d %H:%M')}; commit {commit}", encoding="utf-8")
+    print(text.encode("ascii", "replace").decode())
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("step", choices=["counts", "run"])
+    parser.add_argument("--smoke", action="store_true", help="prueba del código con pares FUERA del conjunto prerregistrado (no escribe el marcador)")
     args = parser.parse_args()
     if args.step == "counts":
         print(json.dumps(counts(), ensure_ascii=False, indent=1))
     else:
-        sys.exit("la evaluación se ejecuta tras el preregistro")
+        run(args.smoke)
