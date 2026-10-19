@@ -87,7 +87,7 @@ uv run mavericks fetch-adapter            # solo modo ajustado: modelo JaviPica/
 uv run streamlit run app.py
 ```
 
-`fetch-assets --from ruta/mavericks_assets_v1.zip` usa un zip local (sin internet). El paquete contiene solo agregados y datos procesados (población sintética, microdatos procesados del CIS de estudios **no reservados**,
+Medido en un clon limpio: `fetch-assets` 47 s, `fetch-adapter` 12 s, y los 275 tests pasan con los archivos descargados (el aviso de «symlinks» de Hugging Face en Windows es inofensivo). `fetch-assets --from ruta/mavericks_assets_v1.zip` usa un zip local (sin internet). El paquete contiene solo agregados y datos procesados (población sintética, microdatos procesados del CIS de estudios **no reservados**,
 almacén de evidencia, modelo del prior y resultados de validación); no incluye `maverick_data/` ni los ficheros originales del Eurobarómetro o la ESS. Quien mantiene el paquete lo regenera con `uv run mavericks pack-assets`.
 El modo con LLM necesita además Ollama, y el ajustado el entorno `.venv_ft`, la base Qwen y `scripts\run_server.ps1` (ver «Modo ajustado»).
 
