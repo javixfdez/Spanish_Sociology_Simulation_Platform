@@ -63,6 +63,25 @@ def support_sentence(result):
     return f"Es una pregunta nueva, sin equivalente en el CIS; la estimación se apoya en {base} y tiene confianza baja."
 
 
+def measured_sentence(result):
+    """Frase con lo que midió el CIS (sin modelo), separada de la estimación."""
+    m = result.get("measured")
+    if not m:
+        return None
+    dist = m["national"]["distribution"]
+    top = max(dist, key=dist.get)
+    margin = 100 * m["national"]["margin"][top]
+    text = f"Dato medido por el CIS (estudio {m['study_id']}, campo {m['fieldwork_end'] or 's/f'}, {m['national']['n']} encuestados): «{top}» {100 * dist[top]:.0f} % (±{margin:.1f} puntos)."
+    for cross in m["crosses"][:2]:
+        if cross["distribution"] is None:
+            text += f" En {cross['label']} no hay encuestados con respuesta."
+            continue
+        ctop = max(cross["distribution"], key=cross["distribution"].get)
+        warn = " (muestra pequeña: dato poco fiable)" if cross["small"] else ""
+        text += f" En {cross['label']} el CIS midió «{ctop}» {100 * cross['distribution'][ctop]:.0f} % (±{100 * cross['margin'][ctop]:.1f} puntos, {cross['n']} encuestados){warn}."
+    return text
+
+
 def template_text(result):
     option, percent, core = majority(result)
     rango = f"; rango habitual {core[0]:.0f}–{core[1]:.0f} %" if core else ""
@@ -78,6 +97,11 @@ def template_text(result):
         small = " (muestra pequeña: la estimación se apoya sobre todo en el modelo)" if cross.get("small") else ""
         sentences.append(f"En el cruce {cross['label']} ({cross['n_cis']} encuestados del CIS en la oleada de la pregunta){small}, la opción más probable es «{top}», con un {100 * cross['distribution'][top]:.0f} % (cruce experimental).")
     sentences.append(support_sentence(result))
+    measured = measured_sentence(result)
+    if measured:  # lo medido y lo estimado van en frases distintas; si se preguntó por lo medido, va primero
+        sentences = [measured, "Estimación del modelo para hoy: " + sentences[0][0].lower() + sentences[0][1:], *sentences[1:]] if result.get("intent") == "consulta_dato" else [*sentences, measured]
+    elif result.get("measured_note") and result["mode"] != "direct":
+        sentences.append("No hay dato medido: la pregunta no se ha hecho en el CIS.")
     return " ".join(sentences)
 
 
@@ -92,6 +116,8 @@ def llm_payload(result):
         "group_differences": [{**d, "percent": round(d["percent"], 1), "difference_points": round(d["difference_points"], 1)}
                               for d in subgroup_differences(result, top=4)],
         "subgroup_method": (result.get("subgroups_method") or {}).get("etiqueta"),
+        "measured": _measured_payload(result),
+        "reminder": "measured es lo que midió el CIS (sin modelo); national_percent, usual_range_percent, group_differences y crosses son la estimación del modelo. No mezcles ni compares sus cifras como si fueran lo mismo.",
         "crosses": [
             {"label": c["label"], "n_cis": c["n_cis"], "percent": {o: round(100 * v, 1) for o, v in c["distribution"].items()}, "experimental": True}
             for c in (result.get("crosses") or [])[:2]
@@ -104,6 +130,45 @@ def llm_payload(result):
         },
         "typical_error_points": None if result["confidence"].get("typical_error") is None else round(100 * result["confidence"]["typical_error"], 1),
     }
+
+
+def _measured_payload(result):
+    m = result.get("measured")
+    if not m:
+        return None
+    nat = m["national"]
+    return {
+        "study": m["study_id"], "fieldwork_end": m["fieldwork_end"], "n": nat["n"],
+        "percent": {o: round(100 * v, 1) for o, v in nat["distribution"].items()},
+        "margin_points": {o: round(100 * v, 1) for o, v in nat["margin"].items()},
+        "crosses": [
+            {"label": c["label"], "n": c["n"], "small": c["small"], "percent": {o: round(100 * v, 1) for o, v in c["distribution"].items()} if c["distribution"] else None,
+             "margin_points": {o: round(100 * v, 1) for o, v in c["margin"].items()} if c["margin"] else None}
+            for c in m["crosses"][:2]
+        ],
+    }
+
+
+def _numbers(node, skip=()):
+    values = []
+
+    def walk(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k not in skip:
+                    walk(v)
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                walk(v)
+        elif isinstance(x, (int, float)) and not isinstance(x, bool):
+            values.append(abs(float(x)))
+
+    walk(node)
+    return values
+
+
+_MEASURED_KEYS = re.compile(r"\b(midi[óo]|midieron|medid[oa]s?|respondieron|dato medido)\b|seg[úu]n el cis", re.I)
+_MODEL_KEYS = re.compile(r"\b(estimaci[óo]n|estimad[oa]s?|modelo|probable|rango habitual|mrp)\b", re.I)
 
 
 def allowed_numbers(payload):
@@ -123,6 +188,24 @@ def allowed_numbers(payload):
     return values
 
 
+def _mixing(text, payload):
+    """Lo medido y lo estimado no se mezclan: una frase que habla de lo que midió el CIS solo usa cifras medidas, y una de la estimación del modelo, cifras del modelo."""
+    if not payload.get("measured"):
+        return None
+    measured = _numbers(payload["measured"], skip=("n", "n_eff", "study", "fieldwork_end"))
+    estimate = _numbers({k: v for k, v in payload.items() if k not in ("question", "measured", "reminder", "support")}, skip=("n_cis",))
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        about_measured, about_model = bool(_MEASURED_KEYS.search(sentence)), bool(_MODEL_KEYS.search(sentence))
+        if about_measured == about_model:
+            continue  # sin clasificar o ambas cosas a la vez: queda la comprobación general
+        pool = measured if about_measured else estimate
+        for m in _NUMBER.finditer(sentence):
+            number = _f(m.group(1))
+            if not any(abs(number - a) <= TOLERANCE for a in pool):
+                return f"mezcla lo medido y lo estimado: {number:g} no es una cifra {'medida' if about_measured else 'del modelo'}"
+    return None
+
+
 def check_text(text, payload):
     """None si el texto es válido; si no, el motivo. Comprueba cifras con unidad y grupos mencionados."""
     allowed = allowed_numbers(payload)
@@ -132,6 +215,9 @@ def check_text(text, payload):
     for number in quoted:
         if not any(abs(number - a) <= TOLERANCE for a in allowed):
             return f"cifra que no cuadra con los datos: {number:g}"
+    reason = _mixing(text, payload)
+    if reason:
+        return reason
     mentioned = {d["category"].lower() for d in payload["group_differences"]}
     for cross in payload.get("crosses") or []:  # los grupos de un cruce pedido pueden nombrarse
         mentioned |= {part.split(":", 1)[-1].strip().lower() for part in cross["label"].split("·")}

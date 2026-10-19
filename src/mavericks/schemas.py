@@ -102,6 +102,7 @@ class QueryPlan(BaseModel):
     subgrupo_o_cruce: list[PlanItem] = Field(default_factory=list, max_length=5)
     respondible: bool
     motivo: str = ""
+    intencion: Literal["consulta_dato", "prediccion"] = "prediccion"
 
 
 class ResultNarrative(BaseModel):

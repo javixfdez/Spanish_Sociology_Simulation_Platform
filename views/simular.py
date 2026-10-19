@@ -140,7 +140,7 @@ if analysis:
                 with st.spinner("Calculando…"):
                     result = predict(
                         question, options, "single", preset if (service or preset == "ajustado") else "rapido_sin_llm", topic=chosen_topic,
-                        resources=resources, service=service, n_segments=segments, crosses=crosses or None,
+                        resources=resources, service=service, n_segments=segments, crosses=crosses or None, intent=(plan["plan"]["intencion"] if plan and plan["ok"] else None),
                     )
                     if preset == "llm_completo" and not service and result["mode"] != "direct":  # Ollama no respondía: queda constancia en el resultado
                         result["producido_por"].update(solicitado=preset, fallback=True, motivo="Ollama no responde")

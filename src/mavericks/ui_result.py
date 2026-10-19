@@ -7,6 +7,7 @@ from . import batch, explain
 from .assist import SPONTANEOUS_NOTE, display_label, is_spontaneous
 from .ui_charts import distribution_bars, heatmap, stacked_groups
 
+SMALL_MEASURED = "Muestra pequeña: el dato medido es poco fiable; mira la estimación del modelo."
 PRESET_LABELS = {"rapido_sin_llm": "Rápido", "llm_completo": "Con LLM", "recomendado": "Con LLM", "ajustado": "Ajustado"}
 
 CONFIDENCE_TEXT = {"alta": "Confianza alta", "media": "Confianza media", "baja": "Confianza baja"}
@@ -72,9 +73,34 @@ def _pct(value):
     return "—" if value is None else f"{100 * value:.0f} %"
 
 
+def render_measured(result):
+    """«Lo que midió el CIS»: reparto ponderado de los microdatos de la oleada de la pregunta, sin ningún modelo."""
+    m = result["measured"]
+    nat = m["national"]
+    st.subheader("Lo que midió el CIS")
+    st.caption(
+        f"Estudio {m['study_id']} · trabajo de campo {m['fieldwork_end'] or 's/f'} · {nat['n']} encuestados (n efectivo {nat['n_eff']:.0f}). "
+        "Reparto ponderado de los microdatos, sin ningún modelo; la barra es el margen de error muestral al 95 % (±1,96·√(p(1−p)/n efectivo))."
+    )
+    st.plotly_chart(distribution_bars(nat["distribution"], nat["interval"]), use_container_width=True, key="measured_national")
+    table = pd.DataFrame([{"Opción": o, "Medido (%)": 100 * nat["distribution"][o], "± puntos": 100 * nat["margin"][o]} for o in nat["distribution"]])
+    st.dataframe(table.round(1), hide_index=True, use_container_width=True)
+    for n, cross in enumerate(m["crosses"]):
+        st.markdown(f"**{cross['label']}** · {cross['n']} encuestados")
+        if cross["distribution"] is None:
+            st.warning("No hay encuestados con respuesta en este grupo en la oleada de la pregunta.")
+            continue
+        if cross["small"]:
+            st.warning(SMALL_MEASURED)
+        st.dataframe(
+            pd.DataFrame([{"Opción": o, "Medido (%)": 100 * cross["distribution"][o], "± puntos": 100 * cross["margin"][o]} for o in cross["distribution"]]).round(1),
+            hide_index=True, use_container_width=True, key=f"measured_cross_{n}",
+        )
+
+
 def render_national(result):
     node = result["national"]
-    st.subheader("Distribución de respuestas en la población adulta")
+    st.subheader("Estimación del modelo para hoy" if "measured_note" in result else "Distribución de respuestas en la población adulta")
     st.plotly_chart(distribution_bars(node["distribution"], None, core=node.get("interval_core")), use_container_width=True)
     info = node.get("interval_info")
     if node.get("interval_core") is not None:
@@ -223,7 +249,14 @@ def render(result, key="res", llm=None, timeout=20.0):
     render_header(result)
     for warning in result["warnings"]:
         st.warning(warning)
+    measured = result.get("measured")
+    if measured and result.get("intent") == "consulta_dato":
+        render_measured(result)  # se preguntó por lo medido: va primero
+    elif result.get("measured_note"):
+        st.info(result["measured_note"])
     render_national(result)
+    if measured and result.get("intent") != "consulta_dato":
+        render_measured(result)
     slot = st.empty()
     show_text(slot, result)
     render_subgroups(result, key)

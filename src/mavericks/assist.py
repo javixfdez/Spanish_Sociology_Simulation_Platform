@@ -316,6 +316,18 @@ def scope_check(question, service=None):
     }
 
 
+_MEASURED_WORDS = re.compile(
+    r"\b(que\s+(?:respondieron|contestaron|dijeron|midio|medio)|cuantos?\s+(?:respondieron|contestaron|dijeron)|segun\s+(?:el\s+)?(?:cis|barometro|ultimo\s+barometro|la\s+encuesta)|"
+    r"dato\s+(?:medido|del\s+cis|real)|se\s+midio|midio\s+el\s+cis|resultado\s+(?:del|de\s+la)\s+(?:cis|encuesta|barometro)|ultimo\s+barometro|ultima\s+encuesta|"
+    r"porcentaje\s+(?:que\s+)?(?:respondio|contesto|dijo)|que\s+porcentaje\s+(?:respondio|contesto|dijo))"
+)
+
+
+def detect_intent(question):
+    """«consulta_dato» si se pregunta por lo medido («¿qué respondieron…?», «según el CIS…»); «prediccion» en el resto. Reglas por palabras clave (sin Ollama)."""
+    return "consulta_dato" if _MEASURED_WORDS.search(norm(question)) else "prediccion"
+
+
 PLAN_TIMEOUT = 20.0  # segundos; pasado ese tiempo se usan las reglas de siempre
 PLAN_INSTRUCTIONS = (
     "Rol: planificador de consultas de encuesta sobre adultos residentes en España. Devuelve un plan con estos campos. "
@@ -324,6 +336,7 @@ PLAN_INSTRUCTIONS = (
     "subgrupo_o_cruce: lista de {var, val} SOLO si la pregunta pide opinar a un grupo concreto de población. Usa EXCLUSIVAMENTE las variables de esquema y sus valores EXACTOS, "
     "tal como aparecen en esquema (por ejemplo mujer, 25-34, Andalucía). Si el grupo es vago (jóvenes, mayores, ricos) o no está en el esquema, no lo traduzcas: omítelo y dilo en motivo. "
     "Si la pregunta no pide ningún grupo concreto, la lista va vacía. "
+    "intencion: consulta_dato si pregunta por lo que se midió o respondió en una encuesta (¿qué respondieron…?, según el CIS…); prediccion en el resto. "
     "respondible: true solo si es una pregunta de opinión, actitud o comportamiento de la población adulta residente en España; false si pide predecir un suceso futuro "
     "(elecciones, resultados), un dato objetivo, una persona concreta u otra población. motivo: una frase corta. "
     "Ejemplo: «¿Qué opinan los hombres de 25-34 años de Madrid sobre limitar el alquiler?» -> tipo escala, tema vivienda, "
@@ -359,7 +372,8 @@ def plan_question(question, service, schema, timeout=PLAN_TIMEOUT):
             return {"ok": False, "plan": None, "reason": str(exc)}
     return {
         "ok": True, "reason": "",
-        "plan": {"opciones": [o.strip() for o in plan.opciones], "tipo": plan.tipo, "tema": plan.tema, "cruce": cross, "respondible": plan.respondible, "motivo": plan.motivo},
+        "plan": {"opciones": [o.strip() for o in plan.opciones], "tipo": plan.tipo, "tema": plan.tema, "cruce": cross, "respondible": plan.respondible, "motivo": plan.motivo,
+                 "intencion": plan.intencion},
     }
 
 

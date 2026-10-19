@@ -19,6 +19,7 @@ import numpy as np
 
 from . import assist, explain, fastcal, mrp_service
 from . import categories as cat
+from . import measured as measured_mod
 from .analog import AnalogConfig, analog_for_question, load_national_table
 from .analog_segments import group_estimates
 from .anchor import AnchorStore, constraints_of, select_anchor
@@ -544,6 +545,26 @@ def _produced_by(preset, mode, used_llm, used_ft, ft_reason, llm_failed):
             "nota": note, "experimental": EXPERIMENTAL_NOTE if used_ft else None}
 
 
+def _measured(resources, mode, spec, options, evidence, crosses, legacy_llm):
+    """«Lo que midió el CIS» (solo con ancla directa): reparto ponderado de los microdatos de la oleada, sin modelo. Devuelve (bloque, nota)."""
+    if mode != "direct" or spec is None or legacy_llm:
+        return None, measured_mod.NO_MEASURED
+    normalized = []
+    if crosses:
+        schema = mrp_service.schema_of(resources.population.frame)
+        for cross in crosses:
+            try:
+                normalized.append(mrp_service.normalize_cross(cross, schema))
+            except mrp_service.PlanError:
+                pass  # el aviso ya lo da _crosses
+    date = next((e["fieldwork_end"] for e in evidence if e["evidence_id"] == spec["evidence_id"]), None)
+    try:
+        return measured_mod.block(resources, spec, options, date, normalized), None
+    except Exception as exc:  # sin microdatos utilizables no hay dato medido que mostrar
+        log.warning("No se pudo calcular el dato medido: %s", exc)
+        return None, "No se pudo calcular el dato medido de la oleada de la pregunta."
+
+
 def _crosses(resources, options, mode, spec, national, radius, crosses, legacy_llm):
     """Cruces de varias variables: solo con MRP (modo directo). Devuelve (cruces, nota, avisos)."""
     if mode != "direct" or spec is None or legacy_llm or not USE_MRP or not mrp_service.usable(resources):
@@ -616,6 +637,7 @@ def predict(
     n_segments=10,
     ft=None,
     crosses=None,
+    intent=None,
 ):
     """Predicción completa. Devuelve un dict serializable (ver la clave de cada sección)."""
     started = time.monotonic()
@@ -753,6 +775,7 @@ def predict(
         notes.append(TWO_OPTIONS_NOTE)
     evidence = _evidence_entries(resources.evidence, resources.table, items)
     subgroups, subgroup_method = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius, ft_groups)
+    measured, measured_note = _measured(resources, mode, spec, options, evidence, crosses, legacy_llm)
     cross_items, cross_note = [], None
     if crosses:
         cross_items, cross_note, cross_warnings = _crosses(resources, options, mode, spec, national, sub_radius, crosses, legacy_llm)
@@ -785,6 +808,9 @@ def predict(
         "coverage": assist.coverage_card(mode, evidence[0] if evidence else None),
         "subgroups": subgroups,
         "subgroup_note": None if mode == "direct" else SUBGROUP_NOTE,
+        "intent": intent if intent in ("consulta_dato", "prediccion") else assist.detect_intent(question),
+        "measured": measured,
+        "measured_note": measured_note,
         "subgroups_method": subgroup_method,
         "crosses": cross_items,
         "cross_note": cross_note,
