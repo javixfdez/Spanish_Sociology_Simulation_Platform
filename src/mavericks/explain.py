@@ -132,6 +132,14 @@ def all_categories(result):
     return sorted({c for dim in result["subgroups"].values() for c in dim["groups"]})
 
 
+MEMORY_ERRORS = ("out of memory", "more system memory", "insufficient memory", "cuda error", "cudamalloc")
+
+
+def is_memory_error(exc):
+    text = f"{type(exc).__name__} {exc}".lower()
+    return isinstance(exc, MemoryError) or any(k in text for k in MEMORY_ERRORS)
+
+
 async def _ask(service, payload, timeout):
     value = await asyncio.wait_for(service.call(ResultNarrative, {k: v for k, v in payload.items() if not k.startswith("_")}), timeout)
     return value.summary.strip()
@@ -158,7 +166,10 @@ def add_llm_text(result, service, timeout=20.0):
     except (TimeoutError, asyncio.TimeoutError):
         reason = f"el modelo tardó más de {timeout:g} s"
     except Exception as exc:  # el LLM no responde o la salida no es válida
-        reason = f"el modelo falló ({type(exc).__name__})"
+        if is_memory_error(exc):  # la GPU se comparte con el modelo ajustado: sin memoria se usa la plantilla en vez de fallar
+            reason = "el modelo de lenguaje no cabe en la memoria de la GPU en este momento"
+        else:
+            reason = f"el modelo falló ({type(exc).__name__})"
     log.warning("Explicación del LLM descartada, se usa la plantilla: %s", reason)
     result["explanation_text"] = {**template, "origen": "plantilla", "motivo": reason, "segundos": time.monotonic() - started}
     return result

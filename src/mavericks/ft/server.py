@@ -54,9 +54,12 @@ class Model:
         out = []
         with self.lock:
             for start in range(0, len(frame), BATCH):
-                enc, props, _ = train.make_batch(frame.iloc[start : start + BATCH], 0, self.tok, shuffle=False)
-                log_q, _ = train.letter_log_probs(self.model, enc, self.ids, [len(p) for p in props])
-                out += [[float(x) for x in log_q[i].exp()[: len(p)].float().cpu()] for i, p in enumerate(props)]
+                try:
+                    enc, props, _ = train.make_batch(frame.iloc[start : start + BATCH], 0, self.tok, shuffle=False)
+                    log_q, _ = train.letter_log_probs(self.model, enc, self.ids, [len(p) for p in props])
+                    out += [[float(x) for x in log_q[i].exp()[: len(p)].float().cpu()] for i, p in enumerate(props)]
+                finally:
+                    torch.cuda.empty_cache()  # devuelve la caché de CUDA tras cada lote: Ollama comparte esta GPU y el margen es pequeño
         return out
 
 

@@ -115,3 +115,11 @@ def test_llm_mode_mixes_numbers_with_weight_and_falls_back(demo, tmp_path, monke
     back = svc.predict("¿Usas inteligencia artificial?", ["Sí", "No"], preset="llm_completo", resources=demo, service=llm)
     assert back["national"]["distribution"] == pytest.approx(fast["national"]["distribution"])
     assert any("no pudo completar" in w for w in back["warnings"])
+
+
+def test_gpu_memory_error_falls_back_to_template_with_reason():
+    for error in (RuntimeError("model requires more system memory (6.1 GiB) than is available"), MemoryError(), RuntimeError("CUDA out of memory")):
+        out = explain.add_llm_text(make_result(), FakeLLM(error=error))["explanation_text"]
+        assert out["origen"] == "plantilla" and "memoria de la GPU" in out["motivo"] and out["texto"]
+    other = explain.add_llm_text(make_result(), FakeLLM(error=RuntimeError("sin modelo")))["explanation_text"]
+    assert "memoria" not in other["motivo"]
