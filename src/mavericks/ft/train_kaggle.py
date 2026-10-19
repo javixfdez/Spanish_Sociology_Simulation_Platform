@@ -25,7 +25,7 @@ import train  # el train.py del dataset (junto a core.py)
 from train import BASE, EFFECTIVE_BATCH, LORA, LR, WARMUP, core
 
 REVISION = "cdbee75f17c01a7cc42f958dc650907174af0554"  # misma revisión que a1 (Qwen/Qwen3-4B-Instruct-2507)
-DTYPE = torch.float16
+DTYPE = torch.float16  # se puede cambiar a float32 con --compute fp32
 
 
 def log(path, text):
@@ -111,7 +111,10 @@ def main():
     parser.add_argument("--calibration-steps", type=int, default=6)
     parser.add_argument("--max-train", type=int, help="solo para pruebas cortas")
     parser.add_argument("--no-checkpoints", action="store_true")
+    parser.add_argument("--compute", choices=["fp16", "fp32"], default="fp16")
     args = parser.parse_args()
+    global DTYPE
+    DTYPE = torch.float32 if args.compute == "fp32" else torch.float16
 
     rank, world = int(os.environ.get("RANK", 0)), int(os.environ.get("WORLD_SIZE", 1))
     torch.cuda.set_device(rank)
@@ -142,13 +145,20 @@ def main():
         start_step, adapter = json.loads(state_file.read_text())["step"], run / "adapter"
     tok, model = load_model(adapter, rank)
     ids = train.letter_ids(tok)
-    say(f"GPUs: {world} × {torch.cuda.get_device_name(rank)}; cómputo fp16; {len(full_train)} ejemplos de entrenamiento disponibles, {len(val)} de validación")
+    say(f"GPUs: {world} × {torch.cuda.get_device_name(rank)}; cómputo {args.compute}; {len(full_train)} ejemplos de entrenamiento disponibles, {len(val)} de validación")
 
-    # Comprobación fp16: logits finitos con el modelo base
-    enc, props, weights = train.make_batch(full_train.iloc[:per_rank], 0, tok, seed=args.seed)
+    # Comprobación de estabilidad numérica con el modelo base, en 64 ejemplos reales.
+    # OJO: las letras de opciones que no existen se enmascaran a -inf a propósito; solo se comprueban las VÁLIDAS.
+    bad = 0
     with torch.no_grad():
-        log_q, _ = letter_log_probs(model, enc, ids, [len(p) for p in props])
-    assert torch.isfinite(log_q).all(), "logits no finitos en fp16: el entrenamiento no es seguro"
+        for s0 in range(0, 64, args.micro):
+            enc, props, weights = train.make_batch(full_train.iloc[s0 : s0 + args.micro], 0, tok, seed=args.seed)
+            log_q, valid = letter_log_probs(model, enc, ids, [len(p) for p in props])
+            bad += int((~torch.isfinite(log_q[valid])).sum())
+            loss, _ = core.kl_loss(log_q, valid, props, weights)
+            bad += int(not torch.isfinite(loss))
+    say(f"COMPROBACIÓN NUMÉRICA ({args.compute}): {bad} valores no finitos en 64 ejemplos")
+    assert bad == 0, f"logits no finitos en {args.compute}: el entrenamiento no es seguro (prueba --compute fp32)"
 
     # Presupuesto de tiempo: se mide la velocidad real y se decide cuántos ejemplos caben (solo se recortan SUBGRUPOS); se guarda para poder reanudar
     scaler = torch.amp.GradScaler("cuda")
@@ -208,6 +218,10 @@ def main():
         scaler.step(optimizer)
         scaler.update()
         skipped += int(scaler.get_scale() < before)
+        ran = step + 1 - start_step
+        if ran >= 100 and skipped > 0.2 * ran:
+            say(f"ABORTADO: {skipped} de {ran} pasos omitidos por desbordamiento en {args.compute}; relanzar con --compute fp32")
+            raise SystemExit(3)
         scheduler.step()
         optimizer.zero_grad(set_to_none=True)
         if world > 1:

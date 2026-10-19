@@ -184,6 +184,7 @@ def log(path, text):
 
 def save_state(model, optimizer, run, step, total):
     model.save_pretrained(run / "adapter")
+    model.save_pretrained(run / f"ckpt_{step}")  # copia por paso: «adapter» se sobrescribe, esta no
     torch.save(optimizer.state_dict(), run / "optimizer.pt")
     (run / "state.json").write_text(json.dumps({"step": step, "total": total}))
 
