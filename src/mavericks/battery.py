@@ -346,7 +346,7 @@ def run_case(env, case, mode, by_id):
             notes.append(f"no simuló ({kind})")
     if expect.get("sin_cuelgue") and kind in ("excepcion", "cuelgue"):
         pass  # ya registrado como fallo
-    if kind in ("error_controlado", "fuera_de_alcance") and not expect.get("fuera_de_alcance") and case["categoria"] not in ("limite",):
+    if kind in ("error_controlado", "fuera_de_alcance") and not expect.get("fuera_de_alcance") and not expect.get("inyeccion") and case["categoria"] not in ("limite",):
         fails.append(f"el caso debía simularse y se rechazó: {str(payload)[:120]}")
     if kind == "ok" and expect.get("modo") == "direct":
         reworded = str(case.get("pregunta", "")).startswith("Según el CIS")
