@@ -443,7 +443,7 @@ def select_cases(cases, modes, only=None, limit=None):
     return plan[:limit] if limit else plan
 
 
-def run(modes=("rapido",), only=None, limit=None, log=print):
+def run(modes=("rapido",), only=None, limit=None, log=print, tag=""):
     cases = load_cases()
     by_id = {c["id"]: c for c in cases}
     env = Env(modes)
@@ -467,19 +467,29 @@ def run(modes=("rapido",), only=None, limit=None, log=print):
             continue
         rows.append(run_case(env, case, mode, by_id))
         log(f"[{n}/{len(plan)}] {case['id']} {mode}: {rows[-1]['estado']} ({rows[-1]['segundos']} s) {'; '.join(rows[-1]['fallos'])[:120]}")
-    write_outputs(rows)
+    write_outputs(rows, tag)
     return rows
 
 
-def write_outputs(rows):
+def write_outputs(rows, tag=""):
     columns = ["id", "categoria", "subtipo", "modo_ejecucion", "estado", "resultado", "segundos", "modo_calculo", "producido_por", "metodo_subgrupos", "fallback", "intent", "n_cruces", "dif_max_pp", "invierte",
                "tvd_ref", "rareza", "rareza_motivos", "pregunta", "fallos", "avisos", "notas", "primera", "distribucion", "explicacion"]
-    with open(OUT / "resultados.csv", "w", encoding="utf-8", newline="") as f:
+    suffix = f"_{tag}" if tag else ""
+    with open(OUT / f"resultados{suffix}.csv", "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
         writer.writeheader()
         for r in rows:
             writer.writerow({**r, "fallos": " | ".join(r["fallos"]), "avisos": " | ".join(r["avisos"]), "notas": " | ".join(r["notas"])})
-    (OUT / "informe.md").write_text(report(rows), encoding="utf-8")
+    (OUT / f"informe{suffix}.md").write_text(report(rows), encoding="utf-8")
+
+
+def merge(tags):
+    """Une varias ejecuciones (p. ej., rápido+ajustado con el servidor y con LLM sin él, para no solapar la GPU) en resultados.csv e informe.md."""
+    frames = [pd.read_csv(OUT / f"resultados_{t}.csv") for t in tags]
+    df = pd.concat(frames, ignore_index=True).fillna({"fallos": "", "avisos": "", "notas": ""})
+    df.to_csv(OUT / "resultados.csv", index=False)
+    (OUT / "informe.md").write_text(report(df.to_dict("records")), encoding="utf-8")
+    return df
 
 
 def report(rows):
@@ -507,12 +517,16 @@ def report(rows):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("step", choices=["run"])
+    parser.add_argument("step", choices=["run", "merge"])
+    parser.add_argument("--tag", default="", help="sufijo de los ficheros de salida (resultados_<tag>.csv)")
     parser.add_argument("--modes", default="rapido")
     parser.add_argument("--only", help="prefijos de ids separados por comas (C1,C2…)")
     parser.add_argument("--limit", type=int)
     args = parser.parse_args()
-    run(tuple(args.modes.split(",")), args.only.split(",") if args.only else None, args.limit)
+    if args.step == "merge":
+        merge(args.modes.split(","))  # --modes aquí son las etiquetas a unir
+    else:
+        run(tuple(args.modes.split(",")), args.only.split(",") if args.only else None, args.limit, tag=args.tag)
 
 
 if __name__ == "__main__":

@@ -87,3 +87,17 @@ def test_llm_scope_verdict_hechos_is_ignored_for_questions_about_the_respondents
 
     assert assist.scope_check("¿Dónde compra principalmente sus alimentos?", Judge())["in_scope"]
     assert not assist.scope_check("¿Quién diseñó el puente de Triana?", Judge())["in_scope"]
+
+
+def test_llm_hechos_verdict_ignored_for_personal_experience_questions():
+    import asyncio as aio
+
+    from mavericks.schemas import ScopeJudgement
+
+    class Judge:
+        async def call(self, schema, payload, **kwargs):
+            await aio.sleep(0)
+            return ScopeJudgement(category="hechos", reason="x", reformulation="")
+
+    assert assist.scope_check("¿Ha tenido ansiedad o tristeza durante más de dos semanas seguidas en el último año?", Judge())["in_scope"]
+    assert assist.scope_check("¿Ha comprado ropa de segunda mano en el último año?", Judge())["in_scope"]
