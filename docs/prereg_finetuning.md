@@ -55,3 +55,32 @@ Escrito ANTES de cualquier evaluación de a1 o b1.
   pasos omitidos). La versión 1 falló en la comprobación inicial porque miraba también los −inf de las letras no válidas, enmascarados a propósito.
 - **Uso de b1.** b1 sigue sin usarse salvo que a1 cumpla el criterio prerregistrado. No se ha descargado ni evaluado.
 - **Evaluación de a1.** Se hace una sola vez sobre dev_grande, tal como está descrito arriba; no se cambia nada tras ver resultados.
+
+## Anexo (2026-10-19): integración de B y evaluación única en los 88 oficiales
+Escrito ANTES de construir el código de la evaluación y de ver ningún resultado de B.
+
+**Resultado de a1 que activa B.** En dev_grande (703 preguntas nuevas, 23 estudios) a1 mejora al prior de producción en −6,18 pp (IC 95 % por estudio [−8,67; −2,37]) y la
+media 50/50 a1 + prior en −3,85 pp [−5,00; −2,07]: los dos criterios CUMPLEN (docs/finetuning_fase3_resultados.md). Por tanto se activa el modelo B:
+`b1/adapter_final` (corte < 2026-04-01, 5792 pasos, fp16, sin submuestreo, 4 pasos omitidos al inicio; sha256 de `adapter_model.safetensors`
+`f6a4dd9453f3233933b14a12af70d64ef0db197c37dedf24dbab0e832f339c6b`; configuración verificada: base Qwen/Qwen3-4B-Instruct-2507, r=8, alpha=32, mismos módulos que a1).
+B no se evalúa en dev_grande (lo vio en su entrenamiento).
+
+**Modo ajustado (sistema principal que se evalúa).**
+- Si el caso tiene ancla directa (pregunta casi idéntica en el histórico, umbral y guardas actuales), se usa el camino directo actual SIN cambios.
+- Si no, el reparto nacional (y los de subgrupos en el servicio) salen directamente de B: probabilidades del primer token restringidas a las letras válidas, orden de opciones
+  original, sin promediar permutaciones, con el prompt del entrenamiento (`core.prompt_text`): perfil «Población: …», fuente «CIS» y año del trabajo de campo del caso (en la
+  evaluación) o del año en curso (en el servicio), idioma español, opciones con `display_label`, texto de la pregunta con espacios normalizados.
+- Si el servidor de B no responde, el servicio cae al modo rápido y lo marca (fallback); en la evaluación no se admite ningún fallback (si falla, no se informa).
+
+**Comparación principal.** Modo ajustado frente a modo rápido (MAE 8,11 pp en los 88) en los 88 casos. El modo ajustado pasa a ser el modo por defecto solo si mejora ≥ 0,5 pp con
+el IC 95 % por bootstrap remuestreando ESTUDIOS (10.000 réplicas, semilla 0; si hay menos de 8 estudios se remuestrean casos y se dice) entero por debajo de 0. Si no, el modo rápido
+sigue por defecto y el ajustado queda como opción.
+
+**Comparaciones secundarias (descriptivas, sin criterio).** B en los 88 casos incluso con ancla directa; media 50/50 B + prior (modo rápido) en los casos sin ancla; modo LLM (7,91) como referencia.
+**Desglose obligatorio:** directos / sin ancla / resto, y 2 frente a 3 o más opciones. Se informan también segundos por pregunta y VRAM medida.
+
+**Intervalos del modo ajustado.** Calibración conformal Mondrian por grupo (2 opciones / 3 o más), con la misma escala sqrt(p(1−p)+0,02) y niveles 50 % y 90 %, calculada con los residuos
+nacionales de a1 en las 703 preguntas de dev_grande (a1 no las vio; B sí, por eso no se calibra con B). La cobertura al 50 % y al 90 % en los 88 es descriptiva (casos directos con
+sus intervalos actuales).
+
+**Marcador.** `outputs/final_eval_ft/DONE`: tras él no se repite ni se cambia nada. La evaluación de los 88 de `outputs/final_eval/DONE` no se toca.
