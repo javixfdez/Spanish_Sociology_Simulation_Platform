@@ -56,7 +56,7 @@ descargar Python o paquetes, `UV_SYSTEM_CERTS=1`; en PowerShell `$env:UV_SYSTEM_
 
 ```sh
 uv sync --extra embed      # --extra embed: sentence-transformers para e5 (prior aprendido); sin él la demo usa solo el KNN
-uv run pytest -q           # 337 tests (12 necesitan los datos reales y se omiten sin ellos)
+uv run pytest -q           # 338 tests (12 necesitan los datos reales y se omiten sin ellos)
 uv run ruff check src tests app.py main.py
 ```
 
