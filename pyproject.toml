@@ -41,6 +41,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # los tests comparten utilidades (tests.test_mrp, tests.test_measured); `uv run pytest` no añade el directorio actual al path
 
 [tool.ruff]
 line-length = 110
