@@ -1,0 +1,272 @@
+"""Ancla empírica: distribución CIS ponderada de las personas con el perfil de un segmento.
+
+Para cada segmento se estima P(respuesta | perfil) con los microdatos del CIS de la misma pregunta,
+con contracción jerárquica hacia niveles más amplios (nacional -> primera dimensión -> ...), de modo que
+las celdas con pocos entrevistados se apoyan en el nivel superior. Solo se usan estudios que el RAG ha
+recuperado (y por tanto filtrados por las exclusiones del backtesting).
+"""
+
+import difflib
+import re
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pyarrow.parquet as pq
+
+from .categories import norm
+
+DEMOGRAPHICS = ["grupo_edad", "sexo", "nivel_estudios", "ccaa", "tamuni", "ingresos_hogar_tramo"]
+_NS_TOKEN = r"(?:ns|nc|nr|np|nsnc|nsnr|nsncnr|no sabe|no contesta|no responde)"
+_NS_PATTERN = re.compile(rf"^{_NS_TOKEN}(?: {_NS_TOKEN})*$")
+
+
+def is_non_substantive(option):
+    """¿Es una respuesta no sustantiva? N.S., N.C., N.R., N.P., N.S./N.C., N.S./N.R., «No sabe», «No contesta», «No responde», «No sabe/No contesta»…
+    con o sin puntos, mayúsculas, tildes o la marca (NO LEER). Una sola función para el ancla y para las opciones del usuario (``assist``): no deben divergir."""
+    text = norm(str(option)).replace("(no leer)", " ").replace(".", "")
+    return bool(_NS_PATTERN.match(re.sub(r"[^a-z0-9]+", " ", text).strip()))
+
+
+def option_key(option):
+    return re.sub(r"[^a-z0-9 ]", "", norm(option).replace("(no leer)", "")).strip()
+
+
+def question_similarity(a, b):
+    """Parecido de redacción entre dos preguntas (0-1): máximo de Jaccard de palabras y de secuencia."""
+    ta, tb = norm(a), norm(b)
+    if not ta or not tb:
+        return 0.0
+    wa, wb = set(re.findall(r"\w+", ta)), set(re.findall(r"\w+", tb))
+    jaccard = len(wa & wb) / len(wa | wb) if wa | wb else 0.0
+    return max(jaccard, difflib.SequenceMatcher(None, ta, tb).ratio())
+
+
+def battery_item(text):
+    """Ítem entre corchetes de las preguntas de batería ("¿Y está Ud. viviendo? [Con su cónyuge]"), normalizado."""
+    return norm(" ".join(re.findall(r"\[([^\]]*)\]", text or "")))
+
+
+def same_item(a, b):
+    """Falso si las dos preguntas comparten enunciado pero miden ítems distintos de una batería."""
+    item_a, item_b = battery_item(a), battery_item(b)
+    return item_a == item_b or question_similarity(item_a, item_b) >= 0.6
+
+
+_LEGACY_EXTRAS = {"ns", "nc", "no sabe", "no contesta", "np"}  # lo que toleraba la configuración congelada de la evaluación oficial (3cb71f0)
+
+
+def option_mapping(question_options, evidence_options, legacy_extras=False):
+    """Opciones de la pregunta -> etiquetas de la evidencia, o None si no son equivalentes.
+
+    Se admite que la evidencia tenga además opciones no sustantivas (N.S., N.C., N.R., N.S./N.R., «No sabe/No contesta»…; se renormaliza sin ellas).
+    ``legacy_extras=True`` conserva el criterio de 3cb71f0 (solo N.S., N.C., «No sabe», «No contesta», N.P.): lo usan el prior por analogía y la evaluación para que el prior de las preguntas
+    sin ancla no cambie; la tolerancia ampliada es solo para la búsqueda del ancla.
+    """
+    by_key = {option_key(o): o for o in evidence_options}
+    mapping = {}
+    for option in question_options:
+        key = option_key(option)
+        if key not in by_key:
+            return None
+        mapping[option] = by_key[key]
+    extras = set(by_key) - {option_key(o) for o in question_options}
+    if legacy_extras:
+        if not extras <= _LEGACY_EXTRAS:
+            return None
+    elif not all(is_non_substantive(by_key[k]) for k in extras):
+        return None
+    return mapping
+
+
+RECENCY_WINDOW = 0.05
+
+
+def series_key(evidence_id):
+    """Nombre de variable estable del CIS (ECOESP, PREFPTE…): la misma pregunta en distintas oleadas. None si es P1, P2…"""
+    suffix = str(evidence_id or "").split("_", 1)[-1]
+    return suffix.lower() if re.fullmatch(r"[A-Za-z]{4,}[A-Za-z0-9_]*", suffix) else None
+_FUNCTION_WORDS = {
+    "a", "al", "algo", "ante", "como", "con", "cual", "cuales", "de", "del", "desde", "e", "el", "en", "es", "esta",
+    "este", "la", "las", "le", "lo", "los", "me", "mi", "muy", "o", "para", "por", "que", "se", "si", "su", "sus",
+    "tiene", "un", "una", "uno", "usted", "ud", "y", "ha", "han", "su", "sobre", "mas", "menos", "cree", "diria",
+}
+
+
+def _content_words(text):
+    words = re.findall(r"[a-z0-9]+", norm(re.sub(r"\[.*?\]", " ", text or "")))
+    return {w.rstrip("s") for w in words if w not in _FUNCTION_WORDS and len(w) > 2}
+
+
+def content_coverage(question, evidence_text):
+    """Fracción de las palabras con contenido de la pregunta que aparecen en la pregunta del CIS."""
+    wanted = _content_words(question)
+    return len(wanted & _content_words(evidence_text)) / len(wanted) if wanted else 0.0
+
+
+def prior_compatible(question_text, topic, evidence, guard):
+    """Guarda del modo prior: la pregunta del CIS debe cubrir el contenido de la tuya y, salvo que lo cubra casi del todo,
+    ser del mismo tema (la etiqueta de tema del almacén es la carpeta del estudio: es ruidosa)."""
+    coverage = content_coverage(question_text, evidence.get("question_text"))
+    if coverage < guard.get("coverage", 0):
+        return False
+    other = evidence.get("topic")
+    if guard.get("topic_match") and topic and other not in (topic, "general", None) and topic != "general":
+        return coverage >= guard.get("topic_override", 0.7)
+    return True
+
+
+def select_anchor(
+    hits, question, direct_similarity=0.9, prior_similarity=0.55, item_guard=True, prior_guard=None, topic=None
+):
+    """Elige la evidencia que ancla la predicción: la de mayor parecido de redacción con opciones equivalentes
+    y, a igualdad, la oleada más reciente (después la mejor puntuación de recuperación). Devuelve dict o None."""
+    candidates, valid = [], []
+    for hit in hits:
+        e = hit["evidence"]
+        original = e.get("metadata", {}).get("original_fields", {})
+        qtype = original.get("question_type", e.get("metadata", {}).get("question_type"))
+        if not e.get("study_id") or qtype != question["question_type"] or not e.get("question_text"):
+            continue
+        mapping = option_mapping(question["options"], e.get("options") or [])
+        if mapping is None:
+            continue
+        similarity = question_similarity(question["question"], e["question_text"])
+        if item_guard and not same_item(question["question"], e["question_text"]):
+            continue  # mismo enunciado, otro ítem de la batería: no es la misma pregunta
+        valid.append((e.get("fieldwork_date") or "", hit, mapping, qtype))
+        if prior_guard and similarity < direct_similarity and not prior_compatible(question["question"], topic, e, prior_guard):
+            continue
+        if similarity >= prior_similarity:
+            candidates.append((round(similarity, 3), e.get("fieldwork_date") or "", hit["retrieval_score"], hit, mapping, qtype))
+    if not candidates:
+        return None
+    best = max(c[0] for c in candidates)
+    # entre candidatas de parecido casi igual (diferencia < 0,05) manda la oleada más reciente
+    pool = [c for c in candidates if best - c[0] < RECENCY_WINDOW]
+    similarity, _, _, hit, mapping, qtype = max(pool, key=lambda c: (c[1], c[0], c[2]))
+    # la misma variable del CIS en una oleada posterior es la misma pregunta aunque el texto guardado difiera
+    key = series_key(hit["evidence"]["evidence_id"])
+    later = [v for v in valid if key and series_key(v[1]["evidence"]["evidence_id"]) == key and v[0] > (hit["evidence"].get("fieldwork_date") or "")]
+    if later:
+        _, hit, mapping, qtype = max(later, key=lambda v: v[0])
+    e = hit["evidence"]
+    return {
+        "mode": "direct" if similarity >= direct_similarity else "prior",
+        "evidence_id": e["evidence_id"],
+        "study_id": str(e["study_id"]),
+        "question_type": qtype,
+        "similarity": similarity,
+        "mapping": mapping,
+        "evidence_options": e["options"],
+        "fieldwork_date": e.get("fieldwork_date"),
+    }
+
+
+def project_to_band(values, low, high, total=1.0):
+    """Proyecta ``values`` a [low, high] manteniendo suma ``total`` (desplazamiento común, bisección)."""
+    values, low, high = (np.asarray(x, dtype=float) for x in (values, low, high))
+    lo_t, hi_t = -1.0, 1.0
+    for _ in range(60):
+        mid = (lo_t + hi_t) / 2
+        if np.clip(values + mid, low, high).sum() < total:
+            lo_t = mid
+        else:
+            hi_t = mid
+    result = np.clip(values + (lo_t + hi_t) / 2, low, high)
+    return result * (total / result.sum()) if result.sum() > 0 else result
+
+
+class AnchorStore:
+    def __init__(self, directory="data/processed", shrinkage=25.0):
+        directory = Path(directory)
+        self.respondents = pd.read_parquet(directory / "cis_respondents.parquet")
+        self.responses_path = directory / "cis_responses.parquet"
+        self.shrinkage = shrinkage
+        self._frames = {}
+
+    @classmethod
+    def available(cls, directory="data/processed"):
+        directory = Path(directory)
+        return (directory / "cis_respondents.parquet").exists() and (directory / "cis_responses.parquet").exists()
+
+    def _frame(self, study_id, question_uid):
+        key = (str(study_id), question_uid)
+        if key not in self._frames:
+            table = pq.read_table(
+                self.responses_path,
+                filters=[("estudio_id", "=", str(study_id)), ("question_uid", "=", question_uid)],
+            ).to_pandas()
+            people = self.respondents[self.respondents.estudio_id == str(study_id)]
+            self._frames[key] = table.merge(
+                people.drop(columns=["edad"], errors="ignore"), on=["estudio_id", "respondent_uid"], how="left"
+            )
+        return self._frames[key]
+
+    @staticmethod
+    def _distribution(frame, qtype):
+        if frame.empty:
+            return pd.Series(dtype=float), 0, 0.0
+        persons = frame.drop_duplicates("respondent_uid")
+        total = persons.peso.sum()
+        if qtype == "single":
+            sums = frame.groupby("answer").peso.sum()
+        else:
+            sums = frame[frame.selected.fillna(False).astype(bool)].groupby("answer").peso.sum()
+        n_eff = total**2 / (persons.peso**2).sum() if total > 0 else 0.0
+        return sums / total if total > 0 else sums, len(persons), float(n_eff)
+
+    def _levels(self, frame, qtype, constraints):
+        """Distribuciones por nivel de detalle creciente con su n efectivo."""
+        levels = [("nacional", *self._distribution(frame, qtype))]
+        current = frame
+        applied = []
+        for dimension, categories in constraints.items():
+            if dimension not in current.columns or dimension not in DEMOGRAPHICS:
+                continue
+            current = current[current[dimension].isin(categories)]
+            applied.append(dimension)
+            levels.append((" + ".join(applied), *self._distribution(current, qtype)))
+        return levels
+
+    def segment_distribution(self, anchor, constraints):
+        """Distribución {opción de la pregunta: prob.} del segmento con contracción jerárquica."""
+        frame = self._frame(anchor["study_id"], anchor["evidence_id"])
+        mapping, qtype = anchor["mapping"], anchor["question_type"]
+        evidence_labels = list(mapping.values())
+        levels = self._levels(frame, qtype, constraints)
+        parent = None
+        for name, dist, n, n_eff in levels:
+            p = dist.reindex(evidence_labels).fillna(0.0)
+            if qtype == "single":
+                mass = p.sum()
+                p = p / mass if mass > 0 else p  # renormaliza sin N.S./N.C.
+            if parent is not None:
+                p = (n_eff * p + self.shrinkage * parent) / (n_eff + self.shrinkage) if n_eff > 0 else parent
+            parent = p
+            last = {"level": name, "n": n, "n_eff": round(n_eff, 1)}
+        probabilities = {q: float(parent[e]) for q, e in mapping.items()}
+        national = levels[0]
+        return {
+            "probabilities": probabilities,
+            "levels": [{"level": lv[0], "n": lv[2], "n_eff": round(lv[3], 1)} for lv in levels],
+            "finest": last,
+            "national": {
+                q: float(national[1].reindex(evidence_labels).fillna(0.0)[e]) for q, e in mapping.items()
+            },
+        }
+
+    def national(self, study_id, question_uid, qtype):
+        dist, n, n_eff = self._distribution(self._frame(study_id, question_uid), qtype)
+        return {k: round(float(v), 4) for k, v in dist.items()}, n
+
+
+def constraints_of(segment):
+    """Restricciones del segmento en orden de prioridad: {dimensión: [categorías]}."""
+    return {d: list(c) for d, c in segment.get("constraints", {}).items()}
+
+
+def load_anchor_store(settings, directory=None):
+    """AnchorStore si existen los microdatos procesados del CIS; None en caso contrario."""
+    directory = directory or settings.cis_dir
+    return AnchorStore(directory, settings.anchor_shrinkage) if AnchorStore.available(directory) else None

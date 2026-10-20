@@ -1,55 +1,90 @@
-# Integración provisional con Fase 1
+# Contrato de datos Fase 1 → Fase 2
 
-No se encontró `Accenture.md`. Este documento hace explícitas las decisiones provisionales; debe revisarse contra ese contrato antes de afirmar compatibilidad con los datasets reales.
+Este contrato lo producen los comandos `etl-population` y `etl-cis` a partir de `maverick_data/` (ver `README.md`).
+Todo se escribe en `data/processed/` (ignorado por git). Los datos publicados después del 30/06/2026 no se usan y
+los estudios con `reservado_examen = si` solo sirven para el backtest.
 
-## Población
+## Esquema común de categorías (el del CIS)
 
-Archivos esperados: `synthetic_population_sample.parquet` o `synthetic_population.parquet`, acompañados de `population_metadata.json`. Se acepta CSV. Se conserva toda columna de entrada y no se recodifican categorías.
+Definido en `src/mavericks/categories.py`; la población y los entrevistados del CIS se recodifican al mismo esquema.
 
-Mínimo obligatorio para ejecutar: `person_id`, `peso`, `sexo`, `edad`, `grupo_edad`, `nivel_estudios`, `version_poblacion`. El resto de las columnas enumeradas en el prompt es opcional; su ausencia no bloquea el MVP. Edad finita >=18, identificadores únicos, pesos positivos finitos, ausencia de nulos en obligatorias y versión única son requisitos estrictos.
+| Variable | Categorías |
+|---|---|
+| `sexo` | hombre, mujer |
+| `grupo_edad` | 18-24, 25-34, 35-44, 45-54, 55-64, 65-74, 75+ |
+| `nivel_estudios` | sin_estudios, primaria, secundaria_1, secundaria_2, fp, superiores (+ `otros`, `nc` solo en el CIS) |
+| `ccaa` | las 19 comunidades y ciudades autónomas con la etiqueta del CIS (p. ej. «Madrid (Comunidad de)») |
+| `tamuni` | 7 tramos de tamaño de municipio del CIS (de «Menos o igual a 2.000 habitantes» a «Más de 1.000.000 habitantes») |
+| `ingresos_hogar_tramo` | 6 tramos de ingresos netos mensuales del hogar del CIS (+ `N.S.`, `N.C.` solo en el CIS) |
 
-Metadatos mínimos:
+Estudios del CIS con otra escala (p. ej. tamaño de municipio de 5 tramos o ingresos personales) dejan esa variable a
+nulo: no se fuerza una equivalencia.
+
+## Población (`etl-population`)
+
+Ficheros: `synthetic_population.parquet`, `population_metadata.json`, `population_validation.json`.
+
+- Mínimo obligatorio: `person_id`, `peso`, `sexo`, `edad`, `grupo_edad`, `nivel_estudios`, `version_poblacion`.
+  Además se generan `ccaa`, `tamuni`, `ingresos_hogar_tramo`, `nacionalidad` (española/extranjera) y
+  `situacion_laboral` (ocupado, parado, pensionista, estudiante, otra_inactividad).
+- Método: microdatos del Censo 2021 (adultos) → IPF a las Cifras de Población (ECP) a 1 de enero de 2026
+  (CCAA × sexo × edad, CCAA × nacionalidad, nacionalidad × sexo × edad) y a la EPA 2T26 (estudios por sexo × edad y por
+  CCAA) → muestreo sistemático con probabilidad proporcional al peso (`--n`, `--seed`) → imputación de ingresos del hogar
+  con la ECV 2025. El `peso` es uniforme y suma la población adulta objetivo (~41,4 M).
+- Las referencias de la ECP posteriores al 30/06/2026 (p. ej. «1 de julio de 2026») se rechazan.
+- `population_metadata.json`: `population_version`, `synthetic: false`, `coverage`, `variable_provenance`
+  (`observed`, `derived` para `tamuni`, `imputed` para ingresos), `categories` reales, `sources`, `method` y
+  `limitations`, y el informe del IPF. `synthetic` identifica solo fixtures de demostración.
+- `population_validation.json`: error de los márgenes frente a los objetivos y distribuciones resultantes.
+- Limitaciones: `situacion_laboral` es del Censo 2021 sin reponderar; los ingresos son imputados y sin N.S./N.C.; el
+  tamaño de municipio de más de 10.000 habitantes se estima a partir de la muestra del Censo.
+
+## CIS (`etl-cis`)
+
+Ficheros: `cis_studies.parquet`, `cis_questions.parquet`, `cis_respondents.parquet`, `cis_responses.parquet` y
+`etl_cis_report.json` (avisos por estudio).
+
+- `cis_studies`: `estudio_id` (número CIS), `topic` (carpeta de `raw/`), `fecha_publicacion` (catálogo),
+  `reservado_examen`, `fieldwork_start`/`fieldwork_end` (ficha técnica; si no existe o discrepa se usan las marcas
+  `IA_E1_*` / `FECHAINI` de los microdatos, que prevalecen en caso de discrepancia, con aviso), `peso_source`, avisos.
+  `fecha_publicacion` del catálogo **no** es la fecha de campo.
+- `cis_questions`: `question_uid` (= `evidence_id`, `CIS<estudio>_<variable>`), `estudio_id`, `question_text` (etiqueta
+  de la variable; los CIS no incluyen el enunciado completo), `options` (etiquetas de valor, NS/NC explícitos),
+  `question_type` (`single`/`multiple`), `topic`, `fieldwork_*`, `reservado_examen`, `n_valid`, `variables`.
+  Las baterías binarias (Sí/No, Menciona/No menciona) con ≥ 2 variables `X_n` se agrupan en una pregunta múltiple.
+- `cis_respondents`: `estudio_id`, `respondent_uid` (= `REGISTRO`), `peso` (`PESO`), `peso_ccaa` (`PESOCCAA`),
+  `sexo`, `edad`, `grupo_edad`, `nivel_estudios`, `ccaa`, `tamuni`, `ingresos_hogar_tramo`. Sin `PESO` se usa peso
+  uniforme (avisado). `peso_ccaa` solo se usa si se pide explícitamente.
+- `cis_responses` (formato largo): `estudio_id`, `respondent_uid`, `question_uid`, `answer` (etiqueta; N.P. =
+  «no procede» se descarta), `selected` (solo preguntas múltiples; una fila por persona y opción, incluidos los ceros).
+  Un grupo de filas por estudio, de modo que se puede filtrar por `estudio_id`/`question_uid` sin cargar el fichero.
+- La clave `(estudio_id, respondent_uid)` evita mezclar entrevistas de estudios distintos.
+
+## Backtesting (`make-backtest-cases`, `backtest`)
+
+Los casos se generan solo de estudios `reservado_examen = si`. Cada caso lleva `evidence_id`, `question`, `options` (sin
+NS/NC ni «(NO LEER)»), `topic`, `fieldwork_start/end`, `fieldwork_date` (= inicio, corte estricto), `observed_distribution`
+(con `peso`, renormalizada sin NS/NC), `observed_subgroups` (sexo, edad, estudios con n ≥ 100) y `allow_previous_waves`.
 
 ```json
 {
-  "population_version": "VERSION_PROPORCIONADA_POR_FASE1",
-  "synthetic": false,
-  "variable_provenance": {"sexo": "observed", "ingresos_hogar_tramo": "imputed"},
-  "categories": {},
-  "coverage": "Adultos en hogares privados; excluye establecimientos colectivos"
+  "case_id": "CIS3559_P8",
+  "evidence_id": "CIS3559_P8",
+  "estudio_id": "3559",
+  "question": "Valoración retrospectiva de la situación económica de España (6 meses)",
+  "options": ["Mejor", "Igual", "Peor"],
+  "topic": "consumo",
+  "fieldwork_date": "2026-04-17",
+  "observed_distribution": {"Mejor": 0.19, "Igual": 0.15, "Peor": 0.66},
+  "allow_previous_waves": true
 }
 ```
 
-`synthetic` identifica fixtures de demostración, no el hecho de que los registros de Fase 1 sean una población sintetizada estadísticamente. Añade a `categories` los catálogos reales: sin ellos se advierte que la validación categórica no está verificada. Valores extra en metadatos se conservan. Indica `--metadata` si el archivo está en otra ubicación. `population_validation.json` puede conservarse como artefacto de Fase 1; no se interpreta su esquema, aún desconocido.
+La evidencia recuperada debe haber terminado su trabajo de campo **antes** del `fieldwork_date`, nunca puede ser un
+estudio reservado y el backtest aborta si detecta fuga de identificadores o temporal. Los resultados observados se leen
+tras simular y no entran en el RAG ni en los prompts.
 
-## Encuestas
+## Evidencia (`ingest-surveys`)
 
-`cis_questions`: registros con `question_uid` (alias explícito de `evidence_id`), `estudio_id` (alias de `study_id`), `question_text` literal, `question_summary` abreviada, `options` como lista, y campos conocidos del esquema Evidence. Campos desconocidos se conservan en `metadata.original_fields`. No se inventan textos, fechas, universos o modos ausentes. Para CSV, normaliza previamente listas a JSON/Parquet; no se interpreta una cadena arbitraria como opciones.
-
-`cis_respondents`: `estudio_id`, `respondent_uid`, peso muestral `peso` o `peso_ccaa`, y variables demográficas disponibles.
-
-`cis_responses`: `estudio_id`, `respondent_uid`, `question_uid`, columna de respuesta configurable (`--answer-column`, por defecto provisional `answer`). No se presume que el contrato final denomine así esa columna. Preguntas múltiples: `selected` booleano y todas las opciones por persona; no se usan porcentajes que deban sumar 100%.
-
-La clave compuesta evita mezclar entrevistas de estudios distintos. Duplicados y respuestas huérfanas producen error. El peso de encuestas nunca se usa como peso poblacional. Los resultados derivados contienen pregunta y estudio originales, peso seleccionado, n observado, sumas de pesos y n efectivo de Kish. La fecha procede del registro Evidence, no se deduce del identificador.
-
-La ingesta de microdatos adjunta distribuciones nacionales y por las variables disponibles de edad, sexo y educación. Cruces específicos de segmentos y modos de respuesta mixtos por pregunta requieren configuración adicional conforme al contrato definitivo; no se infieren automáticamente.
-
-## Backtesting
-
-Formato `--cases`:
-
-```json
-[
-  {
-    "evidence_id": "ID_RETENIDO",
-    "question": "Texto de la pregunta retenida",
-    "options": ["A", "B"],
-    "fieldwork_date": "2025-01-01",
-    "equivalent_ids": ["DUPLICADO_REVISADO"],
-    "equivalent_texts": ["Paráfrasis revisada"],
-    "observed_distribution": {"A": 0.5, "B": 0.5}
-  }
-]
-```
-
-Las cifras del ejemplo son ilustrativas, no CIS. Los resultados observados se leen para comparar después de ejecutar la simulación y no entran en payloads LLM. Reserva casos y equivalencias antes de indexar/evaluar. La caché incluye payload, esquema, proveedor, endpoint, temperatura y prompt; los resultados retenidos no se pasan a la caché de inferencia. El backtesting Mock es exclusivamente una prueba del pipeline.
+`ingest-surveys --path data/processed/cis_questions.parquet` omite por defecto los estudios reservados
+(`--include-reserved` solo para pruebas). Los `.sav` no se ingieren directamente: primero `etl-cis`.

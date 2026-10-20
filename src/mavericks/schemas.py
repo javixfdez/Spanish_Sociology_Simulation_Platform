@@ -3,17 +3,52 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .topics import Topic
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     llm_provider: Literal["ollama", "mock", "external"] = "ollama"
     ollama_model: str = "qwen3:8b"
     ollama_base_url: str = "http://localhost:11434"
+    ollama_num_ctx: int = Field(8192, ge=1024)
+    anchor_max_shift: float = Field(0.15, gt=0, le=1)
+    anchor_shrinkage: float = Field(25.0, ge=0)
+    anchor_direct_similarity: float = Field(0.9, gt=0, le=1)
+    anchor_prior_similarity: float = Field(0.55, gt=0, le=1)
+    cis_dir: str = "data/processed"
+    stability_runs: int = Field(1, ge=1, le=10)
+    llm_assessment: bool = True
+    few_shot: int = Field(0, ge=0, le=8)
+    sources: str = ""
+    analog: bool = False
+    analog_table: str = "data/processed_v2/cis_national.json"
+    analog_k: int = Field(5, ge=1, le=20)
+    analog_power: float = Field(4.0, gt=0)
+    analog_min_sim: float = Field(0.0, ge=0, le=1)
+    analog_shrink: float = Field(0.0, ge=0)
+    analog_sim_mode: Literal["lex", "emb", "max"] = "lex"
+    blend: bool = False
+    corrector: float = Field(0.0, ge=0, le=0.5)
+    context: bool = False
+    sharpen: bool = False
+    context_path: str = "data/processed_v2/context.json"
+    retriever: Literal["tfidf", "embed", "hybrid"] = "tfidf"
+    embedding_model: str = "intfloat/multilingual-e5-base"
+    embedding_device: str = "cpu"
+    max_evidence_hits: int = Field(8, ge=1, le=20)
+    stability_temperature: float = Field(0.7, ge=0, le=2)
+    calibration_path: str = "data/processed/calibration.json"
+    interval_alpha: float = Field(0.1, gt=0, lt=1)
+    min_calibration_cases: int = Field(20, ge=1)
     llm_temperature: float = Field(0, ge=0, le=2)
     llm_timeout: float = Field(120, gt=0)
     llm_max_concurrency: int = Field(1, ge=1, le=32)
     llm_retries: int = Field(2, ge=0, le=5)
     simulation_timeout: float = Field(900, gt=0)
+    default_preset: Literal["rapido_sin_llm", "llm_completo"] = "rapido_sin_llm"  # preset por defecto de la interfaz
+    llm_blend_weight: float = Field(0.3, ge=0, le=1)  # peso del LLM en el modo con LLM (el resto es el prior)
+    explanation_timeout: float = Field(20.0, gt=0)  # segundos máximos para la explicación redactada por el LLM
     embedding_model_path: str = ""
     chroma_path: str = "data/processed/chroma"
     external_model: str = ""
@@ -36,11 +71,42 @@ class Question(BaseModel):
 
 
 class Methodology(BaseModel):
-    topic: str
+    topic: Topic
     question_type: Literal["single", "multiple"]
     relevant_demographics: list[str]
     retrieval_queries: list[str]
     warnings: list[str] = []
+
+
+class OptionSuggestion(BaseModel):
+    options: list[str] = Field(min_length=2, max_length=6)
+
+
+class ScopeJudgement(BaseModel):
+    category: Literal["opinion", "hechos", "prediccion", "persona_concreta", "poblacion_distinta", "no_es_pregunta"]
+    reason: str = ""
+    reformulation: str = ""
+
+
+class PlanItem(BaseModel):
+    var: str
+    val: str
+
+
+class QueryPlan(BaseModel):
+    """Plan estructurado de una pregunta en lenguaje natural (lo valida ``assist.plan_question`` contra el esquema del CIS)."""
+
+    opciones: list[str] = Field(default_factory=list, max_length=7)
+    tipo: Literal["escala", "si_no", "categorias"]
+    tema: str
+    subgrupo_o_cruce: list[PlanItem] = Field(default_factory=list, max_length=5)
+    respondible: bool
+    motivo: str = ""
+    intencion: Literal["consulta_dato", "prediccion"] = "prediccion"
+
+
+class ResultNarrative(BaseModel):
+    summary: str = Field(min_length=20)
 
 
 class AssessmentItem(BaseModel):
@@ -71,6 +137,14 @@ class Prediction(BaseModel):
             not math.isfinite(p) or not 0 <= p <= 1 for p in self.probabilities.values()
         ):
             raise ValueError("Probabilidades inválidas")
+        return self
+
+    def renormalized(self, tolerance=0.15):
+        """Corrige errores de redondeo del LLM en respuestas únicas: si la suma está dentro de la
+        tolerancia se reescala a 1; fuera de ella se deja intacta para que la validación falle."""
+        total = sum(self.probabilities.values())
+        if total > 0 and abs(total - 1) <= tolerance and abs(total - 1) > 1e-9:
+            return self.model_copy(update={"probabilities": {k: v / total for k, v in self.probabilities.items()}})
         return self
 
     def validate_context(self, segment_id, options, evidence_ids, question_type="single"):

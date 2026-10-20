@@ -9,3 +9,11 @@ data/raw/
 data/processed/
 *.egg-info/
 .uv-cache/
+
+# Microdatos reales (varios GB; GitHub no admite >100 MB): solo catalogo y README
+maverick_data/*
+!maverick_data/catalogo.csv
+!maverick_data/README.md
+data/processed_v2/
+.venv_embed/
+dist/

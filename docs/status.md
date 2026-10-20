@@ -1,46 +1,52 @@
-# Estado de entrega
+# Estado de entrega (rama `javier-picazo`)
 
-## Implementado y verificado
+## Implementado y verificado con datos reales
 
-- Entorno `.venv` con uv y `uv.lock`, paquete instalable y CLI.
-- StateGraph completo con Send, reducer de predicciones, concurrencia configurable, timeout, reintentos y caché.
-- Población CSV/Parquet, validadores, metadatos/procedencia, segmentación determinista y perfiles heterogéneos.
-- Agentes metodólogo, intérprete, respondente y analista con esquemas Pydantic.
-- Mock explícito DEMO / SYNTHETIC; no hay fallback silencioso.
-- Agregación ponderada, subgrupos soportados y bloqueo de estimación nacional ante fallos.
-- Ingesta JSON/CSV/Parquet/XLSX/PDF, idempotencia, SQLite y TF-IDF con metadatos.
-- Microdatos: pesos nacionales/autonómicos explícitos, unión por estudio/persona, NS/NC, respuestas múltiples y Kish.
-- Estadísticas calculadas antes de suministrar evidencia al LLM.
-- Auditor descriptivo sin puntuación inventada; MAE, JSD, utilidad de intervalos y backtesting con exclusiones/corte temporal.
-- Streamlit básico, resultado nacional, segmentos, evidencia, confianza, advertencias y descarga JSON.
+- **ETL del CIS** (`etl-cis`): 108 estudios (11 reservados), 7.523 preguntas, 425.588 entrevistados. Fechas de campo de la
+  ficha técnica y de los microdatos con aviso de discrepancias (3438: la ficha dice 2023, los microdatos 2024).
+  Sin `PESO`: 3503 y 3528. Sin `REGISTRO` único: 3495.
+- **Población sintética** (`etl-population`): Censo 2021 → IPF a Cifras de Población (1/1/2026) y EPA 2T26 → n = 50.000,
+  semilla 42, ingresos imputados de la ECV 2025. Error máximo de margen CCAA × sexo × edad: 0,1 puntos de cuota.
+  Estudios y ingresos coinciden con la EPA y la ECV (`population_validation.json`).
+- **Segmentación jerárquica** por pesos: devuelve el número de segmentos pedido (5 → 5, 80 → 80) usando edad, sexo,
+  estudios, CCAA, hábitat e ingresos según la prioridad del metodólogo.
+- **Ancla empírica**: estadística directa si existe la misma pregunta (probado con CIS 3546 P4, 19,5 s con `llama3`) y prior
+  acotado a ±0,15 si es parecida (6 segmentos en 77 s).
+- **Backtest con los 11 estudios reservados**: 88 casos generados; corte estricto por fecha de campo, sin reservados en el
+  RAG, MAE/JSD/MAE por subgrupo con línea base uniforme y calibración (`calibration.json`).
+- Resiliencia: sin evidencia no se llama al evaluador; reintentos informados con temperatura creciente; alternativa
+  determinista para evaluador, metodólogo y analista.
+- Estabilidad (`--stability-runs`) e intervalos calibrados conectados al auditor.
+- Tests: 89 (`uv run pytest -q`), ruff limpio. Los 31 tests originales se mantienen.
 
-## Verificado mediante dobles; requiere servicio/modelo real
+## Verificado solo con el Mock o con muestras pequeñas
 
-- ChatOllama con structured output JSON Schema: pruebas sin servidor, incluyendo indisponibilidad. Ollama no responde en localhost:11434 y no se encontró ejecutable en PATH.
-- No se han descargado modelos LLM ni embeddings. No se verificó GPU: consulta de hardware denegada.
+- Backtest completo de los 88 casos con el **Mock**: sirve para probar el flujo y la calibración, no es una métrica
+  predictiva (51 casos en modo directo: MAE 0,028; 37 sin ancla: MAE 0,164; línea base uniforme ≈ 0,17). El modo directo
+  equivale a repetir la oleada anterior.
+- Backtest real con `llama3` de 4 casos (1 directo MAE 0,026; 3 sin ancla MAE 0,148; uniforme 0,184). Muestra demasiado
+  pequeña para concluir.
+- `calibration.json` no se ha generado con un LLM real: hacen falta los 88 casos (≈ 45 min con `llama3`). Hasta
+  entonces el auditor devuelve «Fiabilidad predictiva todavía no calibrada».
 
-## Implementado pero no ejecutado con dependencias opcionales
+## Pendiente o con riesgo
 
-- sentence-transformers + Chroma persistente y combinación con recuperación léxica: requiere extra semantic y modelo local.
-- SAV/SPSS con pyreadstat: requiere extra spss.
-- API externa compatible con OpenAI: requiere extra external y credenciales.
+- Calibración con LLM real y con `--stability-runs` ≥ 3; revisar los casos del backtest (equivalencias humanas).
+- `qwen3:8b` no estaba instalado ni se probó; con `llama3` el evaluador de evidencia suele fallar tras los reintentos y
+  entra la alternativa determinista (aviso en `warnings`). Con `mistral` fallaron 2 de 5 segmentos en una prueba previa.
+- Los enunciados de las preguntas del CIS son la etiqueta de la variable (sin el enunciado completo del cuestionario); en
+  baterías de ítems el texto es solo el ítem. Mejorar: extraer el enunciado de los PDF `cues*.pdf`.
+- `ingresos_hogar_tramo`: 8 estudios usan otra escala y quedan sin esa variable. `tamuni` solo con la escala de 7 tramos.
+- `situacion_laboral` de la población proviene del Censo 2021 sin reponderar.
+- El tamaño de municipio > 10.000 habitantes es una estimación a partir de la muestra del Censo.
+- Embeddings semánticos (Chroma + sentence-transformers) implementados pero no ejecutados con un modelo real.
+- Chunks de documentos grandes, focus group y despliegue no incluidos.
 
-## Pendiente de datos y validación empírica
+## Cómo reproducir las cifras
 
-- Revisar contrato definitivo Accenture.md y categorías reales; no estaban disponibles.
-- Integrar población Fase 1 y datos CIS reales; verificar nombres y opciones originales.
-- Preguntas múltiples y únicas mezcladas en una misma ingesta necesitan ingestiones/configuración por tipo.
-- Estudios: configurar pesos según metodología; no se infiere automáticamente peso frente a peso_ccaa.
-- Calibración real, error por tema/segmento e intervalos validados. No se publican métricas predictivas a partir de la demo.
-- Repeticiones de estabilidad por temperatura/paráfrasis y revisión humana de equivalencias históricas.
-- Indexación por chunks para documentos grandes y optimización del índice léxico: el MVP recalcula TF-IDF y carga registros recuperables en memoria.
-- Interpretar population_validation.json cuando llegue su contrato.
-- Focus group futuro, clustering avanzado y despliegue no incluidos.
-
-## Evidencias de ejecución
-
-Suite pytest: 31 pruebas, sin llamadas LLM reales. Comprende integración del grafo secuencial/concurrente, integridad, ingesta heterogénea, backtesting y comprobación de arranque Streamlit. Ruff sin errores.
-
-Demo CLI: `outputs/demo.json`, estado completed, cobertura 1.0, 3 segmentos para máximo 5, todas las etapas ejecutadas y salida marcada synthetic. Backtesting de prueba: `outputs/backtest-demo.json`; evidencia objetivo excluida. Estas cifras verifican el software, no la representatividad ni precisión.
-
-`check-model`: error claro indicando que Ollama no es accesible; no se ejecutó inferencia real.
+```sh
+uv run python main.py etl-population && uv run python main.py etl-cis
+uv run python main.py ingest-surveys --path data/processed/cis_questions.parquet
+uv run python main.py make-backtest-cases
+uv run python main.py backtest --provider mock --path data/processed/synthetic_population.parquet --cases data/processed/backtest_cases.json
+```

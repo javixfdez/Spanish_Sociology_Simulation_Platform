@@ -1,0 +1,278 @@
+"""Explicación escrita del resultado: plantilla (siempre) y redacción del LLM con comprobación de cifras.
+
+La plantilla no usa ningún modelo. El LLM recibe SOLO las cifras ya calculadas, las diferencias por subgrupo que superan el error
+típico y las preguntas del CIS de apoyo; su texto se acepta únicamente si todas las cifras con unidad (%, puntos) coinciden con las
+calculadas (tolerancia de 1 punto) y no menciona grupos que no estén en los datos. Si no, si falla o tarda más del límite, se usa la
+plantilla y se registra el motivo.
+"""
+
+import asyncio
+import logging
+import re
+import time
+
+from .schemas import ResultNarrative
+
+log = logging.getLogger("mavericks.explain")
+TOLERANCE = 1.0  # puntos
+MAX_DIFFERENCES = 2
+
+_NUMBER = re.compile(r"(\d+(?:[.,]\d+)?)\s*(%|por ciento|puntos porcentuales|puntos|pp)", re.I)
+_RANGE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:-|–|y|a)\s*(\d+(?:[.,]\d+)?)\s*(?:%|por ciento)", re.I)
+
+
+def _f(text):
+    return float(text.replace(",", "."))
+
+
+def majority(result):
+    dist = result["national"]["distribution"]
+    option = max(dist, key=dist.get)
+    core = (result["national"].get("interval_core") or {}).get(option)
+    return option, 100 * dist[option], (None if core is None else (100 * core[0], 100 * core[1]))
+
+
+def subgroup_differences(result, top=MAX_DIFFERENCES):
+    """Diferencias (en puntos) de la opción mayoritaria por subgrupo que superan el error típico, de mayor a menor."""
+    option, national, _ = majority(result)
+    threshold = 100 * (result["confidence"].get("typical_error") or 0.0)
+    found = []
+    for dim in result["subgroups"].values():
+        for category, group in dim["groups"].items():
+            diff = 100 * group["distribution"][option] - national
+            if abs(diff) > threshold and abs(diff) >= 1.0:
+                found.append({"dimension": dim["label"], "category": category, "option": option,
+                              "percent": 100 * group["distribution"][option], "difference_points": diff})
+    found.sort(key=lambda d: -abs(d["difference_points"]))
+    return found[:top]
+
+
+def support_sentence(result):
+    mode, used = result["mode"], result.get("prior_usado") or {}
+    first = (result.get("evidence") or [None])[0]
+    if mode == "direct" and first:
+        return f"Se apoya en la propia pregunta del CIS (estudio {first['study_id']}, {first['fieldwork_end'] or 's/f'}), con su resultado real más reciente."
+    if used.get("metodo") == "modelo_ajustado":
+        return ("Es una pregunta nueva, sin equivalente en el CIS; el reparto lo da un modelo de lenguaje pequeño ajustado con encuestas reales (modo experimental) "
+                "y tiene confianza baja.")
+    where = f"la más parecida es del estudio {first['study_id']}" if first else "no hay ninguna muy parecida"
+    base = "preguntas parecidas del CIS" + (" y un modelo aprendido de todas las preguntas anteriores" if used.get("metodo") == "media_knn_mlp" else "")
+    if mode == "prior":
+        sim = f", similitud {100 * first['similarity']:.0f} %" if first and first.get("similarity") else ""
+        return f"Es una pregunta parecida a otra del CIS ({where}{sim}); la estimación se apoya en {base}."
+    return f"Es una pregunta nueva, sin equivalente en el CIS; la estimación se apoya en {base} y tiene confianza baja."
+
+
+def measured_sentence(result):
+    """Frase con lo que midió el CIS (sin modelo), separada de la estimación."""
+    m = result.get("measured")
+    if not m:
+        return None
+    dist = m["national"]["distribution"]
+    top = max(dist, key=dist.get)
+    margin = 100 * m["national"]["margin"][top]
+    text = f"Dato medido por el CIS (estudio {m['study_id']}, campo {m['fieldwork_end'] or 's/f'}, {m['national']['n']} encuestados): «{top}» {100 * dist[top]:.0f} % (±{margin:.1f} puntos)."
+    for cross in m["crosses"][:2]:
+        if cross["distribution"] is None:
+            text += f" En {cross['label']} no hay encuestados con respuesta."
+            continue
+        ctop = max(cross["distribution"], key=cross["distribution"].get)
+        warn = " (muestra pequeña: dato poco fiable)" if cross["small"] else ""
+        text += f" En {cross['label']} el CIS midió «{ctop}» {100 * cross['distribution'][ctop]:.0f} % (±{100 * cross['margin'][ctop]:.1f} puntos, {cross['n']} encuestados){warn}."
+    return text
+
+
+def template_text(result):
+    option, percent, core = majority(result)
+    rango = f"; rango habitual {core[0]:.0f}–{core[1]:.0f} %" if core else ""
+    sentences = [f"La opción más probable es «{option}», con un {percent:.0f} %{rango}."]
+    diffs = subgroup_differences(result)
+    if diffs:
+        parts = [f"{d['dimension'].lower()} {d['category']} ({d['percent']:.0f} %, {d['difference_points']:+.0f} puntos)" for d in diffs]
+        method = (result.get("subgroups_method") or {}).get("etiqueta")
+        origin = f" (método: {method})" if method else ("" if result["mode"] == "direct" else " (diferencias estimadas con preguntas parecidas)")
+        sentences.append("Las mayores diferencias entre grupos: " + "; ".join(parts) + origin + ".")
+    for cross in (result.get("crosses") or [])[:2]:
+        top = max(cross["distribution"], key=cross["distribution"].get)
+        small = " (muestra pequeña: la estimación se apoya sobre todo en el modelo)" if cross.get("small") else ""
+        sentences.append(f"En el cruce {cross['label']} ({cross['n_cis']} encuestados del CIS en la oleada de la pregunta){small}, la opción más probable es «{top}», con un {100 * cross['distribution'][top]:.0f} % (cruce experimental).")
+    sentences.append(support_sentence(result))
+    measured = measured_sentence(result)
+    if measured:  # lo medido y lo estimado van en frases distintas; si se preguntó por lo medido, va primero
+        sentences = [measured, "Estimación del modelo para hoy: " + sentences[0][0].lower() + sentences[0][1:], *sentences[1:]] if result.get("intent") == "consulta_dato" else [*sentences, measured]
+    elif result.get("measured_note") and result["mode"] != "direct":
+        sentences.append("No hay dato medido: la pregunta no se ha hecho en el CIS.")
+    return " ".join(sentences)
+
+
+def llm_payload(result):
+    option, _, _ = majority(result)
+    dist = result["national"]["distribution"]
+    core = result["national"].get("interval_core") or {}
+    return {
+        "question": result["question"],
+        "national_percent": {o: round(100 * v, 1) for o, v in dist.items()},
+        "usual_range_percent": {o: [round(100 * core[o][0], 1), round(100 * core[o][1], 1)] for o in core},
+        "group_differences": [{**d, "percent": round(d["percent"], 1), "difference_points": round(d["difference_points"], 1)}
+                              for d in subgroup_differences(result, top=4)],
+        "subgroup_method": (result.get("subgroups_method") or {}).get("etiqueta"),
+        "measured": _measured_payload(result),
+        "reminder": "measured es lo que midió el CIS (sin modelo); national_percent, usual_range_percent, group_differences y crosses son la estimación del modelo. No mezcles ni compares sus cifras como si fueran lo mismo.",
+        "crosses": [
+            {"label": c["label"], "n_cis": c["n_cis"], "percent": {o: round(100 * v, 1) for o, v in c["distribution"].items()}, "experimental": True}
+            for c in (result.get("crosses") or [])[:2]
+        ],
+        "support": {
+            "mode": result["mode_label"], "prior_method": (result.get("prior_usado") or {}).get("metodo"),
+            "cis_questions": [{"study": e["study_id"], "date": e["fieldwork_end"], "text": (e["question"] or "")[:160],
+                               "similarity_percent": None if not e.get("similarity") else round(100 * e["similarity"], 1)}
+                              for e in (result.get("evidence") or [])[:3]],
+        },
+        "typical_error_points": None if result["confidence"].get("typical_error") is None else round(100 * result["confidence"]["typical_error"], 1),
+    }
+
+
+def _measured_payload(result):
+    m = result.get("measured")
+    if not m:
+        return None
+    nat = m["national"]
+    return {
+        "study": m["study_id"], "fieldwork_end": m["fieldwork_end"], "n": nat["n"],
+        "percent": {o: round(100 * v, 1) for o, v in nat["distribution"].items()},
+        "margin_points": {o: round(100 * v, 1) for o, v in nat["margin"].items()},
+        "crosses": [
+            {"label": c["label"], "n": c["n"], "small": c["small"], "percent": {o: round(100 * v, 1) for o, v in c["distribution"].items()} if c["distribution"] else None,
+             "margin_points": {o: round(100 * v, 1) for o, v in c["margin"].items()} if c["margin"] else None}
+            for c in m["crosses"][:2]
+        ],
+    }
+
+
+def _numbers(node, skip=()):
+    values = []
+
+    def walk(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k not in skip:
+                    walk(v)
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                walk(v)
+        elif isinstance(x, (int, float)) and not isinstance(x, bool):
+            values.append(abs(float(x)))
+
+    walk(node)
+    return values
+
+
+_MEASURED_KEYS = re.compile(r"\b(midi[óo]|midieron|medid[oa]s?|respondieron|dato medido)\b|seg[úu]n el cis", re.I)
+_MODEL_KEYS = re.compile(r"\b(estimaci[óo]n|estimad[oa]s?|modelo|probable|rango habitual|mrp)\b", re.I)
+
+
+def allowed_numbers(payload):
+    values = []
+
+    def walk(x):
+        if isinstance(x, dict):
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                walk(v)
+        elif isinstance(x, (int, float)) and not isinstance(x, bool):
+            values.append(abs(float(x)))
+
+    walk({k: v for k, v in payload.items() if k != "question"})
+    return values
+
+
+def _mixing(text, payload):
+    """Lo medido y lo estimado no se mezclan: una frase que habla de lo que midió el CIS solo usa cifras medidas, y una de la estimación del modelo, cifras del modelo."""
+    if not payload.get("measured"):
+        return None
+    measured = _numbers(payload["measured"], skip=("n", "n_eff", "study", "fieldwork_end"))
+    estimate = _numbers({k: v for k, v in payload.items() if k not in ("question", "measured", "reminder", "support")}, skip=("n_cis",))
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        about_measured, about_model = bool(_MEASURED_KEYS.search(sentence)), bool(_MODEL_KEYS.search(sentence))
+        if about_measured == about_model:
+            continue  # sin clasificar o ambas cosas a la vez: queda la comprobación general
+        pool = measured if about_measured else estimate
+        for m in _NUMBER.finditer(sentence):
+            number = _f(m.group(1))
+            if not any(abs(number - a) <= TOLERANCE for a in pool):
+                return f"mezcla lo medido y lo estimado: {number:g} no es una cifra {'medida' if about_measured else 'del modelo'}"
+    return None
+
+
+def check_text(text, payload):
+    """None si el texto es válido; si no, el motivo. Comprueba cifras con unidad y grupos mencionados."""
+    allowed = allowed_numbers(payload)
+    quoted = [_f(m.group(1)) for m in _NUMBER.finditer(text)]
+    for m in _RANGE.finditer(text):
+        quoted += [_f(m.group(1)), _f(m.group(2))]
+    for number in quoted:
+        if not any(abs(number - a) <= TOLERANCE for a in allowed):
+            return f"cifra que no cuadra con los datos: {number:g}"
+    reason = _mixing(text, payload)
+    if reason:
+        return reason
+    for label in sorted(payload.get("national_percent") or {}, key=len, reverse=True):  # las palabras de las propias opciones no son grupos («La atención primaria»)
+        text = re.sub(re.escape(label), " ", text, flags=re.I)
+    mentioned = {d["category"].lower() for d in payload["group_differences"]}
+    for cross in payload.get("crosses") or []:  # los grupos de un cruce pedido pueden nombrarse
+        mentioned |= {part.split(":", 1)[-1].strip().lower() for part in cross["label"].split("·")}
+    labels = payload.get("_all_categories", [])
+    lowered = text.lower()
+    for label in labels:
+        if label.lower() not in mentioned and len(label) >= 3 and re.search(rf"(?<!\w){re.escape(label.lower())}s?(?!\w)", lowered):
+            return f"menciona un grupo sin diferencia en los datos: {label}"
+    return None
+
+
+def all_categories(result):
+    return sorted({c for dim in result["subgroups"].values() for c in dim["groups"]})
+
+
+MEMORY_ERRORS = ("out of memory", "more system memory", "insufficient memory", "cuda error", "cudamalloc")
+
+
+def is_memory_error(exc):
+    text = f"{type(exc).__name__} {exc}".lower()
+    return isinstance(exc, MemoryError) or any(k in text for k in MEMORY_ERRORS)
+
+
+async def _ask(service, payload, timeout):
+    value = await asyncio.wait_for(service.call(ResultNarrative, {k: v for k, v in payload.items() if not k.startswith("_")}), timeout)
+    return value.summary.strip()
+
+
+def add_template(result):
+    result["explanation_text"] = {"texto": template_text(result), "origen": "plantilla", "motivo": None}
+    return result
+
+
+def add_llm_text(result, service, timeout=20.0):
+    """Sustituye la plantilla por el texto del LLM si es válido; si no, deja la plantilla y anota el motivo."""
+    template = result.get("explanation_text") or add_template(result)["explanation_text"]
+    payload = llm_payload(result)
+    payload["_all_categories"] = all_categories(result)
+    started = time.monotonic()
+    reason = None
+    try:
+        text = asyncio.run(_ask(service, payload, timeout))
+        reason = check_text(text, payload)
+        if reason is None:
+            result["explanation_text"] = {"texto": text, "origen": "llm", "motivo": None, "segundos": time.monotonic() - started}
+            return result
+    except (TimeoutError, asyncio.TimeoutError):
+        reason = f"el modelo tardó más de {timeout:g} s"
+    except Exception as exc:  # el LLM no responde o la salida no es válida
+        if is_memory_error(exc):  # la GPU se comparte con el modelo ajustado: sin memoria se usa la plantilla en vez de fallar
+            reason = "el modelo de lenguaje no cabe en la memoria de la GPU en este momento"
+        else:
+            reason = f"el modelo falló ({type(exc).__name__})"
+    log.warning("Explicación del LLM descartada, se usa la plantilla: %s", reason)
+    result["explanation_text"] = {**template, "origen": "plantilla", "motivo": reason, "segundos": time.monotonic() - started}
+    return result

@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import numpy as np
 import pandas as pd
@@ -409,4 +410,38 @@ def test_streamlit_app_smoke():
 
     app = AppTest.from_file(str(Path(__file__).parents[1] / "app.py")).run(timeout=20)
     assert not app.exception
-    assert app.title[0].value.startswith("GenAI Mavericks")
+    assert app.title[0].value.startswith("Simulación de opinión")
+
+
+def test_search_cache_refreshes_after_ingest(tmp_path):
+    repo = EvidenceRepository(tmp_path / "c.sqlite")
+    path = tmp_path / "a.json"
+    path.write_text(json.dumps([{"evidence_id": "A", "source": "t", "question_text": "vivienda alquiler precio"}]), encoding="utf-8")
+    repo.ingest(path)
+    assert [h["evidence"]["evidence_id"] for h in repo.search("alquiler")] == ["A"]
+    path.write_text(json.dumps([{"evidence_id": "B", "source": "t", "question_text": "alquiler turistico"}]), encoding="utf-8")
+    repo.ingest(path)
+    assert {h["evidence"]["evidence_id"] for h in repo.search("alquiler")} == {"A", "B"}
+
+
+def test_sav_is_not_ingested_as_evidence(tmp_path):
+    from mavericks.evidence import read_records
+
+    with pytest.raises(ValueError, match="etl-cis"):
+        read_records(tmp_path / "estudio.sav")
+
+
+def test_aggregate_rejects_unknown_evidence_ids():
+    segments = [{"segment_id": "a", "population_weight": 1}]
+    prediction = Prediction(segment_id="a", probabilities={"Y": 1, "N": 0}, explanation="x", evidence_ids=["fake"])
+    with pytest.raises(ValueError):
+        aggregate(segments, {"a": prediction}, ["Y", "N"], evidence_ids=["real"])
+    assert aggregate(segments, {"a": prediction}, ["Y", "N"], evidence_ids=["fake"]) == {"Y": 1.0, "N": 0.0}
+
+
+def test_js_divergence_never_returns_nan_for_identical_distributions():
+    same = {"A": 0.123456789, "B": 0.876543211}
+    assert js_divergence(same, dict(same)) == 0.0
+    near = {"A": 0.123456789 + 1e-17, "B": 0.876543211 - 1e-17}
+    value = js_divergence(same, near)
+    assert value == value and value < 1e-12

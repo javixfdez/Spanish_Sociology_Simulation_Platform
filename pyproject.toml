@@ -3,10 +3,29 @@ name = "genai-mavericks"
 version = "0.1.0"
 description = "Evidence-grounded synthetic population simulation"
 requires-python = ">=3.11"
-dependencies = ["langgraph>=1.0,<2", "langchain-ollama>=1.0,<2", "pydantic-settings>=2.0", "pandas>=2.2", "numpy>=2", "scipy>=1.14", "scikit-learn>=1.5", "pyarrow>=18", "httpx>=0.27", "pypdf>=5", "openpyxl>=3.1", "streamlit>=1.40"]
+dependencies = [
+    "langgraph>=1.0,<2",
+    "langchain-ollama>=1.0,<2",
+    "pydantic-settings>=2.0",
+    "pandas>=2.2",
+    "numpy>=2",
+    "scipy>=1.14",
+    "scikit-learn>=1.5",
+    "pyarrow>=18",
+    "httpx>=0.27",
+    "pypdf>=5",
+    "openpyxl>=3.1",
+    "streamlit>=1.40",
+    "pyreadstat>=1.3.6",
+    "plotly>=7.1.0",
+    "pyyaml>=6",
+    "requests>=2.31",
+]
 
 [project.optional-dependencies]
 semantic = ["sentence-transformers>=3", "chromadb>=1"]
+embed = ["sentence-transformers>=3", "truststore>=0.9"]
+hub = ["huggingface_hub>=0.30", "truststore>=0.9"]  # fetch-assets y fetch-adapter (descarga desde Hugging Face)
 spss = ["pyreadstat>=1.2"]
 external = ["langchain-openai>=1"]
 
@@ -22,6 +41,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # los tests comparten utilidades (tests.test_mrp, tests.test_measured); `uv run pytest` no añade el directorio actual al path
 
 [tool.ruff]
 line-length = 110

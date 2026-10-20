@@ -5,12 +5,33 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, TypedDict
 
+import numpy as np
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from .analog import AnalogConfig, analog_for_question, load_national_table
+from .anchor import constraints_of, project_to_band, question_similarity, select_anchor
+from .calibrate import Blend
+from .context import CUTOFF as CONTEXT_CUTOFF
+from .payloads import build_examples, compact_evidence, compact_segment
 from .population import build_segments
-from .schemas import Assessment, Methodology, Narrative, Prediction, Question
-from .statistics import aggregate, audit, subgroup_distributions
+from .schemas import Assessment, AssessmentItem, Methodology, Narrative, Prediction, Question
+from .sharpen import sharpen
+from .statistics import (
+    aggregate,
+    audit,
+    pairwise_divergence,
+    stability_summary,
+    subgroup_distributions,
+    subgroup_resolution,
+)
+from .topics import classify_topic
+
+
+def _cited_only(prediction, allowed):
+    """Descarta las citas a evidencias que no se le dieron al modelo (solo sirven de trazabilidad, no son datos)."""
+    kept = [e for e in prediction.evidence_ids if e in allowed]
+    return prediction if kept == prediction.evidence_ids else prediction.model_copy(update={"evidence_ids": kept})
 
 
 def merge_unique(left, right):
@@ -27,11 +48,16 @@ class SimulationState(TypedDict, total=False):
     population_version: str
     population_metadata: dict
     retrieved_evidence: list
+    anchor_spec: dict
+    analog_result: dict
     evidence_assessment: dict
     segments: list
     segment_predictions: Annotated[dict, merge_unique]
     national_distribution: dict
     subgroup_distributions: dict
+    national_distribution_raw: dict
+    sharpening: dict
+    subgroup_resolution: dict
     trust_metrics: dict
     warnings: Annotated[list, operator.add]
     errors: Annotated[list, operator.add]
@@ -40,8 +66,27 @@ class SimulationState(TypedDict, total=False):
     execution_metadata: dict
 
 
-def build_graph(repository, evidence_repository, service, max_segments=5, rag=True, retrieval_filters=None):
+def build_graph(
+    repository,
+    evidence_repository,
+    service,
+    max_segments=5,
+    rag=True,
+    retrieval_filters=None,
+    anchors=None,
+    calibration=None,
+    context_store=None,
+):
     filters = retrieval_filters or {}
+    settings = service.settings
+    analog_config = AnalogConfig(
+        settings.analog_k, settings.analog_power, settings.analog_min_sim, settings.analog_shrink, settings.analog_sim_mode
+    )
+    national_table = load_national_table(settings.analog_table) if settings.analog else {}
+    blend_model = None
+    blend_info = (calibration or {}).get("blend")
+    if settings.blend and blend_info:
+        blend_model = Blend(tuple(blend_info["edges"]), [tuple(p) for p in blend_info["params"]])
 
     def validate_input(state):
         question = Question.model_validate(state["question"])
@@ -61,32 +106,85 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
         }
 
     async def methodologist(state):
-        value = await service.call(Methodology, state["question"])
-        if value.question_type != state["question"]["question_type"]:
-            raise ValueError("El metodólogo cambió el tipo de respuesta solicitado")
-        return {
-            "methodology": value.model_dump(),
-            "warnings": value.warnings,
-            "stages": ["methodologist_agent"],
-        }
+        question = state["question"]
+        try:
+            value = await service.call(Methodology, question)
+            if value.question_type != question["question_type"]:
+                raise ValueError("El metodólogo cambió el tipo de respuesta solicitado")
+            return {
+                "methodology": value.model_dump(),
+                "warnings": value.warnings,
+                "stages": ["methodologist_agent"],
+            }
+        except Exception as exc:
+            # Sin metodólogo se continúa con una metodología determinista, avisando del fallo.
+            fallback = Methodology(
+                topic=classify_topic(question["question"]),
+                question_type=question["question_type"],
+                relevant_demographics=["grupo_edad", "sexo", "nivel_estudios"],
+                retrieval_queries=[question["question"]],
+                warnings=[f"Metodólogo LLM no disponible ({exc}); metodología determinista"],
+            )
+            return {
+                "methodology": fallback.model_dump(),
+                "warnings": fallback.warnings,
+                "stages": ["methodologist_agent:fallback"],
+            }
 
     def retrieve(state):
         found = {}
         if rag:
-            for query in state["methodology"]["retrieval_queries"]:
-                for hit in evidence_repository.search(
+            # La pregunta literal siempre es una consulta: garantiza recuperar la misma pregunta en otras
+            # oleadas aunque las consultas generadas por el LLM sean más vagas.
+            queries = list(dict.fromkeys([state["question"]["question"], *state["methodology"]["retrieval_queries"]]))
+            literal = state["question"]["question"]
+            for query in queries:
+                hits = evidence_repository.search(
                     query,
+                    limit=30 if query == literal else 5,
                     target_population=state["question"]["target_population"],
                     options=state["question"]["options"],
                     topic=state["methodology"]["topic"],
+                    # El tema lo decide el LLM y puede equivocarse: la consulta literal solo lo usa como bonificación.
+                    topic_filter=query != literal,
+                    sources=set(filter(None, settings.sources.split(","))) or None,
                     **filters,
-                ):
+                )
+                if query == literal:
+                    # Con muchas preguntas parecidas la misma pregunta de otra oleada podría quedar fuera del top-5
+                    # por opciones o tema: se añaden también las de mayor parecido de redacción.
+                    by_text = sorted(
+                        hits,
+                        key=lambda h: -question_similarity(literal, h["evidence"].get("question_text") or ""),
+                    )
+                    hits = [*hits[:5], *by_text[:5]]
+                for hit in hits:
                     e = hit["evidence"]
                     if e.get("metadata", {}).get("synthetic") and not repository.metadata.synthetic:
                         continue
                     found[e["evidence_id"]] = hit
+        spec = None
+        if anchors is not None and found:
+            spec = select_anchor(
+                list(found.values()),
+                state["question"],
+                settings.anchor_direct_similarity,
+                settings.anchor_prior_similarity,
+            )
+        analog = None
+        if settings.analog and rag:
+            analog = analog_for_question(
+                state["question"], evidence_repository, national_table, analog_config, filters,
+                sources=set(filter(None, settings.sources.split(","))) or None,
+            )
+            analog = {k: v for k, v in analog.items() if k != "weighted"}
+        ranked = sorted(found.values(), key=lambda h: -h["retrieval_score"])[: settings.max_evidence_hits]
+        if spec and spec["evidence_id"] not in {h["evidence"]["evidence_id"] for h in ranked}:
+            ranked = [*ranked[:-1], found[spec["evidence_id"]]]  # el ancla siempre se conserva
         return {
-            "retrieved_evidence": list(found.values()),
+            "retrieved_evidence": ranked,
+            "anchor_spec": spec,
+            **({"analog_result": analog} if analog else {}),
             "stages": ["retrieve_sociological_evidence"],
             "warnings": []
             if found
@@ -94,60 +192,273 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
         }
 
     async def interpret(state):
-        ids = {hit["evidence"]["evidence_id"] for hit in state["retrieved_evidence"]}
+        hits = state["retrieved_evidence"]
+        ids = {hit["evidence"]["evidence_id"] for hit in hits}
+        if not ids:
+            # Sin evidencia no hay nada que evaluar: preguntar al LLM invita a inventar evidencias.
+            empty = Assessment(items=[], missing_information=["Sin evidencia recuperada"])
+            return {"evidence_assessment": empty.model_dump(), "stages": ["interpret_evidence"]}
 
-        def validate(value):
-            returned = [item.evidence_id for item in value.items]
-            if set(returned) != ids or len(returned) != len(ids):
-                raise ValueError("Assessment debe evaluar exactamente cada evidence_id recuperado")
+        if not settings.llm_assessment:
+            spec = state.get("anchor_spec")
+            items = [
+                AssessmentItem(
+                    evidence_id=hit["evidence"]["evidence_id"],
+                    relevance="direct" if spec and hit["evidence"]["evidence_id"] == spec["evidence_id"] else "indirect",
+                    differences=["Evaluación determinista (sin LLM)"],
+                )
+                for hit in hits
+            ]
+            value = Assessment(items=items, missing_information=[])
+            return {"evidence_assessment": value.model_dump(), "stages": ["interpret_evidence:deterministic"]}
 
-        value = await service.call(
-            Assessment, {"question": state["question"], "evidence": state["retrieved_evidence"]}, validate
-        )
+        try:
+            value = await service.call(
+                Assessment,
+                {"question": state["question"], "evidence": compact_evidence(hits, {}, anchors, limit=None)},
+            )
+        except Exception as exc:
+            # Evaluación conservadora: toda la evidencia se considera indirecta, con aviso explícito.
+            note = f"Evaluación automática no disponible ({exc}); evidencia tratada como indirecta"
+            value = Assessment(
+                items=[
+                    AssessmentItem(
+                        evidence_id=hit["evidence"]["evidence_id"], relevance="indirect", differences=[note]
+                    )
+                    for hit in hits
+                ],
+                missing_information=[note],
+            )
+            return {
+                "evidence_assessment": value.model_dump(),
+                "warnings": [note],
+                "stages": ["interpret_evidence:fallback"],
+            }
+        # Conciliación tolerante: se ignoran ids desconocidos y a la evidencia sin valorar se le da valoración neutra.
+        by_id = {}
+        for item in value.items:
+            if item.evidence_id in ids and item.evidence_id not in by_id:
+                by_id[item.evidence_id] = item
+        missing = [i for i in ids if i not in by_id]
+        ignored = len(value.items) - len(by_id)
+        if missing or ignored:
+            for i in missing:
+                by_id[i] = AssessmentItem(
+                    evidence_id=i, relevance="indirect", differences=["Sin valoración del evaluador: neutral"]
+                )
+            note = f"Evaluador LLM incompleto ({len(missing)} sin valorar, {ignored} ignoradas): valoración neutra"
+            value = Assessment(items=[by_id[i] for i in sorted(by_id)], missing_information=[*value.missing_information, note])
+            return {"evidence_assessment": value.model_dump(), "warnings": [note], "stages": ["interpret_evidence:repaired"]}
         return {"evidence_assessment": value.model_dump(), "stages": ["interpret_evidence"]}
 
     def segment(state):
-        return {"segments": build_segments(repository, max_segments), "stages": ["segment_population"]}
+        wanted = state.get("methodology", {}).get("relevant_demographics", [])
+        return {
+            "segments": build_segments(repository, max_segments, dimensions=wanted),
+            "stages": ["segment_population"],
+        }
 
     def dispatch(state):
-        return {"stages": ["dispatch_segment_agents"]}
+        spec = state.get("anchor_spec")
+        incompatible = {
+            i["evidence_id"]
+            for i in state.get("evidence_assessment", {}).get("items", [])
+            if i["relevance"] == "incompatible"
+        }
+        warnings = []
+        if spec and spec["evidence_id"] in incompatible:
+            # El ancla supera el umbral de similitud y opciones equivalentes: el evaluador LLM no puede vetarla.
+            warnings.append(
+                f"El evaluador marcó como incompatible la evidencia ancla {spec['evidence_id']}; "
+                "se mantiene por similitud de redacción y opciones equivalentes"
+            )
+        return {"warnings": warnings, "stages": ["dispatch_segment_agents"]}
 
     def route(state):
-        allowed = {
-            item["evidence_id"]
-            for item in state["evidence_assessment"]["items"]
-            if item["relevance"] != "incompatible"
-        }
-        evidence = [hit for hit in state["retrieved_evidence"] if hit["evidence"]["evidence_id"] in allowed]
-        return [
-            Send(
-                "respondent_agent",
-                {
-                    "segment": s,
-                    "question": state["question"],
-                    "evidence": evidence,
-                    "assessment": state["evidence_assessment"],
-                    "population_metadata": state["population_metadata"],
-                },
+        assessment = state["evidence_assessment"]
+        spec = state.get("anchor_spec")
+        keep = (spec["evidence_id"],) if spec else ()
+        evidence = compact_evidence(state["retrieved_evidence"], assessment, anchors, keep_ids=keep)
+        total = sum(s["population_weight"] for s in state["segments"])
+        examples = []
+        analog_payload = None
+        analog_state = state.get("analog_result")
+        if analog_state and not (spec and spec["mode"] == "direct"):
+            n_examples = settings.few_shot or 3
+            analog_payload = {
+                "prior": {k: round(v, 4) for k, v in analog_state["prior"].items()},
+                "best_similarity": round(analog_state["best_similarity"], 3),
+                "examples": [
+                    {"question": a.get("question", a["evidence_id"]), "similarity": a["similarity"], "distribution": a.get("distribution")}
+                    for a in analog_state["analogs"][:n_examples]
+                ],
+            }
+        if settings.few_shot and not analog_payload and not (spec and spec["mode"] == "direct"):
+            examples = build_examples(
+                state["retrieved_evidence"], anchors, settings.few_shot, exclude_ids=(spec["evidence_id"],) if spec else ()
             )
-            for s in state["segments"]
-        ]
+        context = []
+        if context_store is not None:
+            # Solo hechos anteriores al inicio del trabajo de campo (el corte del backtest) o, sin él, al 30/06/2026.
+            before = filters.get("cutoff") or CONTEXT_CUTOFF.isoformat()
+            context = context_store.build(
+                state["question"]["question"], state.get("methodology", {}).get("topic"), before, anchors
+            )
+        sends = []
+        for s in state["segments"]:
+            anchor = None
+            if spec:
+                estimate = anchors.segment_distribution(spec, constraints_of(s))
+                anchor = {
+                    "mode": spec["mode"],
+                    "evidence_id": spec["evidence_id"],
+                    "study_id": spec["study_id"],
+                    "question_similarity": spec["similarity"],
+                    "prior": {k: round(v, 4) for k, v in estimate["probabilities"].items()},
+                    "national": {k: round(v, 4) for k, v in estimate["national"].items()},
+                    "basis": estimate["finest"],
+                    "levels": estimate["levels"],
+                    "max_shift": settings.anchor_max_shift,
+                }
+            if anchor is None and settings.corrector > 0 and analog_state and analog_state["analogs"]:
+                # LLM corrector: parte del prior por analogía y solo puede desviarse ±corrector por opción
+                rounded = {k: round(v, 4) for k, v in analog_state["prior"].items()}
+                anchor = {
+                    "mode": "prior",
+                    "evidence_id": analog_state["analogs"][0]["evidence_id"],
+                    "study_id": None,
+                    "question_similarity": analog_state["best_similarity"],
+                    "prior": rounded,
+                    "national": rounded,
+                    "basis": {"level": "analogía", "n": None, "n_eff": None},
+                    "levels": [],
+                    "max_shift": settings.corrector,
+                }
+            sends.append(
+                Send(
+                    "respondent_agent",
+                    {
+                        "segment": compact_segment(s, total),
+                        "question": state["question"],
+                        "evidence": evidence,
+                        "anchor": anchor,
+                        **({"examples": examples} if examples else {}),
+                        **({"analog": analog_payload} if analog_payload else {}),
+                        **({"context": context} if context else {}),
+                    },
+                )
+            )
+        return sends
 
     async def respondent(state):
         segment_id = state["segment"]["segment_id"]
         question = state["question"]
-        ids = [hit["evidence"]["evidence_id"] for hit in state["evidence"]]
+        options, qtype = question["options"], question["question_type"]
+        anchor = state.get("anchor")
+        ids = [e["evidence_id"] for e in state["evidence"]]
+        if anchor and anchor["evidence_id"] not in ids:
+            ids.append(anchor["evidence_id"])  # la ancla es siempre una evidencia citable
+        # solo se conservan citas a evidencias recuperadas (las únicas que la agregación acepta)
+        cite_ok = {e["evidence_id"] for e in state["evidence"]}
+        runs = settings.stability_runs
+
+        def check(p):
+            p.validate_context(segment_id, options, ids, qtype)
+
         try:
-            payload = {**state, "options": question["options"]}
-            value = await service.call(
-                Prediction,
-                payload,
-                lambda p: p.validate_context(segment_id, question["options"], ids, question["question_type"]),
+            if anchor and anchor["mode"] == "direct":
+                # Misma pregunta en el CIS: estadística directa del segmento, sin intervención del LLM.
+                basis = anchor["basis"]
+                value = Prediction(
+                    segment_id=segment_id,
+                    probabilities=anchor["prior"],
+                    explanation=f"Estadística directa del CIS (estudio {anchor['study_id']}, pregunta "
+                    f"{anchor['evidence_id']}) para el perfil del segmento: nivel {basis['level']}, "
+                    f"n={basis['n']}, n efectivo={basis['n_eff']}.",
+                    evidence_ids=[anchor["evidence_id"]],
+                    limitations=[
+                        "Sin ajuste por cambios desde el trabajo de campo",
+                        "Contracción jerárquica hacia niveles superiores",
+                    ],
+                )
+                if qtype == "single":
+                    value = value.renormalized()
+                check(value)
+                dump = value.model_dump()
+                dump["anchor"] = {
+                    "mode": "direct",
+                    "basis": basis,
+                    "evidence_id": anchor["evidence_id"],
+                    "prior": anchor["prior"],
+                }
+                dump["stability"] = {"runs": 1, "mean_pairwise_divergence": None, "deterministic": True}
+                return {"segment_predictions": {segment_id: dump}, "stages": [f"respondent_agent:{segment_id}:direct"]}
+
+            async def sample(i):
+                payload = {**state, "options": options}
+                if runs > 1:
+                    payload["sample"] = i
+                value = await service.call(
+                    Prediction,
+                    payload,
+                    check,
+                    repair=lambda p: _cited_only(p.renormalized() if qtype == "single" else p, cite_ok),
+                    temperature=settings.stability_temperature if runs > 1 else None,
+                )
+                raw = dict(value.probabilities)
+                if anchor and anchor["mode"] == "prior":
+                    prior = np.array([anchor["prior"][o] for o in options])
+                    low = np.clip(prior - anchor["max_shift"], 0, 1)
+                    high = np.clip(prior + anchor["max_shift"], 0, 1)
+                    values = np.array([raw[o] for o in options])
+                    final = project_to_band(values, low, high) if qtype == "single" else np.clip(values, low, high)
+                    value = value.model_copy(update={"probabilities": {o: float(p) for o, p in zip(options, final)}})
+                    check(value)
+                return value, raw
+
+            results = await asyncio.gather(*[sample(i) for i in range(runs)], return_exceptions=True)
+            good = [r for r in results if not isinstance(r, Exception)]
+            if not good:
+                raise results[0]
+            values = [v for v, _ in good]
+            mean = {o: float(np.mean([v.probabilities[o] for v in values])) for o in options}
+            blend_info = None
+            analog_in = state.get("analog")
+            if blend_model is not None and analog_in and qtype == "single":
+                # Mezcla calibrada: afilar(w·p_LLM + (1−w)·p_prior, α) con (w, α) según la similitud de la mejor análoga
+                row = {"sim": analog_in["best_similarity"], "p_llm": mean, "p_prior": analog_in["prior"]}
+                w, alpha = blend_model.params[blend_model.bin(row["sim"])]
+                blend_info = {"w": w, "alpha": alpha, "similarity": row["sim"], "llm_mean": mean}
+                mean = blend_model.apply(row)
+            first = values[0]
+            merged = first.model_copy(
+                update={
+                    "probabilities": mean,
+                    "evidence_ids": sorted({e for v in values for e in v.evidence_ids}),
+                    "limitations": list(dict.fromkeys(item for v in values for item in v.limitations)),
+                }
             )
-            return {
-                "segment_predictions": {segment_id: value.model_dump()},
-                "stages": [f"respondent_agent:{segment_id}"],
+            check(merged)
+            dump = merged.model_dump()
+            if blend_info:
+                dump["blend"] = blend_info
+            dump["stability"] = {
+                "runs": len(values),
+                "requested_runs": runs,
+                "mean_pairwise_divergence": pairwise_divergence([v.probabilities for v in values], qtype),
             }
+            if runs > 1:
+                dump["repetitions"] = [v.probabilities for v in values]
+            if anchor and anchor["mode"] == "prior":
+                dump["llm_probabilities"] = good[0][1]
+                dump["anchor"] = {
+                    "mode": "prior",
+                    "basis": anchor["basis"],
+                    "evidence_id": anchor["evidence_id"],
+                    "prior": anchor["prior"],
+                    "max_shift": anchor["max_shift"],
+                }
+            return {"segment_predictions": {segment_id: dump}, "stages": [f"respondent_agent:{segment_id}"]}
         except Exception as exc:
             return {
                 "errors": [{"segment_id": segment_id, "error": str(exc)}],
@@ -169,35 +480,69 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
                 "execution_metadata": {"coverage": coverage, "status": "failed"},
                 "stages": ["aggregate_predictions"],
             }
-        national = aggregate(state["segments"], predictions, q["options"], q["question_type"])
+        allowed = {hit["evidence"]["evidence_id"] for hit in state["retrieved_evidence"]}
+        national = aggregate(state["segments"], predictions, q["options"], q["question_type"], allowed)
+        raw = None
+        mode = (state.get("anchor_spec") or {}).get("mode", "none")
+        tau = ((calibration or {}).get("sharpening", {}).get(mode) or {}).get("tau", 1.0)
+        subgroups = subgroup_distributions(
+            state["segments"], predictions, q["options"], q["question_type"], evidence_ids=allowed
+        )
+        if settings.sharpen and tau != 1.0 and q["question_type"] == "single":
+            # Ajuste de nitidez aprendido por validación cruzada en el backtest (calibration.json)
+            raw = national
+            national = sharpen(national, tau)
+            subgroups = {d: {c: sharpen(dist, tau) for c, dist in cats.items()} for d, cats in subgroups.items()}
         return {
+            **({"national_distribution_raw": raw, "sharpening": {"tau": tau, "mode": mode}} if raw else {}),
             "national_distribution": national,
-            "subgroup_distributions": subgroup_distributions(
-                state["segments"], predictions, q["options"], q["question_type"]
-            ),
+            "subgroup_distributions": subgroups,
+            "subgroup_resolution": subgroup_resolution(state["segments"]),
             "execution_metadata": {"coverage": coverage, "status": "completed"},
             "stages": ["aggregate_predictions"],
         }
 
     def auditing(state):
+        q = state["question"]
+        predictions = state["segment_predictions"]
+        spec = state.get("anchor_spec")
+        try:
+            stability = stability_summary(state["segments"], predictions, q["question_type"], q["options"])
+        except Exception:  # la estabilidad es diagnóstica: nunca debe tumbar la simulación
+            stability = {"measured": False, "js_divergence": None}
         return {
             "trust_metrics": audit(
-                state["retrieved_evidence"], repository.metadata, state["segment_predictions"]
+                state["retrieved_evidence"],
+                repository.metadata,
+                predictions,
+                stability=stability,
+                calibration=calibration,
+                national=state.get("national_distribution") or None,
+                anchor_mode=spec["mode"] if spec else "none",
+                topic=state.get("methodology", {}).get("topic"),
+                model=service.provider.name,
+                alpha=settings.interval_alpha,
+                min_cases=settings.min_calibration_cases,
             ),
             "stages": ["audit_confidence"],
         }
 
     async def analyst(state):
-        narrative = await service.call(
-            Narrative,
-            {
-                "national_distribution": state["national_distribution"],
-                "subgroup_distributions": state["subgroup_distributions"],
-                "evidence": state["retrieved_evidence"],
-                "trust_metrics": state["trust_metrics"],
-                "warnings": state["warnings"],
-            },
-        )
+        try:
+            narrative = await service.call(
+                Narrative,
+                {
+                    "national_distribution": state["national_distribution"],
+                    "subgroup_distributions": state["subgroup_distributions"],
+                    "evidence": compact_evidence(state["retrieved_evidence"], state["evidence_assessment"], anchors),
+                    "trust_metrics": state["trust_metrics"],
+                    "warnings": state["warnings"],
+                },
+            )
+            stage = "analyst_agent"
+        except Exception as exc:
+            narrative = Narrative(summary=f"Narrativa no disponible ({exc}). Las cifras son las del modelo.")
+            stage = "analyst_agent:fallback"
         # Numerical results remain authoritative, separate from generated interpretation.
         return {
             "final_report": {
@@ -205,7 +550,8 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
                 "model_estimates": state["national_distribution"],
                 "synthetic_explanations": True,
             },
-            "stages": ["analyst_agent"],
+            "stages": [stage],
+            "warnings": [] if stage == "analyst_agent" else [narrative.summary],
         }
 
     graph = StateGraph(SimulationState)
@@ -247,10 +593,21 @@ def build_graph(repository, evidence_repository, service, max_segments=5, rag=Tr
 
 
 async def simulate(
-    question, repository, evidence_repository, service, max_segments=5, rag=True, retrieval_filters=None
+    question,
+    repository,
+    evidence_repository,
+    service,
+    max_segments=5,
+    rag=True,
+    retrieval_filters=None,
+    anchors=None,
+    calibration=None,
+    context_store=None,
 ):
     started = time.monotonic()
-    graph = build_graph(repository, evidence_repository, service, max_segments, rag, retrieval_filters)
+    graph = build_graph(
+        repository, evidence_repository, service, max_segments, rag, retrieval_filters, anchors, calibration, context_store
+    )
     state = await asyncio.wait_for(
         graph.ainvoke(
             {
@@ -273,6 +630,9 @@ async def simulate(
             "synthetic": service.provider.synthetic or repository.metadata.synthetic,
             "llm_calls": service.calls,
             "rag": rag,
+            "anchors": anchors is not None,
+            "context_warnings": getattr(service.provider, "context_warnings", 0),
+            "runtime": getattr(service.provider, "info", None),
         }
     )
     return state
