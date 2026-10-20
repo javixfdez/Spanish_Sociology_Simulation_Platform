@@ -1,6 +1,6 @@
 # Guion y respaldo de la demo
 
-Prueba hecha el 2026-10-19 con el código de la rama `javier-picazo` (RTX 4060 Laptop 8 GB, Ollama 0.40.6, KV q8_0, atención flash, paralelo 2, `qwen3:8b`; servidor del modelo ajustado B en el puerto 8765).
+Prueba hecha el 2026-10-19 con el código de la versión v1.0 (rama `main`) (RTX 4060 Laptop 8 GB, Ollama 0.40.6, KV q8_0, atención flash, paralelo 2, `qwen3:8b`; servidor del modelo ajustado B en el puerto 8765).
 Las llamadas son las mismas que hace la interfaz (`service.predict` y la explicación con comprobación de cifras); se repiten con `python -m mavericks.demo_run rapido|llm|ajustado` y `python -m mavericks.demo_run report`.
 Condiciones: **rápido** sin Ollama ni servidor (Ollama parado, 0 MiB de VRAM); **con LLM** con Ollama; **ajustado** con `scripts\run_server.ps1` y Ollama a la vez.
 

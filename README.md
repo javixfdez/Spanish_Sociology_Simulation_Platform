@@ -10,7 +10,7 @@ identifican como **DEMO / SYNTHETIC** y no tienen validez sociológica.
 **Requisitos:** Python 3.11 o superior e internet la primera vez (≈ 1,5 GB entre datos y modelo e5). **Sin GPU funciona el modo rápido** (el modo por defecto, ≈ 2 s por pregunta). El modo ajustado necesita una GPU NVIDIA de 8 GB; el modo con LLM, [Ollama](https://ollama.com) (opcional).
 
 ```powershell
-git clone -b javier-picazo https://github.com/javixfdez/Spanish_Sociology_Simulation_Platform.git; cd Spanish_Sociology_Simulation_Platform
+git clone https://github.com/javixfdez/Spanish_Sociology_Simulation_Platform.git; cd Spanish_Sociology_Simulation_Platform
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1      # Windows. En otro sistema: pip install uv && uv sync --extra embed --extra hub && uv run mavericks setup --skip-sync
 uv run streamlit run app.py
 ```
@@ -18,12 +18,23 @@ uv run streamlit run app.py
 `setup` comprueba Python y uv, instala las dependencias, descarga los datos (con el enlace público de Google Drive, o con `MAVERICKS_ASSETS_URL` de `.env` si lo cambias, y si no hay enlace o falla, desde Hugging Face), descarga el adaptador del modo ajustado solo si hay GPU NVIDIA de 8 GB o más, descarga el modelo e5 y prueba una pregunta en modo rápido.
 Es repetible: lo que ya está descargado y verificado no se vuelve a bajar. **Datos sin cuenta de Hugging Face:** el paquete (43 MB) está en Google Drive, «cualquiera con el enlace»: <https://drive.google.com/file/d/1lyun3Jnb9WFLjwdE0bsxK4WRNDFqSete/view?usp=sharing>. Es la vía por defecto para quien no tenga acceso al repositorio privado: copia `.env.example` a `.env` (ya trae `MAVERICKS_ASSETS_URL` con ese enlace) o pásalo con `-FromUrl <enlace>` / `mavericks fetch-assets --from-url <enlace>`; se verifica el sha256 de cada archivo contra el manifest del zip (el zip entero: `4fc74820…`).
 
+**Redes que inspeccionan el TLS (universidad, empresa, antivirus):** esas redes sustituyen el certificado de las webs por uno propio que Python y uv no reconocen, y `setup` falla al bajar paquetes con `invalid peer certificate: UnknownIssuer` o `CERTIFICATE_VERIFY_FAILED`. Solución: pide a uv que use los certificados del sistema, donde ya está el de tu red, y repite `setup` (es repetible). `scripts\setup.ps1` ya lo activa por ti; en otros casos:
+
+```powershell
+$env:UV_SYSTEM_CERTS = "1"; $env:UV_NATIVE_TLS = "1"      # Windows (PowerShell)
+```
+```sh
+export UV_SYSTEM_CERTS=1 UV_NATIVE_TLS=1                  # Linux / macOS
+```
+
+Las descargas de datos de `mavericks` (Google Drive y Hugging Face) también usan los certificados del sistema. Si aun así falla, descarga el zip desde el enlace de Drive con el navegador y úsalo en local: `uv run mavericks fetch-assets --from ruta/mavericks_assets_v1.zip`; los paquetes de Python los puede instalar quien tenga la red sin inspección o con el proxy corporativo configurado (`HTTPS_PROXY`).
+
 **Si falla:**
 
 | Qué ves | Qué hacer |
 |---|---|
 | `No se encuentra Python` / `uv` | Instala Python 3.11+ desde python.org (marcando «Add to PATH»); el script instala uv solo (`python -m pip install --user uv`). |
-| Errores de certificado TLS al descargar | `$env:UV_SYSTEM_CERTS = "1"` (el script ya lo activa) y repite; es típico de antivirus o redes con inspección TLS. |
+| Errores de certificado TLS al descargar (`invalid peer certificate: UnknownIssuer`, `CERTIFICATE_VERIFY_FAILED`) | Ver «Redes que inspeccionan el TLS» justo debajo. |
 | `No se pudieron descargar los datos` | Hay tres vías: enlace (`mavericks fetch-assets --from-url <enlace>` o `MAVERICKS_ASSETS_URL` en `.env`), Hugging Face (repositorio **privado**: pide acceso a `JaviPica` y haz `uv run hf auth login`) o un zip local (`mavericks fetch-assets --from ruta\mavericks_assets_v1.zip`). |
 | `Modo ajustado NO disponible` | No hay GPU NVIDIA de 8 GB: el modo rápido funciona igual. Si la hay, ver «Modo ajustado» (entorno `.venv_ft` y `scripts\run_server.ps1`). |
 | El modo con LLM no responde | Instala Ollama y `ollama pull qwen3:8b`; si no, la app usa el modo rápido y lo avisa. |

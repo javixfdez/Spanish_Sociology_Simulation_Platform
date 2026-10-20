@@ -1,4 +1,4 @@
-# Estado de entrega (rama `javier-picazo`)
+# Estado de entrega (rama `main`, v1.0)
 
 ## Implementado y verificado con datos reales
 
