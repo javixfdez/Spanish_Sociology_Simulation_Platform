@@ -13,7 +13,7 @@ from mavericks.service import (
 )
 from mavericks.topics import TOPICS
 from mavericks.ui_common import PRESET_HELP, PRESET_LABELS, get_resources, llm_service, setup, warm_embedder
-from mavericks.ui_result import render, render_coverage
+from mavericks.ui_result import render, render_coverage, render_synthetic
 
 setup()
 
@@ -160,5 +160,6 @@ if analysis:
 
 if "result" in st.session_state and analysis:
     render(st.session_state["result"], llm=st.session_state.get("text_service"), timeout=Settings().explanation_timeout)
+    render_synthetic(st.session_state["result"], get_resources())
 elif not analysis:
     st.info("Escribe una pregunta y pulsa **Analizar pregunta**, o abre un ejemplo en la barra lateral.")

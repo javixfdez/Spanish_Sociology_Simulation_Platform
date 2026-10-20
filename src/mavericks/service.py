@@ -788,6 +788,11 @@ def predict(
     evidence = _evidence_entries(resources.evidence, resources.table, items)
     subgroups, subgroup_method = _subgroups(resources, options, mode, spec, group_specs, national, sub_radius, ft_groups)
     measured, measured_note = _measured(resources, mode, spec, options, evidence, crosses, legacy_llm)
+    if mode == "direct" and spec is not None and not legacy_llm:  # antigüedad de la oleada de la pregunta (también sin bloque medido)
+        anchor_date = next((e["fieldwork_end"] for e in evidence if e["evidence_id"] == spec["evidence_id"]), None)
+        age = measured["age_warning"] if measured else measured_mod.age_warning(anchor_date)
+        if age:
+            warnings.append(age)
     cross_items, cross_note = [], None
     if crosses:
         cross_items, cross_note, cross_warnings = _crosses(resources, options, mode, spec, national, sub_radius, crosses, legacy_llm)
@@ -821,6 +826,7 @@ def predict(
         "subgroups": subgroups,
         "subgroup_note": None if mode == "direct" else SUBGROUP_NOTE,
         "intent": intent if intent in ("consulta_dato", "prediccion") else assist.detect_intent(question),
+        "anchor": {"study_id": str(spec["study_id"]), "evidence_id": spec["evidence_id"], "mapping": spec["mapping"]} if mode == "direct" and spec is not None and not legacy_llm else None,
         "measured": measured,
         "measured_note": measured_note,
         "subgroups_method": subgroup_method,

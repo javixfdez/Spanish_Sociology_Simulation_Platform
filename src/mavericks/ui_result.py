@@ -82,6 +82,8 @@ def render_measured(result):
         f"Estudio {m['study_id']} · trabajo de campo {m['fieldwork_end'] or 's/f'} · {nat['n']} encuestados (n efectivo {nat['n_eff']:.0f}). "
         "Reparto ponderado de los microdatos, sin ningún modelo; la barra es el margen de error muestral al 95 % (±1,96·√(p(1−p)/n efectivo))."
     )
+    if m.get("age_warning"):
+        st.warning(m["age_warning"])
     st.plotly_chart(distribution_bars(nat["distribution"], nat["interval"]), use_container_width=True, key="measured_national")
     table = pd.DataFrame([{"Opción": o, "Medido (%)": 100 * nat["distribution"][o], "± puntos": 100 * nat["margin"][o]} for o in nat["distribution"]])
     st.dataframe(table.round(1), hide_index=True, use_container_width=True)
@@ -176,6 +178,30 @@ def render_subgroups(result, key="sub"):
             "Los grupos con pocas entrevistas en el CIS se acercan al conjunto de la población "
             "para no sacar conclusiones de muestras pequeñas."
         )
+
+
+def render_synthetic(result, resources, key="syn"):
+    """«Ver la población sintética»: 200 personas con su perfil, su probabilidad por opción y una respuesta simulada; descarga de las 50.000 en CSV."""
+    from . import synthetic
+
+    st.subheader("Ver la población sintética")
+    if not st.toggle("Mostrar una muestra de la población sintética para esta pregunta", key=f"{key}_toggle"):
+        st.caption("Cada persona de la población sintética (50.000 adultos) tiene una probabilidad por opción y una respuesta simulada; el reparto de todas coincide con la estimación mostrada.")
+        return
+    cache_key = f"{key}_frame_{hash((result['question'], tuple(result['options'])))}"
+    if cache_key not in st.session_state:
+        with st.spinner("Calculando la probabilidad de cada persona…"):
+            st.session_state[cache_key] = synthetic.population_frame(resources, result)
+    frame, method = st.session_state[cache_key]
+    shares = synthetic.aggregate(frame, result["options"])
+    st.caption(
+        f"Probabilidades por persona: {method}, recalibradas al reparto nacional mostrado; respuesta simulada por muestreo con semilla fija ({synthetic.SEED}). "
+        "Son una forma de ver la estimación a nivel individual, no personas reales."
+    )
+    st.dataframe(synthetic.sample(frame).round(3), hide_index=True, use_container_width=True)
+    table = pd.DataFrame({"Opción": result["options"], "Estimación nacional (%)": [100 * result["national"]["distribution"][o] for o in result["options"]], "Agregando las 50.000 respuestas simuladas (%)": [100 * shares[o] for o in result["options"]]})
+    st.dataframe(table.round(1), hide_index=True, use_container_width=True)
+    st.download_button("Descargar las 50.000 personas (CSV)", synthetic.to_csv(frame), file_name="poblacion_sintetica_pregunta.csv", mime="text/csv", key=f"{key}_download")
 
 
 def render_crosses(result):

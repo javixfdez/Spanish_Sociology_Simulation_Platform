@@ -5,6 +5,29 @@ segmento recibe una estimación anclada en los microdatos reales del CIS y un gr
 nacional y por subgrupos junto con una estimación de cuánto fiarse. Las ejecuciones con Mock y las fixtures se
 identifican como **DEMO / SYNTHETIC** y no tienen validez sociológica.
 
+## Empezar en 5 minutos
+
+**Requisitos:** Python 3.11 o superior e internet la primera vez (≈ 1,5 GB entre datos y modelo e5). **Sin GPU funciona el modo rápido** (el modo por defecto, ≈ 2 s por pregunta). El modo ajustado necesita una GPU NVIDIA de 8 GB; el modo con LLM, [Ollama](https://ollama.com) (opcional).
+
+```powershell
+git clone -b javier-picazo https://github.com/javixfdez/Spanish_Sociology_Simulation_Platform.git; cd Spanish_Sociology_Simulation_Platform
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1      # Windows. En otro sistema: pip install uv && uv sync --extra embed --extra hub && uv run mavericks setup --skip-sync
+uv run streamlit run app.py
+```
+
+`setup` comprueba Python y uv, instala las dependencias, descarga los datos (con el enlace `MAVERICKS_ASSETS_URL` de `.env`, si lo hay, y si no desde Hugging Face), descarga el adaptador del modo ajustado solo si hay GPU NVIDIA de 8 GB o más, descarga el modelo e5 y prueba una pregunta en modo rápido.
+Es repetible: lo que ya está descargado y verificado no se vuelve a bajar. Para que `setup` use un enlace de descarga, copia `.env.example` a `.env` y rellena `MAVERICKS_ASSETS_URL` (enlace de Google Drive «cualquiera con el enlace»), o pásalo con `-FromUrl <enlace>`.
+
+**Si falla:**
+
+| Qué ves | Qué hacer |
+|---|---|
+| `No se encuentra Python` / `uv` | Instala Python 3.11+ desde python.org (marcando «Add to PATH»); el script instala uv solo (`python -m pip install --user uv`). |
+| Errores de certificado TLS al descargar | `$env:UV_SYSTEM_CERTS = "1"` (el script ya lo activa) y repite; es típico de antivirus o redes con inspección TLS. |
+| `No se pudieron descargar los datos` | Hay tres vías: enlace (`mavericks fetch-assets --from-url <enlace>` o `MAVERICKS_ASSETS_URL` en `.env`), Hugging Face (repositorio **privado**: pide acceso a `JaviPica` y haz `uv run hf auth login`) o un zip local (`mavericks fetch-assets --from ruta\mavericks_assets_v1.zip`). |
+| `Modo ajustado NO disponible` | No hay GPU NVIDIA de 8 GB: el modo rápido funciona igual. Si la hay, ver «Modo ajustado» (entorno `.venv_ft` y `scripts\run_server.ps1`). |
+| El modo con LLM no responde | Instala Ollama y `ollama pull qwen3:8b`; si no, la app usa el modo rápido y lo avisa. |
+
 ## Flujo de trabajo
 
 ```mermaid
@@ -33,7 +56,7 @@ descargar Python o paquetes, `UV_SYSTEM_CERTS=1`; en PowerShell `$env:UV_SYSTEM_
 
 ```sh
 uv sync --extra embed      # --extra embed: sentence-transformers para e5 (prior aprendido); sin él la demo usa solo el KNN
-uv run pytest -q           # 326 tests (12 necesitan los datos reales y se omiten sin ellos)
+uv run pytest -q           # 337 tests (12 necesitan los datos reales y se omiten sin ellos)
 uv run ruff check src tests app.py main.py
 ```
 
@@ -77,7 +100,7 @@ uv run streamlit run app.py
 
 La app necesita archivos que **no están en git** (inventario con tamaños y fuentes en [docs/datos.md](docs/datos.md)). Tres caminos:
 
-**A. Descargarlos (lo más rápido, ≈ 2 minutos).** Los repositorios de Hugging Face son **privados**: pide acceso a `JaviPica` y entra con tu cuenta.
+**A. Descargarlos (lo más rápido, ≈ 2 minutos).** El adaptador está en un repositorio **público** de Hugging Face; los datos, en uno **privado** (pide acceso a `JaviPica` y entra con tu cuenta) o en un enlace de descarga (`MAVERICKS_ASSETS_URL`).
 
 ```sh
 uv sync --extra embed --extra hub
@@ -87,7 +110,7 @@ uv run mavericks fetch-adapter            # solo modo ajustado: modelo JaviPica/
 uv run streamlit run app.py
 ```
 
-Medido en un clon limpio: `fetch-assets` 47 s, `fetch-adapter` 12 s, y los 275 tests pasan con los archivos descargados (el aviso de «symlinks» de Hugging Face en Windows es inofensivo). `fetch-assets --from ruta/mavericks_assets_v1.zip` usa un zip local (sin internet). El paquete contiene solo agregados y datos procesados (población sintética, microdatos procesados del CIS de estudios **no reservados**,
+Medido en un clon limpio: `fetch-assets` 47 s, `fetch-adapter` 12 s, y los 275 tests pasan con los archivos descargados (el aviso de «symlinks» de Hugging Face en Windows es inofensivo). `fetch-assets --from-url <enlace>` descarga el zip de cualquier enlace directo o de Google Drive («cualquiera con el enlace», incluida la página de aviso de virus de los archivos grandes); el orden por defecto es `MAVERICKS_ASSETS_URL` (entorno o `.env`) → Hugging Face → error con las tres vías. `fetch-assets --from ruta/mavericks_assets_v1.zip` usa un zip local (sin internet). El repositorio del adaptador (`JaviPica/mavericks-qwen3-4b-cis`) es **público** y no necesita login. El paquete contiene solo agregados y datos procesados (población sintética, microdatos procesados del CIS de estudios **no reservados**,
 almacén de evidencia, modelo del prior y resultados de validación); no incluye `maverick_data/` ni los ficheros originales del Eurobarómetro o la ESS. Quien mantiene el paquete lo regenera con `uv run mavericks pack-assets`.
 El modo con LLM necesita además Ollama, y el ajustado el entorno `.venv_ft`, la base Qwen y `scripts\run_server.ps1` (ver «Modo ajustado»).
 

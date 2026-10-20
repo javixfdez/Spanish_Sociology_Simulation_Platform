@@ -5,6 +5,8 @@ Lo que la app necesita además del código. Nada de esto está en git (`data/pro
 o **regenerándolo** con los ETL del README a partir de `maverick_data/raw` (que no se redistribuye). El paquete lo crea `mavericks pack-assets` (versión 1, 2026-10-19 15:37); su `manifest.json`
 lleva ruta, tamaño y sha256 de cada archivo.
 
+Acceso: el adaptador (`JaviPica/mavericks-qwen3-4b-cis`) es un repositorio **público**; el paquete de datos (`JaviPica/mavericks-assets`) es **privado** en Hugging Face y además se puede descargar desde un enlace (`MAVERICKS_ASSETS_URL` en `.env`, p. ej. Google Drive «cualquiera con el enlace»). `mavericks setup` lo hace todo (README, «Empezar en 5 minutos»).
+
 ## 1. Modo rápido (por defecto): sin Ollama ni GPU
 
 Archivos del paquete de ejecución (81.7 MB sin comprimir; el zip pesa unos 43 MB):

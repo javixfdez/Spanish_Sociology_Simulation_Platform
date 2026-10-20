@@ -111,10 +111,16 @@ def parser():
     tp.add_argument("--seed", type=int, default=0)
     cp = commands.add_parser("calibrate-prior", help="Cuantiles de los rangos y tabla de validación del prior (outputs/models)")
     cp.add_argument("--out", default="outputs/models")
+    su = commands.add_parser("setup", help="Deja la app lista: comprueba Python y uv, instala dependencias, descarga datos, adaptador (si hay GPU) y e5, y prueba una pregunta")
+    su.add_argument("--skip-sync", action="store_true", help="No ejecuta uv sync (ya lo ha hecho scripts/setup.ps1)")
+    su.add_argument("--no-adapter", action="store_true", help="No descarga el adaptador del modo ajustado")
+    su.add_argument("--from", dest="local_zip", help="Zip local de datos en vez de descargarlo")
+    su.add_argument("--from-url", dest="url", help="Enlace de descarga del zip de datos")
     pa = commands.add_parser("pack-assets", help="Crea dist/mavericks_assets_v1.zip con los archivos fuera de git que necesita la app (sin el adaptador)")
     pa.add_argument("--out", default="dist/mavericks_assets_v1.zip")
     fa = commands.add_parser("fetch-assets", help="Descarga de Hugging Face (o de un zip local) los archivos que necesita la app y verifica sus sha256")
-    fa.add_argument("--from", dest="local_zip", help="Zip local en vez de Hugging Face")
+    fa.add_argument("--from", dest="local_zip", help="Zip local en vez de descargarlo")
+    fa.add_argument("--from-url", dest="url", help="Enlace de descarga del zip (p. ej. Google Drive «cualquiera con el enlace»); si no se indica se usa MAVERICKS_ASSETS_URL (entorno o .env) y, después, Hugging Face")
     fa.add_argument("--repo", default="JaviPica/mavericks-assets")
     fa.add_argument("--dest", default=".")
     fd = commands.add_parser("fetch-adapter", help="Descarga el adaptador B (modo ajustado) de Hugging Face y verifica su sha256")
@@ -327,6 +333,10 @@ def run(args):
         payload["chosen"] = "by_mode"
         fastcal.save(args.out, payload)
         return {"cases": len(rows), "cv_by_mode": payload["by_mode"]["cv"], "cv_by_buckets": payload["by_buckets"]["cv"]}
+    if args.command == "setup":
+        from . import setup as setup_module
+
+        return setup_module.run(skip_sync=args.skip_sync, no_adapter=args.no_adapter, local_zip=args.local_zip, url=args.url)
     if args.command == "pack-assets":
         from . import assets
 
@@ -334,7 +344,7 @@ def run(args):
     if args.command == "fetch-assets":
         from . import assets
 
-        return assets.fetch_assets(args.local_zip, args.repo, dest=args.dest)
+        return assets.fetch_assets(args.local_zip, args.repo, dest=args.dest, url=args.url)
     if args.command == "fetch-adapter":
         from . import assets
 

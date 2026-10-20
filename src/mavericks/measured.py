@@ -14,6 +14,22 @@ NO_MEASURED = "No hay dato medido: esta pregunta no se ha hecho en el CIS; lo qu
 SMALL_NOTE = "Muestra pequeña: el dato medido es poco fiable; mira la estimación del modelo."
 
 
+REFERENCE_DATE = "2026-06-30"  # fecha de corte de los datos del reto
+MAX_AGE_MONTHS = 12
+MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def age_warning(fieldwork_end, reference=REFERENCE_DATE):
+    """Aviso si el trabajo de campo tiene más de 12 meses respecto al 30/06/2026: «Dato de <mes año>: la opinión puede haber cambiado desde entonces»."""
+    if not fieldwork_end or len(str(fieldwork_end)) < 7:
+        return None
+    year, month = int(str(fieldwork_end)[:4]), int(str(fieldwork_end)[5:7])
+    ref_year, ref_month = int(reference[:4]), int(reference[5:7])
+    if (ref_year - year) * 12 + (ref_month - month) > MAX_AGE_MONTHS:
+        return f"Dato de {MONTHS[month - 1]} de {year}: la opinión puede haber cambiado desde entonces."
+    return None
+
+
 def tabulate(frame, options):
     """(reparto, margen, n, n_eff) de un conjunto de respuestas: una fila por encuestado, ``answer`` ya expresada con las opciones y ``peso``."""
     f = frame[frame["answer"].isin(options)].drop_duplicates("respondent_uid")
@@ -43,7 +59,8 @@ def block(resources, spec, options, study_date, crosses=()):
     total = tabulate(frame, options)
     if total is None:
         raise ValueError("la oleada de la pregunta no tiene respuestas sustantivas")
-    out = {"study_id": str(spec["study_id"]), "evidence_id": spec["evidence_id"], "fieldwork_end": study_date, "national": _entry(*total, options), "crosses": [], "note": None}
+    out = {"study_id": str(spec["study_id"]), "evidence_id": spec["evidence_id"], "fieldwork_end": study_date, "national": _entry(*total, options), "crosses": [], "note": None,
+           "age_warning": age_warning(study_date)}
     for cross in crosses:
         sub = frame
         for var, category in cross:

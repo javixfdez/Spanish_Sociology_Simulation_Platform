@@ -9,7 +9,11 @@ reservados (publicados desde 2026-04-01) se quitan de los microdatos y de la tab
 """
 
 import hashlib
+import html
 import json
+import os
+import re
+import sys
 import tempfile
 import time
 import zipfile
@@ -151,12 +155,103 @@ def _hub():
     return huggingface_hub
 
 
-def fetch_assets(local_zip=None, repo=ASSETS_REPO, filename=ASSETS_FILE, dest="."):
-    """Descarga el zip de Hugging Face (usa el login guardado) o toma uno local, lo descomprime en ``dest`` y verifica los sha256 del manifest."""
+URL_VARIABLE = "MAVERICKS_ASSETS_URL"
+WAYS = (
+    "Hay tres vías para conseguir los datos:\n"
+    "  1) un enlace de descarga (p. ej. de Google Drive, «cualquiera con el enlace»): `mavericks fetch-assets --from-url <enlace>` o `MAVERICKS_ASSETS_URL=<enlace>` en el archivo .env;\n"
+    "  2) Hugging Face (repositorio privado, hay que pedir acceso a JaviPica): `uv run hf auth login` y después `mavericks fetch-assets`;\n"
+    "  3) un zip local: `mavericks fetch-assets --from ruta/mavericks_assets_v1.zip`."
+)
+
+
+def env_value(name, env_file=".env"):
+    """Valor de una variable del entorno o, si no está, del archivo .env (formato CLAVE=valor)."""
+    if os.environ.get(name):
+        return os.environ[name].strip()
+    path = Path(env_file)
+    if path.exists():
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == name and value.strip():
+                return value.strip().strip("\"'")
+    return None
+
+
+def drive_file_id(url):
+    """Identificador de un archivo de Google Drive a partir de cualquiera de sus enlaces habituales, o None si no es de Drive."""
+    if not re.search(r"(drive|docs)\.google\.com|drive\.usercontent\.google\.com", url):
+        return None
+    match = re.search(r"/d/([\w-]{15,})", url) or re.search(r"[?&]id=([\w-]{15,})", url)
+    return match.group(1) if match else None
+
+
+def _stream_to_file(response, target, label):
+    total = int(response.headers.get("Content-Length") or 0)
+    done, last = 0, 0.0
+    with open(target, "wb") as f:
+        for block in response.iter_content(1 << 20):
+            f.write(block)
+            done += len(block)
+            if time.time() - last > 2 and total:
+                print(f"  {label}: {done / 2**20:.0f} de {total / 2**20:.0f} MB", file=sys.stderr, flush=True)
+                last = time.time()
+
+
+def download_url(url, target):
+    """Descarga ``url`` a ``target`` con requests. Acepta enlaces de Google Drive «cualquiera con el enlace», incluida la página de aviso de virus de los archivos grandes."""
+    import requests
+
+    session = requests.Session()
+    file_id = drive_file_id(url)
+    try:
+        if file_id:
+            response = session.get("https://drive.usercontent.google.com/download", params={"id": file_id, "export": "download", "confirm": "t"}, stream=True, timeout=60)
+            if "text/html" in response.headers.get("Content-Type", ""):  # aviso de virus / confirmación: el formulario lleva los parámetros que hay que reenviar
+                page = response.text
+                form = re.search(r'<form[^>]+id="download-form"[^>]*action="([^"]+)"', page) or re.search(r'<form[^>]+action="([^"]+)"[^>]*id="download-form"', page)
+                if not form:
+                    raise RuntimeError("Google Drive no devolvió el archivo: comprueba que el enlace es de «cualquiera con el enlace» y que no ha superado su cuota de descargas")
+                params = dict(re.findall(r'<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"', page))
+                response = session.get(html.unescape(form.group(1)), params=params, stream=True, timeout=60)
+        else:
+            response = session.get(url, stream=True, timeout=60)
+        response.raise_for_status()
+        if "text/html" in response.headers.get("Content-Type", ""):
+            raise RuntimeError("el enlace devolvió una página web y no un zip (¿falta el permiso «cualquiera con el enlace»?)")
+        _stream_to_file(response, target, "descargando")
+    except requests.RequestException as exc:
+        raise RuntimeError(f"no se pudo descargar ({type(exc).__name__}: {exc})") from exc
+    if not zipfile.is_zipfile(target):
+        raise RuntimeError("lo descargado no es un zip válido")
+    return target
+
+
+def get_zip(local_zip=None, url=None, repo=ASSETS_REPO, filename=ASSETS_FILE, tmp_dir=None):
+    """Ruta del zip de datos. Orden: zip local; enlace (argumento o MAVERICKS_ASSETS_URL en el entorno o en .env); Hugging Face (privado). Si nada funciona, error con las tres vías."""
     if local_zip:
-        zip_path = Path(local_zip)
-    else:
-        zip_path = Path(_hub().hf_hub_download(repo_id=repo, filename=filename, repo_type="dataset"))
+        if not Path(local_zip).exists():
+            raise SystemExit(f"No existe el zip local {local_zip}.\n{WAYS}")
+        return Path(local_zip)
+    errors = []
+    link = url or env_value(URL_VARIABLE)
+    if link:
+        try:
+            target = Path(tmp_dir or tempfile.mkdtemp(prefix="mavericks_")) / ASSETS_FILE
+            return download_url(link, target)
+        except Exception as exc:
+            errors.append(f"enlace ({link[:60]}…): {exc}")
+    try:
+        return Path(_hub().hf_hub_download(repo_id=repo, filename=filename, repo_type="dataset"))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        errors.append(f"Hugging Face ({repo}): {type(exc).__name__}: {str(exc)[:160]} (el repositorio es privado: hay que pedir acceso y hacer `hf auth login`)")
+    raise SystemExit("No se pudieron descargar los datos.\n" + "\n".join(f"- {e}" for e in errors) + "\n" + WAYS)
+
+
+def fetch_assets(local_zip=None, repo=ASSETS_REPO, filename=ASSETS_FILE, dest=".", url=None):
+    """Consigue el zip (ver ``get_zip``), lo descomprime en ``dest`` y verifica los sha256 del manifest."""
+    zip_path = get_zip(local_zip, url, repo, filename)
     dest = Path(dest)
     with zipfile.ZipFile(zip_path) as archive:
         manifest = json.loads(archive.read("manifest.json"))
