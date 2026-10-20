@@ -126,14 +126,16 @@ def test_option_mapping_tolerates_any_ns_variant_in_the_evidence_but_not_other_e
     assert option_mapping(["Sí", "No"], ["Sí", "No", "N.S.", "N.C.", "N.S./N.R."]) == {"Sí": "Sí", "No": "No"}
 
 
-DEV_NSNR = Path("data/processed_v2/backtest_cases_dev.json")
+EVIDENCE = Path("data/processed_v2/evidence_v2.sqlite")
 
 
-@pytest.mark.skipif(not (DEV_NSNR.exists() and Path("data/processed_v2/evidence_v2.sqlite").exists()), reason="necesita los datos reales")
+@pytest.mark.skipif(not (EVIDENCE.exists() and Path("data/processed/cis_responses.parquet").exists()), reason="necesita los datos reales")
 def test_question_with_nsnr_in_the_cis_finds_the_direct_anchor_with_or_without_the_ns_option():
-    import json
+    # el texto de la pregunta sale del almacén de evidencia (va en el paquete de datos), no de un archivo de casos de desarrollo
+    from mavericks.evidence import EvidenceRepository
 
-    case = next(c for c in json.loads(DEV_NSNR.read_text(encoding="utf-8-sig")) if c["evidence_id"] == "CIS3531_P5D_3")
+    record = next(e for e in EvidenceRepository(EVIDENCE).all() if e.evidence_id == "CIS3531_P5D_3")
+    case = {"question": record.question_text}
     resources = svc.load_resources()
     question = " ".join(case["question"].split())
     plain = svc.predict(question, ["Sí", "No"], preset="rapido_sin_llm", resources=resources)
