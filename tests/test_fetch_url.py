@@ -99,7 +99,29 @@ def test_url_comes_from_env_file_and_failures_list_the_three_ways(tmp_path, monk
             raise PermissionError("401 sin acceso")
 
     monkeypatch.setattr(assets, "_hub", lambda: NoHub)
+    monkeypatch.setattr(assets, "DEFAULT_URL", "http://127.0.0.1:9/copia.zip")  # sin red: la copia pública de Drive también falla
     with pytest.raises(SystemExit) as exc:
         assets.get_zip(tmp_dir=tmp_path)
     message = str(exc.value)
     assert "enlace" in message and "Hugging Face" in message and "zip local" in message and "Hay tres vías" in message
+
+
+def test_without_huggingface_access_the_public_drive_copy_is_the_last_resort(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("MAVERICKS_ASSETS_URL", raising=False)
+
+    class NoHub:
+        @staticmethod
+        def hf_hub_download(**kwargs):
+            raise PermissionError("401 sin acceso")
+
+    calls = []
+
+    def fake_download(url, target):
+        calls.append(url)
+        return make_zip(target)
+
+    monkeypatch.setattr(assets, "_hub", lambda: NoHub)
+    monkeypatch.setattr(assets, "download_url", fake_download)
+    path = assets.get_zip(tmp_dir=tmp_path)
+    assert calls == [assets.DEFAULT_URL] and zipfile.is_zipfile(path)

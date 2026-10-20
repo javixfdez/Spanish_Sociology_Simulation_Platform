@@ -156,6 +156,7 @@ def _hub():
 
 
 URL_VARIABLE = "MAVERICKS_ASSETS_URL"
+DEFAULT_URL = "https://drive.google.com/file/d/1lyun3Jnb9WFLjwdE0bsxK4WRNDFqSete/view?usp=sharing"  # copia pública del zip (Google Drive, «cualquiera con el enlace»): último recurso si no hay acceso a Hugging Face
 WAYS = (
     "Hay tres vías para conseguir los datos:\n"
     "  1) un enlace de descarga (p. ej. de Google Drive, «cualquiera con el enlace»): `mavericks fetch-assets --from-url <enlace>` o `MAVERICKS_ASSETS_URL=<enlace>` en el archivo .env;\n"
@@ -201,6 +202,12 @@ def download_url(url, target):
     """Descarga ``url`` a ``target`` con requests. Acepta enlaces de Google Drive «cualquiera con el enlace», incluida la página de aviso de virus de los archivos grandes."""
     import requests
 
+    try:  # redes con inspección TLS (antivirus, proxy): certificados del sistema, como al descargar de Hugging Face
+        import truststore
+
+        truststore.inject_into_ssl()
+    except ImportError:
+        pass
     session = requests.Session()
     file_id = drive_file_id(url)
     try:
@@ -227,7 +234,7 @@ def download_url(url, target):
 
 
 def get_zip(local_zip=None, url=None, repo=ASSETS_REPO, filename=ASSETS_FILE, tmp_dir=None):
-    """Ruta del zip de datos. Orden: zip local; enlace (argumento o MAVERICKS_ASSETS_URL en el entorno o en .env); Hugging Face (privado). Si nada funciona, error con las tres vías."""
+    """Ruta del zip de datos. Orden: zip local; enlace (argumento o MAVERICKS_ASSETS_URL en el entorno o en .env); Hugging Face (privado); copia pública de Google Drive (DEFAULT_URL). Si nada funciona, error con las tres vías."""
     if local_zip:
         if not Path(local_zip).exists():
             raise SystemExit(f"No existe el zip local {local_zip}.\n{WAYS}")
@@ -240,12 +247,19 @@ def get_zip(local_zip=None, url=None, repo=ASSETS_REPO, filename=ASSETS_FILE, tm
             return download_url(link, target)
         except Exception as exc:
             errors.append(f"enlace ({link[:60]}…): {exc}")
+            print(f"AVISO: no se pudo usar el enlace de descarga ({exc}); se prueba Hugging Face (repositorio privado).", file=sys.stderr, flush=True)
     try:
         return Path(_hub().hf_hub_download(repo_id=repo, filename=filename, repo_type="dataset"))
     except SystemExit:
         raise
     except Exception as exc:
         errors.append(f"Hugging Face ({repo}): {type(exc).__name__}: {str(exc)[:160]} (el repositorio es privado: hay que pedir acceso y hacer `hf auth login`)")
+    if link != DEFAULT_URL:  # sin acceso a Hugging Face: se prueba la copia pública de Drive
+        print("AVISO: sin acceso a Hugging Face; se descarga la copia pública de Google Drive.", file=sys.stderr, flush=True)
+        try:
+            return download_url(DEFAULT_URL, Path(tmp_dir or tempfile.mkdtemp(prefix="mavericks_")) / ASSETS_FILE)
+        except Exception as exc:
+            errors.append(f"copia pública de Google Drive: {exc}")
     raise SystemExit("No se pudieron descargar los datos.\n" + "\n".join(f"- {e}" for e in errors) + "\n" + WAYS)
 
 

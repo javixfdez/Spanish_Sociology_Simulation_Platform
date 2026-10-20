@@ -15,8 +15,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1      # Win
 uv run streamlit run app.py
 ```
 
-`setup` comprueba Python y uv, instala las dependencias, descarga los datos (con el enlace `MAVERICKS_ASSETS_URL` de `.env`, si lo hay, y si no desde Hugging Face), descarga el adaptador del modo ajustado solo si hay GPU NVIDIA de 8 GB o más, descarga el modelo e5 y prueba una pregunta en modo rápido.
-Es repetible: lo que ya está descargado y verificado no se vuelve a bajar. Para que `setup` use un enlace de descarga, copia `.env.example` a `.env` y rellena `MAVERICKS_ASSETS_URL` (enlace de Google Drive «cualquiera con el enlace»), o pásalo con `-FromUrl <enlace>`.
+`setup` comprueba Python y uv, instala las dependencias, descarga los datos (con el enlace público de Google Drive, o con `MAVERICKS_ASSETS_URL` de `.env` si lo cambias, y si no hay enlace o falla, desde Hugging Face), descarga el adaptador del modo ajustado solo si hay GPU NVIDIA de 8 GB o más, descarga el modelo e5 y prueba una pregunta en modo rápido.
+Es repetible: lo que ya está descargado y verificado no se vuelve a bajar. **Datos sin cuenta de Hugging Face:** el paquete (43 MB) está en Google Drive, «cualquiera con el enlace»: <https://drive.google.com/file/d/1lyun3Jnb9WFLjwdE0bsxK4WRNDFqSete/view?usp=sharing>. Es la vía por defecto para quien no tenga acceso al repositorio privado: copia `.env.example` a `.env` (ya trae `MAVERICKS_ASSETS_URL` con ese enlace) o pásalo con `-FromUrl <enlace>` / `mavericks fetch-assets --from-url <enlace>`; se verifica el sha256 de cada archivo contra el manifest del zip (el zip entero: `4fc74820…`).
 
 **Si falla:**
 
