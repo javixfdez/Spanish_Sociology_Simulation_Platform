@@ -9,7 +9,7 @@ st.markdown("Principio de diseño: **la estadística va primero y el modelo de l
 st.graphviz_chart(
     """
 digraph G {
-  rankdir=LR; node [shape=box, style="rounded,filled", fillcolor="#eaf2f8", color="#1f4e79", fontname="Helvetica"];
+  rankdir=LR; node [shape=box, style="rounded,filled", fillcolor="#F3E8FF", color="#7C3AED", fontname="Helvetica"];
   Q [label="Pregunta\\ny opciones"];
   R [label="Búsqueda de preguntas\\nparecidas en el CIS"];
   M [label="¿Ya se hizo?"];

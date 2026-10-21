@@ -2,9 +2,9 @@
 
 import plotly.graph_objects as go
 
-PALETTE = ["#1f4e79", "#2e86c1", "#85c1e9", "#f5b041", "#e67e22", "#a93226", "#7d3c98", "#117a65"]
-INK = "#1b2631"
-
+PALETTE = ["#581C87", "#A100FF", "#7C3AED", "#C084FC", "#D8B4FE", "#F59E0B", "#3B0764", "#059669"]
+INK = "#1E1B4B"
+SHOW_CORE_BAND = False   # True vuelve a dibujar la banda gruesa del «rango habitual»
 
 def _layout(fig, height, title=None):
     fig.update_layout(
@@ -13,7 +13,7 @@ def _layout(fig, height, title=None):
         margin={"l": 8, "r": 8, "t": 36 if title else 8, "b": 8},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"size": 14},
+        font={"size": 14, "color": "#1E1B4B"},
         legend={"orientation": "h", "y": -0.2},
     )
     return fig
@@ -47,7 +47,7 @@ def distribution_bars(distribution, interval=None, title=None, core=None):
             hovertemplate="%{y}: %{x:.1f} %<extra></extra>",
         )
     )
-    if core:
+    if core and SHOW_CORE_BAND:
         fig.add_trace(
             go.Scatter(
                 x=values, y=options, mode="markers", marker={"size": 1, "color": "rgba(0,0,0,0)"}, hoverinfo="skip",
@@ -60,8 +60,9 @@ def distribution_bars(distribution, interval=None, title=None, core=None):
             )
         )
     fig.update_xaxes(range=[0, max(100, 1.0) if not values else min(100, max(values) * 1.35 + 8)], title="% de la población adulta")
-    return _layout(fig, 90 + 52 * len(options), title)
-
+    fig = _layout(fig, 90 + 52 * len(options), title)
+    fig.update_layout(showlegend=False)   # quita «trace 0»
+    return fig
 
 def stacked_groups(groups, options, title=None):
     """Una barra apilada al 100 % por grupo (edad, sexo…)."""
@@ -90,7 +91,7 @@ def heatmap(groups, options, title=None):
             z=z,
             x=options,
             y=names,
-            colorscale="Blues",
+            colorscale=[[0, "#F3E8FF"], [1, "#A100FF"]],
             text=[[f"{v:.0f}" for v in row] for row in z],
             texttemplate="%{text}",
             hovertemplate="%{y} · %{x}: %{z:.1f} %<extra></extra>",
