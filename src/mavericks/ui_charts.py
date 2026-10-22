@@ -4,7 +4,8 @@ import plotly.graph_objects as go
 
 PALETTE = ["#581C87", "#A100FF", "#7C3AED", "#C084FC", "#D8B4FE", "#F59E0B", "#3B0764", "#059669"]
 INK = "#1E1B4B"
-SHOW_CORE_BAND = False   # True vuelve a dibujar la banda gruesa del «rango habitual»
+CORE_BAND = "rgba(88, 28, 135, 0.45)"  # banda gruesa del «rango habitual»: morado oscuro translúcido, se lee sobre la barra y sobre el fondo
+
 
 def _layout(fig, height, title=None):
     fig.update_layout(
@@ -41,28 +42,42 @@ def distribution_bars(distribution, interval=None, title=None, core=None):
             orientation="h",
             marker_color=PALETTE[1],
             error_x=error,
-            text=[f"{v:.1f} %" for v in values],
-            textposition="outside",
-            cliponaxis=False,
             hovertemplate="%{y}: %{x:.1f} %<extra></extra>",
         )
     )
-    if core and SHOW_CORE_BAND:
+    if core:
         fig.add_trace(
             go.Scatter(
                 x=values, y=options, mode="markers", marker={"size": 1, "color": "rgba(0,0,0,0)"}, hoverinfo="skip",
                 showlegend=False,
                 error_x={
-                    "type": "data", "symmetric": False, "color": PALETTE[6], "thickness": 7, "width": 0,
+                    "type": "data", "symmetric": False, "color": CORE_BAND, "thickness": 9, "width": 0,
                     "array": [(core[o][1] - distribution[o]) * 100 for o in options],
                     "arrayminus": [(distribution[o] - core[o][0]) * 100 for o in options],
                 },
             )
         )
-    fig.update_xaxes(range=[0, max(100, 1.0) if not values else min(100, max(values) * 1.35 + 8)], title="% de la población adulta")
+    # la etiqueta va a la derecha de lo que más se extienda (barra, rango del 90 % o banda del rango habitual) para no pisarlos
+    reach = []
+    for o, v in zip(options, values, strict=True):
+        ends = [v]
+        if interval:
+            ends.append(interval[o][1] * 100)
+        if core:
+            ends.append(core[o][1] * 100)
+        reach.append(max(ends))
+    fig.add_trace(
+        go.Scatter(
+            x=reach, y=options, mode="text", text=[f"{v:.1f} %" for v in values], textposition="middle right",
+            hoverinfo="skip", showlegend=False, cliponaxis=False, textfont={"color": INK, "size": 14},
+        )
+    )
+    top = max(reach) if reach else 0
+    fig.update_xaxes(range=[0, 100 if not values else min(100, top * 1.2 + 8)], title="% de la población adulta")
     fig = _layout(fig, 90 + 52 * len(options), title)
     fig.update_layout(showlegend=False)   # quita «trace 0»
     return fig
+
 
 def stacked_groups(groups, options, title=None):
     """Una barra apilada al 100 % por grupo (edad, sexo…)."""

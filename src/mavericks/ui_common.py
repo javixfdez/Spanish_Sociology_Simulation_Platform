@@ -39,7 +39,8 @@ header[data-testid="stHeader"]::after {
 .card {background:#fff; border:1px solid #E9D5FF; border-radius:16px; padding:14px 18px;
   margin-bottom:10px; box-shadow:0 1px 2px rgba(59,7,100,.06);}
 .pill {display:inline-block; padding:2px 12px; border-radius:999px; font-weight:600; color:#fff; font-size:.9rem;}
-.pill.alta {background:#059669;} .pill.media {background:#D97706;} .pill.baja {background:#E11D48;}
+.pill.alta {background:#047857;} .pill.media {background:#B45309;} .pill.baja {background:#BE123C;}  /* texto blanco: contraste ≥ 5 (AA) */
+[data-testid="stCaptionContainer"] {opacity:.85;}  /* los textos pequeños de apoyo (rangos, métodos) se leen sobre el fondo morado */
 .muted {color:#4B5563; font-size:.9rem;}
 
 [data-testid="stMetric"] {background:#fff; border:1px solid #E9D5FF; border-radius:12px; padding:12px 16px;}
@@ -49,6 +50,7 @@ header[data-testid="stHeader"]::after {
   border-top:1px solid #E9D5FF; padding:6px 24px; font-size:.75rem; color:#64748b;
   display:flex; justify-content:space-between;}
 .brand-footer b {color:#7e22ce;}
+body:has([data-testid="stSidebar"][data-collapsed="false"]) .brand-footer {left:300px;}  /* con la barra lateral abierta (300 px) no tapa los nombres */
 </style>
 """
 
