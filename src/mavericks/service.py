@@ -57,6 +57,7 @@ SUBGROUP_METHODS = {
     "ancla": "diferencias de la oleada de la pregunta (método anterior)",
     "ninguno": "sin diferencias entre grupos",
 }
+GPU_BUSY_HINT = "puede que otro modelo (Ollama) esté ocupando la GPU; ciérralo y vuelve a probar"
 FT_MAX_OPTIONS = 7  # letras A-G del entrenamiento del modelo ajustado
 CONTRACTION = 0.5  # fracción de la diferencia empírica de las análogas que se aplica a cada grupo
 LLM_RANGE_NOTE = "Los rangos están calibrados para la estimación estadística; con el modelo de lenguaje no se han calibrado por separado."
@@ -660,8 +661,9 @@ def predict(
         ) from exc
     if len(question) > 400:
         warnings.append("Pregunta muy larga: las preguntas de encuesta son más cortas y el resultado puede ser poco fiable.")
-    if question.count("?") >= 2:
-        warnings.append("Parece que hay varias preguntas en una: el resultado se refiere al conjunto; mejor pregunta una cada vez.")
+    double = assist.double_question_warning(question)
+    if double:
+        warnings.append(double)
     settings = settings or Settings()
     resources = resources or load_resources()
     search_question = assist.strip_source_prefix(question)  # «Según el CIS, …» no forma parte de la pregunta
@@ -711,7 +713,7 @@ def predict(
             ft_reason = f"el modelo ajustado cubre de 2 a {FT_MAX_OPTIONS} opciones"
             warnings.append(f"El modelo ajustado cubre de 2 a {FT_MAX_OPTIONS} opciones; se muestra la estimación del modo rápido.")
         elif preset == "ajustado" and mode != "direct":
-            from .ft.client import FtClient, FtError
+            from .ft.client import FtClient, FtError, FtTimeout
 
             try:
                 ft_national, ft_groups, ft_seconds = _ft_estimate(question, options, _shares(resources), ft or FtClient())
@@ -721,8 +723,12 @@ def predict(
             except FtError as exc:
                 log.warning("Modo ajustado: %s", exc)
                 ft_fallback = True
-                ft_reason = "el servidor del modelo ajustado no respondió"
-                warnings.append("El modelo ajustado no respondió; se muestra la estimación del modo rápido.")
+                if isinstance(exc, FtTimeout):
+                    ft_reason = f"el servidor del modelo ajustado no respondió a tiempo: {GPU_BUSY_HINT}"
+                    warnings.append(f"El modelo ajustado no respondió a tiempo ({GPU_BUSY_HINT}); se muestra la estimación del modo rápido.")
+                else:
+                    ft_reason = "el servidor del modelo ajustado no respondió"
+                    warnings.append("El modelo ajustado no respondió; se muestra la estimación del modo rápido.")
         if wants_llm and mode != "direct":
             # Modo con LLM: LLM (peso w) + prior estadístico (1 − w). Las preguntas repetidas ya son estadística directa.
             try:

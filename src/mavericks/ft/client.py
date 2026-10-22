@@ -14,6 +14,10 @@ class FtError(RuntimeError):
     pass
 
 
+class FtTimeout(FtError):
+    """El servidor está vivo pero no contestó a tiempo (típico: otro modelo, p. ej. Ollama, ocupa la GPU)."""
+
+
 class FtClient:
     def __init__(self, url=None, timeout=TIMEOUT):
         self.url = (url or os.environ.get("MAVERICKS_FT_URL") or DEFAULT_URL).rstrip("/")
@@ -31,7 +35,8 @@ class FtClient:
                 if attempt == 1 and reset:  # conexión cortada de forma esporádica: la lectura es idempotente, se repite una vez
                     time.sleep(0.5)
                     continue
-                raise FtError(f"el servidor del modelo ajustado no respondió ({type(exc).__name__}: {exc})") from exc
+                timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
+                raise (FtTimeout if timed_out else FtError)(f"el servidor del modelo ajustado no respondió ({type(exc).__name__}: {exc})") from exc
 
     def healthy(self):
         try:

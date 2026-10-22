@@ -266,11 +266,11 @@ def show_text(slot, result):
             st.caption("Resumen automático a partir de las cifras calculadas.")
 
 
-def render(result, key="res", llm=None, timeout=20.0):
+def render(result, key="res", llm=None, timeout=20.0, show_coverage=True):
     """Muestra el resultado. Los números salen primero; si hay ``llm`` (modo con LLM), el texto redactado sustituye
     a la plantilla al final, sin retrasar nada de lo anterior."""
     st.markdown(f"### {result['question']}")
-    if result.get("coverage"):
+    if show_coverage and result.get("coverage"):  # en «Simular» la tarjeta ya se ha mostrado al analizar la pregunta
         render_coverage(result["coverage"])
     render_header(result)
     for warning in result["warnings"]:
