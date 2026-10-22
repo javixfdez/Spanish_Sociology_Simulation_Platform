@@ -109,3 +109,4 @@ Condiciones: el worktree de `3cb71f0` usó los mismos `data/processed*` y `outpu
 - **Modo con LLM:** de 100 a 135 s por pregunta sin ancla con la GPU libre, y varios minutos si el servidor del modelo ajustado está cargado a la vez.
 - **Plan del LLM:** puede tardar más de 20 s la primera vez (carga del modelo; entonces se usan los selectores) y traduce «jóvenes» o «mayores» a un valor concreto; ahora lo avisa, pero la suposición sigue siendo del modelo.
 - **Cruces de varias variables:** siguen siendo experimentales (no validados) y con n pequeño el dato medido es poco fiable.
+- **Patrón `_INTERROGATIVES` (`assist.py`):** contiene dos caracteres de retroceso donde debería haber `\b` (desde el commit `7df2202`), por lo que nunca casa y `closed_kind` solo decide por «o»/escalas; corregirlo cambiaría las opciones sugeridas de algunas preguntas, así que se deja como está.
