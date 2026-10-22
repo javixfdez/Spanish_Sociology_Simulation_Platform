@@ -187,6 +187,9 @@ def suggest_options(question, resources, service=None, topic=None, reference=Non
     ref = reference if reference is not None else find_reference(resources, question, topic)
     info = _reference_info(ref)
     warnings = []
+    double = double_question_warning(question)
+    if double:
+        warnings.append(double)
 
     def result(options, source, explanation, with_ref=False):
         return {
@@ -397,6 +400,20 @@ PLAN_INSTRUCTIONS = (
     "subgrupo_o_cruce [{var: sexo, val: hombre}, {var: grupo_edad, val: 25-34}, {var: ccaa, val: Madrid (Comunidad de)}], respondible true. "
     "Ejemplo: «¿Quién ganará las próximas elecciones?» -> subgrupo_o_cruce [], respondible false, motivo: predice un suceso futuro."
 )
+
+
+DOUBLE_QUESTION_NOTE = "Parece que hay dos preguntas en una; el resultado mezclará ambas. Mejor hazlas por separado."
+# «y» + palabra interrogativa CON tilde («¿Le gusta su trabajo y cuánto cobra?»); sin tilde «y que/como» es una conjunción o una subordinada y no se avisa. «y cuanto/s/a/as» no es ambigua.
+_SECOND_QUESTION = re.compile(r"\by\s+(?:cu[aá]nt[oa]s?|qué|cómo|por qué|cuándo|dónde|quién(?:es)?|cuál(?:es)?)\b", re.IGNORECASE)
+
+
+def double_question_warning(question):
+    """Aviso (no rechazo) si la pregunta parece dos en una: dos signos de interrogación de apertura (o de cierre) o «y» + interrogativa con tilde.
+    No avisa de «¿Está de acuerdo con subir impuestos y gastar más en sanidad?»: dos acciones bajo una sola interrogación son muy frecuentes en una sola pregunta."""
+    text = str(question or "")
+    if text.count("¿") >= 2 or text.count("?") >= 2 or _SECOND_QUESTION.search(text):
+        return DOUBLE_QUESTION_NOTE
+    return None
 
 
 _VAGUE_GROUP = re.compile(r"\b(jovenes|joven|mayores|ancianos|viejos|ricos|pobres|ingresos\s+(?:altos|bajos|medios)|gente\s+(?:rica|pobre|mayor|joven)|clase\s+(?:alta|media|baja)|adultos\s+mayores)\b")

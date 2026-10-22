@@ -159,7 +159,7 @@ if analysis:
                 st.error("No se pudo completar la simulación. Prueba con el modo rápido o revisa las opciones.")
 
 if "result" in st.session_state and analysis:
-    render(st.session_state["result"], llm=st.session_state.get("text_service"), timeout=Settings().explanation_timeout)
+    render(st.session_state["result"], llm=st.session_state.get("text_service"), timeout=Settings().explanation_timeout, show_coverage=False)
     render_synthetic(st.session_state["result"], get_resources())
 elif not analysis:
     st.info("Escribe una pregunta y pulsa **Analizar pregunta**, o abre un ejemplo en la barra lateral.")

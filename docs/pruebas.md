@@ -85,7 +85,7 @@ Tolerancia 1e-9 sobre cada porcentaje; también se exige el mismo modo y las mis
 2. **5 casos de desarrollo con una opción no sustantiva escrita por el usuario** (`N.R.` en los tres de participación electoral y en la consulta P5C; `N.S./N.R.` en CIS3531_P5D_3): las opciones N.S./N.C./N.R. nunca se estiman, así que se ignoran con aviso y el reparto se renormaliza sin ellas
    (p. ej., «Votó» 80,1 % → 80,7 %). El modo sigue siendo directo.
 
-Ninguna pregunta cambió por las reglas de alcance nuevas, el MRP no altera ningún reparto nacional (solo toca subgrupos) y **el prior de las preguntas sin ancla es idéntico**: las 40 de predicción coinciden. Lo blinda `tests/test_prior_unchanged.py` (6 preguntas sin ancla, entre ellas C2-28, con valores calculados con `3cb71f0`, a 1e-9).
+Ninguna pregunta cambió por las reglas de alcance nuevas, el MRP no altera ningún reparto nacional (solo toca subgrupos) y **el prior de las preguntas sin ancla era idéntico** en la comprobación del 19-10: las 40 de predicción coincidían (tras reconstruir el entorno desde `uv.lock` coinciden 39 de 40; ver la nota del 22-10 más abajo). Lo blinda `tests/test_prior_unchanged.py` (6 preguntas sin ancla, entre ellas C2-28, con valores calculados con `3cb71f0`, a 1e-9).
 
 ### Corrección posterior a la evaluación oficial (N.S./N.R.)
 
@@ -100,6 +100,16 @@ que reconoce todas las variantes (con o sin puntos, mayúsculas o tildes). Ahora
 
 Condiciones: el worktree de `3cb71f0` usó los mismos `data/processed*` y `outputs/` (enlazados), de modo que cualquier diferencia viene del código. Las comparaciones son del reparto nacional en modo rápido; no cubren subgrupos (ahí el MRP sí cambia las cifras a propósito) ni los modos con LLM y ajustado, que no existían en la configuración congelada.
 
+### Nota del 22-10: regresión repetida con el entorno reconstruido desde `uv.lock`
+
+Repetida la misma regresión (mismas 110 preguntas, mismos datos y modelos, tolerancia 1e-9) con el código actual y el entorno reconstruido desde `uv.lock`, da **103 iguales de 110** (la tabla de arriba, del 19-10, no se modifica). Las 6 diferencias intencionadas siguen idénticas, con los mismos tamaños, y aparece una séptima: **C2-25** («¿Quién cree que debería hacer más contra el cambio climático?», pregunta sin ancla), con 2,94 pp de diferencia máxima en el reparto nacional; las de predicción coinciden por tanto 39 de 40.
+
+- **No la causa el código:** `HEAD` y los commits anteriores (hasta `a62f4ad`) dan exactamente las mismas cifras con los datos y el entorno actuales.
+- **Es el entorno numérico:** numpy, scipy, sentence-transformers y tokenizers del `.venv` local se reinstalaron el 21-10; `uv.lock` no cambió (es idéntico al de `3cb71f0`), de modo que el entorno anterior no coincidía con el del lock. La causa exacta (probablemente el cálculo de los embeddings e5) no se ha investigado.
+- **Un clon limpio reproduce las cifras actuales:** un clon nuevo con los datos del paquete (sin estudios reservados) da el mismo reparto en las 148 ejecuciones de la batería en modo rápido que la carpeta local, y 47,5 / 28,2 / 8,2 / 9,2 / 6,9 en C2-25 (antes, 45,9 / 26,4 / 8,4 / 12,1 / 7,2).
+- **La evaluación oficial no se ha repetido** y sus cifras (8,11 pp en modo rápido, 7,91 pp con LLM) no cambian; se calcularon con el entorno anterior.
+- `tests/test_prior_unchanged.py` sigue pasando (sus 6 preguntas no incluyen C2-25).
+
 ## Limitaciones conocidas (no se arreglan porque implicarían tocar modelos o predicciones)
 
 - **Empates exactos y reparto casi uniforme con 8 o más opciones** (p. ej., tres opciones al 11 %): la lectura del prior no distingue opciones sin información; el modo ajustado, además, devuelve logits en bf16, y los empates son por resolución.
@@ -109,3 +119,4 @@ Condiciones: el worktree de `3cb71f0` usó los mismos `data/processed*` y `outpu
 - **Modo con LLM:** de 100 a 135 s por pregunta sin ancla con la GPU libre, y varios minutos si el servidor del modelo ajustado está cargado a la vez.
 - **Plan del LLM:** puede tardar más de 20 s la primera vez (carga del modelo; entonces se usan los selectores) y traduce «jóvenes» o «mayores» a un valor concreto; ahora lo avisa, pero la suposición sigue siendo del modelo.
 - **Cruces de varias variables:** siguen siendo experimentales (no validados) y con n pequeño el dato medido es poco fiable.
+- **Patrón `_INTERROGATIVES` (`assist.py`):** contiene dos caracteres de retroceso donde debería haber `\b` (desde el commit `7df2202`), por lo que nunca casa y `closed_kind` solo decide por «o»/escalas; corregirlo cambiaría las opciones sugeridas de algunas preguntas, así que se deja como está.
