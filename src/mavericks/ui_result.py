@@ -5,7 +5,7 @@ import streamlit as st
 
 from . import batch, explain
 from .assist import SPONTANEOUS_NOTE, display_label, is_spontaneous
-from .ui_charts import SHOW_CORE_BAND, distribution_bars, heatmap, stacked_groups
+from .ui_charts import distribution_bars, heatmap, stacked_groups
 
 SMALL_MEASURED = "Muestra pequeña: el dato medido es poco fiable; mira la estimación del modelo."
 PRESET_LABELS = {"rapido_sin_llm": "Rápido", "llm_completo": "Con LLM", "recomendado": "Con LLM", "ajustado": "Ajustado"}
@@ -105,7 +105,7 @@ def render_national(result):
     st.subheader("Estimación del modelo para hoy" if "measured_note" in result else "Distribución de respuestas en la población adulta")
     st.plotly_chart(distribution_bars(node["distribution"], None, core=node.get("interval_core")), use_container_width=True)
     info = node.get("interval_info")
-    if SHOW_CORE_BAND and node.get("interval_core") is not None:
+    if node.get("interval_core") is not None:
         text = "La banda gruesa es el **rango habitual** de cada opción: la mitad de las veces el resultado real cae dentro"
         if info and info.get("coverage_50") is not None:
             text += f" (medido dejando fuera una ventana temporal entera, cayó dentro el {_pct(info['coverage_50'])} de las veces)"
