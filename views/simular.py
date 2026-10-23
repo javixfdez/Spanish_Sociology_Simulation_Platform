@@ -129,7 +129,7 @@ if analysis:
         crosses = []
         if analysis["coverage"]["category"] == "respaldada":
             with st.expander("Subgrupo o cruce de varias variables (experimental)"):
-                st.caption("Elige una o más variables para ver un grupo concreto (por ejemplo, mujeres de 18-24 años de Andalucía). Experimental: los cruces de varias variables no están validados; la validación cubre subgrupos de una variable.")
+                st.caption("Elige una o más variables para ver un grupo concreto (por ejemplo, mujeres de 18-24 años de Andalucía). Validados entre oleadas solo sexo×edad, edad×comunidad y estudios×edad (MRP 3,65 pp de error frente a 7,00 pp del reparto nacional); el resto de combinaciones y los de tres o más variables no están validados.")
                 schema = mrp_service.schema_of(get_resources().population.frame)
                 chosen = []
                 columns = st.columns(len(schema))

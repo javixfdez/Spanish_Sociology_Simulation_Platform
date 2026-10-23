@@ -49,7 +49,10 @@ MODE_LABELS = {"direct": "directo", "prior": "prior", "none": "sin ancla"}
 CONFIDENCE = {"direct": "alta", "prior": "media", "none": "baja"}
 ALPHA = 0.1
 USE_MRP = os.environ.get("USE_MRP", "1") != "0"  # MRP para los subgrupos del modo directo (validado en docs/prereg_mrp.md)
-CROSS_EXPERIMENTAL = "Experimental: los cruces de varias variables no están validados; la validación cubre subgrupos de una variable."
+CROSS_EXPERIMENTAL = (
+    "Cruces validados solo en sexo×edad, edad×comunidad y estudios×edad (entre oleadas, error medio del MRP de 3,65 pp frente a 7,00 pp del reparto nacional; docs/mrp_resultados.md); "
+    "el resto de combinaciones y los cruces de tres o más variables no están validados. Los rangos mostrados son los de los subgrupos de una variable."
+)
 SUBGROUP_METHODS = {
     "mrp": "MRP (modelo multinivel con los microdatos de la oleada de la pregunta)",
     "analogas": "diferencias de preguntas análogas",

@@ -68,7 +68,7 @@ st.markdown(
     "Solo se validó **entre oleadas de la misma pregunta**, con subgrupos de **una** variable.\n"
     "- **Sin ancla** (pregunta nueva) se mantiene el método anterior (diferencias de preguntas análogas); en el **modo ajustado** los grupos los da el modelo ajustado. La interfaz dice siempre qué método produjo los grupos. "
     "Los rangos de los grupos siguen siendo los del método anterior (conservadores).\n"
-    "- **Cruces de varias variables** (por ejemplo, mujeres de 18-24 años de Andalucía): solo con MRP y con pregunta ya existente en el CIS. **Experimentales**: no están validados. Se muestra el número de encuestados del CIS en ese cruce y se avisa si es menor de 50.\n"
+    "- **Cruces de varias variables** (por ejemplo, mujeres de 18-24 años de Andalucía): solo con MRP y con pregunta ya existente en el CIS. Los de dos variables sexo×edad, edad×comunidad y estudios×edad están **validados entre oleadas** (MRP 3,65 pp de error frente a 7,00 pp del reparto nacional); el resto de combinaciones y los de tres o más variables **no están validados** (experimentales). Se muestra el número de encuestados del CIS en ese cruce y se avisa si es menor de 50.\n"
     "- Con Ollama, un **plan estructurado** (qwen3:8b, 20 s como máximo) puede proponer opciones, tema y el grupo que pide la pregunta; solo se aceptan variables y valores del esquema del CIS y, si falla, se usan las reglas y los selectores manuales."
 )
 
