@@ -29,3 +29,29 @@ Protocolo en `docs/prereg_mrp.md` (commit `cdd4ec1`). Código de la evaluación:
 - Dimensiones omitidas por oleada t−1 (menos del 50 % de valores válidos), en número de pares: {'sexo': 0, 'grupo_edad': 0, 'ccaa': 0, 'nivel_estudios': 0, 'ingresos_hogar_tramo': 123}
 - Valores de C elegidos por validación cruzada (número de pares): {'0.01': 35, '0.03': 49, '0.1': 89, '0.3': 47, '1.0': 21, '3.0': 13, '10.0': 25}
 - Subgrupos saltados por no existir en la población o en el método: 0
+
+## Cruces de dos variables (validación posterior)
+
+Script `python -m mavericks.mrp_cross_eval` (no cambia la aplicación ni `mrp.py`). Tarea: con los microdatos de la oleada t−1 y el reparto nacional real de t, predecir el reparto de cada celda de dos variables de t y compararlo con lo medido (ponderado) en las celdas con ≥ 50 encuestados con respuesta sustantiva. Solo preguntas repetidas del CIS en oleadas no reservadas (trabajo de campo de t entre 2024-07-01 y 2026-03-31). Error = diferencia absoluta media entre opciones, en puntos porcentuales; «Nacional» es usar el reparto nacional de t para todas las celdas. IC 95 % remuestreando estudios (10000 réplicas, semilla 0).
+
+**Total: 27889 celdas, 549 pares, 68 estudios, 139 series.** MRP 3.65 pp frente a 7.00 pp del reparto nacional (diferencia -3.35 pp, IC 95 % [-4.23, -2.52]).
+
+### Por cruce
+| Cruce | Celdas | Pares | Estudios | Nacional (pp) | MRP (pp) | MRP − nacional [IC 95 %] | MRP mejor / peor |
+|---|---|---|---|---|---|---|---|
+| grupo_edad×ccaa | 9977 | 549 | 68 | 6.89 | 4.31 | -2.58 [-3.36, -1.83] | 6580 / 3397 |
+| nivel_estudios×grupo_edad | 10315 | 549 | 68 | 6.91 | 3.35 | -3.56 [-4.39, -2.75] | 7663 / 2652 |
+| sexo×grupo_edad | 7597 | 549 | 68 | 7.26 | 3.19 | -4.07 [-5.12, -3.11] | 5579 / 2018 |
+
+### Por tamaño de la celda en t
+| n encuestados | Celdas | Pares | Estudios | Nacional (pp) | MRP (pp) | MRP − nacional [IC 95 %] | MRP mejor / peor |
+|---|---|---|---|---|---|---|---|
+| 50–99 | 12685 | 549 | 68 | 7.91 | 4.27 | -3.65 [-4.53, -2.82] | 8868 / 3817 |
+| 100–199 | 8494 | 549 | 68 | 6.40 | 3.55 | -2.85 [-3.73, -2.01] | 5899 / 2595 |
+| 200–∞ | 6710 | 525 | 67 | 6.03 | 2.61 | -3.42 [-4.29, -2.53] | 5055 / 1655 |
+
+### Límites
+- El objetivo nacional es el **real** de t (como en la evaluación prerregistrada de subgrupos); con el nacional que estima el modelo para una pregunta nueva, el error de las celdas será mayor.
+- «Lo medido» es una muestra: el MAE incluye el ruido muestral de cada celda (más alto cuanto menor es n); no se ha descontado.
+- El IC remuestrea estudios (cubre la dependencia entre preguntas y celdas de un mismo estudio), no la dependencia entre oleadas consecutivas de la misma serie.
+- Para cruces no existe el «método anterior»: solo se compara con usar el reparto nacional para todas las celdas.
