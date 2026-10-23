@@ -120,3 +120,4 @@ Repetida la misma regresión (mismas 110 preguntas, mismos datos y modelos, tole
 - **Plan del LLM:** puede tardar más de 20 s la primera vez (carga del modelo; entonces se usan los selectores) y traduce «jóvenes» o «mayores» a un valor concreto; ahora lo avisa, pero la suposición sigue siendo del modelo.
 - **Cruces de varias variables:** siguen siendo experimentales (no validados) y con n pequeño el dato medido es poco fiable.
 - **Patrón `_INTERROGATIVES` (`assist.py`):** contiene dos caracteres de retroceso donde debería haber `\b` (desde el commit `7df2202`), por lo que nunca casa y `closed_kind` solo decide por «o»/escalas; corregirlo cambiaría las opciones sugeridas de algunas preguntas, así que se deja como está.
+- **Sugerencia de paráfrasis («¿Quizás querías decir…?»):** el umbral (coseno e5 0,95) se calibró con 36 paráfrasis y 52 negativas (muestra pequeña, mismo conjunto para elegir y medir); ver `docs/parafrasis.md`.
