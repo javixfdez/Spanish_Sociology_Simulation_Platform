@@ -31,6 +31,26 @@ def render_coverage(card):
     )
 
 
+def use_question(text):
+    """Rellena el cuadro de la pregunta con la del CIS (no calcula nada: hay que volver a pulsar «Analizar pregunta»)."""
+    st.session_state["q"] = text
+    for key in ("analysis", "result"):
+        st.session_state.pop(key, None)
+
+
+def render_paraphrase(suggestion, key="para"):
+    """«¿Quizás querías decir…?»: pregunta del CIS parecida a la escrita, con su estudio, y un botón que rellena el texto."""
+    when = suggestion.get("fieldwork_date") or "s/f"
+    options = " · ".join(display_label(o) for o in suggestion.get("options", []))
+    st.markdown(
+        f"<div class='card'><b>¿Quizás querías decir…?</b><br>{suggestion['question']}"
+        f"<br><span class='muted'>Pregunta del CIS (estudio {suggestion['study_id']}, {when}) · parecido {suggestion['similarity']:.0%} · opciones: {options}.<br>"
+        "Si es la misma, el resultado será el dato medido del CIS; si no lo es, sigue con la tuya.</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.button("Usar esta pregunta", key=f"{key}_use", on_click=use_question, args=(suggestion["question"],))
+
+
 def render_produced_by(result):
     """Qué modo produjo las cifras y, si hubo que volver al modo rápido, el motivo (siempre visible)."""
     info = result.get("producido_por")

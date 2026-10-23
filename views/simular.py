@@ -1,6 +1,6 @@
 import streamlit as st
 
-from mavericks import assist, mrp_service
+from mavericks import assist, mrp_service, paraphrase
 from mavericks.examples import load_examples
 from mavericks.ft.client import FtClient
 from mavericks.schemas import Settings
@@ -8,12 +8,13 @@ from mavericks.service import (
     OutOfScopeError,
     ServiceError,
     assess_coverage,
+    get_embedder,
     predict,
     suggest_options,
 )
 from mavericks.topics import TOPICS
 from mavericks.ui_common import PRESET_HELP, PRESET_LABELS, get_resources, llm_service, setup, warm_embedder
-from mavericks.ui_result import render, render_coverage, render_synthetic
+from mavericks.ui_result import render, render_coverage, render_paraphrase, render_synthetic
 
 setup()
 
@@ -86,7 +87,13 @@ if st.button("Analizar pregunta", type="primary"):
                     if plan["ok"] and plan["plan"]["cruce"] and coverage["category"] == "respaldada":
                         for item in plan["plan"]["cruce"]:
                             st.session_state[f"cross_{item['var']}"] = item["val"]
-        st.session_state["analysis"] = {"question": question, "coverage": coverage, "suggestion": suggestion, "plan": plan}
+        similar = None
+        if coverage["category"] in ("parecidas", "sin_datos"):  # sin equivalente directo: se busca una paráfrasis del CIS (solo sugiere)
+            try:
+                similar = paraphrase.suggest(resources, question, get_embedder())
+            except Exception:
+                similar = None
+        st.session_state["analysis"] = {"question": question, "coverage": coverage, "suggestion": suggestion, "plan": plan, "paraphrase": similar}
     except ServiceError as exc:
         st.session_state.pop("analysis", None)
         st.error(str(exc))
@@ -99,6 +106,8 @@ if analysis and analysis["question"].strip() != question.strip():
     analysis = None  # la pregunta ha cambiado: hay que volver a analizarla
 if analysis:
     render_coverage(analysis["coverage"])
+    if analysis.get("paraphrase"):
+        render_paraphrase(analysis["paraphrase"])
     if analysis["suggestion"]:
         st.markdown("**Opciones sugeridas; puedes cambiarlas** (una por línea)")
         st.caption(analysis["suggestion"]["explanation"])

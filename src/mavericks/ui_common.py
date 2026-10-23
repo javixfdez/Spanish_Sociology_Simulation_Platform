@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import streamlit as st
 
+from . import paraphrase
 from .llm import LLMService, check_ollama, create_provider
 from .schemas import Settings
 from .service import ServiceError, get_embedder, load_resources, predict
@@ -95,6 +96,10 @@ def warm_up(resources):
         get_embedder()
         predict(WARMUP_QUESTION[0], WARMUP_QUESTION[1], resources=resources)
     except Exception:  # sin e5 o sin modelo la aplicación sigue con el KNN; el aviso lo da cada resultado
+        pass
+    try:  # índice de «¿Quizás querías decir…?»: la primera vez tarda ≈ 2 min (se guarda en outputs/cache); después, medio segundo
+        paraphrase.get_index(resources, get_embedder())
+    except Exception:
         pass
     return time.monotonic() - started
 
