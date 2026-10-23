@@ -201,3 +201,10 @@ def test_ui_shows_experimental_label_and_yellow_warning_for_small_crosses():
     at.session_state["r"] = {"crosses": [], "cross_note": "sin ancla: los cruces no se ofrecen"}
     at.run()
     assert "no se ofrecen" in at.info[0].value
+
+
+def test_cross_warning_says_which_two_variable_crosses_are_validated():
+    from mavericks.service import CROSS_EXPERIMENTAL
+
+    assert "sexo×edad, edad×comunidad y estudios×edad" in CROSS_EXPERIMENTAL and "3,65 pp" in CROSS_EXPERIMENTAL and "7,00 pp" in CROSS_EXPERIMENTAL
+    assert "tres o más variables no están validados" in CROSS_EXPERIMENTAL and "no están validados" in CROSS_EXPERIMENTAL  # el resto sigue avisando

@@ -103,7 +103,7 @@ with st.expander("Subgrupos: MRP frente al método anterior (prerregistrado)"):
     )
     st.info(
         "Criterio prerregistrado (mejora ≥ 0,3 puntos con el IC entero por debajo de 0): **cumple**. Por eso el MRP se usa en el modo directo. Límites: solo se validó entre oleadas de la misma pregunta y con subgrupos de una variable "
-        "(los cruces de varias variables son experimentales); en comunidad autónoma no mejora; los ingresos faltaban en 123 de los 279 pares y el modelo los omite en esas oleadas. "
+        "(los cruces de sexo×edad, edad×comunidad y estudios×edad se validaron aparte, ver docs/mrp_resultados.md: MRP 3,65 pp frente a 7,00 pp del reparto nacional; el resto de cruces de varias variables son experimentales); en comunidad autónoma no mejora; los ingresos faltaban en 123 de los 279 pares y el modelo los omite en esas oleadas. "
         "Los rangos de los grupos son los del método anterior: no se recalibraron con esta evaluación."
     )
 with st.expander("Modo ajustado (opcional): un modelo pequeño ajustado con encuestas reales"):

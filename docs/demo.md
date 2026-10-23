@@ -130,6 +130,6 @@ En la interfaz: tras «Analizar pregunta», el desplegable «Subgrupo o cruce de
 | Sexo: hombre · Estudios: superiores | 1030 | 3 % | 42 % | 5 % | 34 % | 16 % |
 | Sexo: mujer · Edad: 18-24 · Comunidad autónoma: Andalucía | 13 (menos de 50: aviso amarillo) | 4 % | 25 % | 5 % | 48 % | 18 % |
 
-Etiqueta visible: «Experimental: los cruces de varias variables no están validados; la validación cubre subgrupos de una variable.». Los rangos son los de los subgrupos de una variable. Con una pregunta sin ancla (por ejemplo, la de la IA y el empleo) los cruces no se ofrecen y la interfaz explica por qué.
+Etiqueta visible: «Cruces validados solo en sexo×edad, edad×comunidad y estudios×edad (entre oleadas, error medio del MRP de 3,65 pp frente a 7,00 pp del reparto nacional; docs/mrp_resultados.md); el resto de combinaciones y los cruces de tres o más variables no están validados. Los rangos mostrados son los de los subgrupos de una variable.». Los rangos son los de los subgrupos de una variable. Con una pregunta sin ancla (por ejemplo, la de la IA y el empleo) los cruces no se ofrecen y la interfaz explica por qué.
 
 Con Ollama, el plan estructurado de qwen3:8b (≈ 2–4 s) rellena los selectores si la pregunta pide un grupo («¿Qué opinan las mujeres con estudios superiores de Cataluña sobre…?» → sexo mujer, estudios superiores, Cataluña); es una sugerencia que se puede cambiar, y si falla o tarda más de 20 s se usan solo los selectores manuales.
