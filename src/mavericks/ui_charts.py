@@ -79,6 +79,32 @@ def distribution_bars(distribution, interval=None, title=None, core=None):
     return fig
 
 
+def comparison_bars(labels, values, core_low, core_high, title=None):
+    """Una barra por formulación (valores en %, de mayor a menor de arriba abajo) con la banda del rango habitual cuando existe."""
+    labels, values = list(labels)[::-1], list(values)[::-1]
+    low, high = list(core_low)[::-1], list(core_high)[::-1]
+    has_band = all(v is not None for v in low + high)  # sin banda si algún rango falta
+    fig = go.Figure(go.Bar(x=values, y=labels, orientation="h", marker_color=PALETTE[1], hovertemplate="%{y}: %{x:.1f} %<extra></extra>"))
+    if has_band:
+        fig.add_trace(
+            go.Scatter(
+                x=values, y=labels, mode="markers", marker={"size": 1, "color": "rgba(0,0,0,0)"}, hoverinfo="skip", showlegend=False,
+                error_x={"type": "data", "symmetric": False, "color": CORE_BAND, "thickness": 9, "width": 0,
+                         "array": [h - v for h, v in zip(high, values, strict=True)], "arrayminus": [v - lo for lo, v in zip(low, values, strict=True)]},
+            )
+        )
+    reach = [max(v, h) if has_band else v for v, h in zip(values, high if has_band else values, strict=True)]
+    fig.add_trace(
+        go.Scatter(x=reach, y=labels, mode="text", text=[f"{v:.1f} %" for v in values], textposition="middle right", hoverinfo="skip",
+                   showlegend=False, cliponaxis=False, textfont={"color": INK, "size": 14})
+    )
+    top = max(reach) if reach else 0
+    fig.update_xaxes(range=[0, min(100, top * 1.2 + 8)], title="% estimado de la opción elegida")
+    fig = _layout(fig, 90 + 56 * len(labels), title)
+    fig.update_layout(showlegend=False)
+    return fig
+
+
 def stacked_groups(groups, options, title=None):
     """Una barra apilada al 100 % por grupo (edad, sexo…)."""
     names = list(groups)
