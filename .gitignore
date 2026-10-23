@@ -17,3 +17,6 @@ maverick_data/*
 data/processed_v2/
 .venv_embed/
 dist/
+# ficheros de datos sueltos en data/ (p. ej. EVS/WVS, informes en PDF): nunca van a git
+data/*.csv
+data/*.pdf
