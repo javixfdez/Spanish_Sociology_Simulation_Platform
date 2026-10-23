@@ -3,7 +3,7 @@
 import pandas as pd
 import streamlit as st
 
-from . import batch, explain
+from . import batch, crosstab, explain
 from .assist import SPONTANEOUS_NOTE, display_label, is_spontaneous
 from .ui_charts import distribution_bars, heatmap, stacked_groups
 
@@ -93,7 +93,7 @@ def _pct(value):
     return "—" if value is None else f"{100 * value:.0f} %"
 
 
-def render_measured(result):
+def render_measured(result, resources=None, key="res"):
     """«Lo que midió el CIS»: reparto ponderado de los microdatos de la oleada de la pregunta, sin ningún modelo."""
     m = result["measured"]
     nat = m["national"]
@@ -118,6 +118,43 @@ def render_measured(result):
             pd.DataFrame([{"Opción": o, "Medido (%)": 100 * cross["distribution"][o], "± puntos": 100 * cross["margin"][o]} for o in cross["distribution"]]).round(1),
             hide_index=True, use_container_width=True, key=f"measured_cross_{n}",
         )
+    render_crosstab(result, resources, key)
+
+
+def render_crosstab(result, resources, key="res"):
+    """«Cruzar con otra pregunta del mismo estudio»: tabla conjunta ponderada medida con los microdatos del CIS (sin modelo)."""
+    anchor = result.get("anchor")
+    if resources is None or not anchor or not result.get("measured"):
+        return
+    with st.expander("Cruzar con otra pregunta del mismo estudio"):
+        st.caption(
+            f"Dato medido, sin ningún modelo: tabla conjunta ponderada de esta pregunta con otra del mismo estudio ({anchor['study_id']}), con los entrevistados que respondieron a las dos. "
+            "El n es el número de encuestados de cada celda; con menos de 50 el dato es poco fiable."
+        )
+        others = crosstab.companions(resources, anchor["study_id"], anchor["evidence_id"])
+        if not others:
+            st.write("No hay otras preguntas de respuesta única de este estudio con las que cruzar.")
+            return
+        by_id = {o["evidence_id"]: o for o in others}
+        choice = st.selectbox(
+            "Otra pregunta del estudio", [None, *by_id], key=f"{key}_xtab",
+            format_func=lambda i: "—" if i is None else f"{i.split('_', 1)[-1]} · {by_id[i]['question'][:110]}",
+        )
+        if choice is None:
+            return
+        table = crosstab.joint(resources, anchor, result["options"], by_id[choice])
+        st.markdown(f"**{by_id[choice]['question']}** · {table['n']} encuestados con respuesta a las dos preguntas")
+        if table["total"] is None:
+            st.warning("Ningún encuestado respondió de forma sustantiva a las dos preguntas.")
+            return
+        if table["small"]:
+            st.warning(f"Solo {table['n']} encuestados con respuesta a las dos: el dato medido es poco fiable.")
+        elif table["small_rows"]:
+            st.warning("Filas con menos de 50 encuestados (poco fiables): " + ", ".join(f"«{r}»" for r in table["small_rows"]) + ".")
+        st.markdown("**% de cada fila** (entre quienes eligieron esa opción en esta pregunta, cómo respondieron a la otra)")
+        st.dataframe(crosstab.to_frame_with_n(table["by_row"].fillna(0.0), table["counts"]), use_container_width=True)
+        st.markdown("**% del total** (ponderado)")
+        st.dataframe(table["total"].round(1), use_container_width=True)
 
 
 def render_national(result):
@@ -286,7 +323,7 @@ def show_text(slot, result):
             st.caption("Resumen automático a partir de las cifras calculadas.")
 
 
-def render(result, key="res", llm=None, timeout=20.0, show_coverage=True):
+def render(result, key="res", llm=None, timeout=20.0, show_coverage=True, resources=None):
     """Muestra el resultado. Los números salen primero; si hay ``llm`` (modo con LLM), el texto redactado sustituye
     a la plantilla al final, sin retrasar nada de lo anterior."""
     st.markdown(f"### {result['question']}")
@@ -297,12 +334,12 @@ def render(result, key="res", llm=None, timeout=20.0, show_coverage=True):
         st.warning(warning)
     measured = result.get("measured")
     if measured and result.get("intent") == "consulta_dato":
-        render_measured(result)  # se preguntó por lo medido: va primero
+        render_measured(result, resources, key)  # se preguntó por lo medido: va primero
     elif result.get("measured_note"):
         st.info(result["measured_note"])
     render_national(result)
     if measured and result.get("intent") != "consulta_dato":
-        render_measured(result)
+        render_measured(result, resources, key)
     slot = st.empty()
     show_text(slot, result)
     render_subgroups(result, key)
