@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<!-- saved from url=(0094)file:///C:/Users/migue/Downloads/Accenture%20GenAI%20Mavericks%20_%20Synthetic%20Spain_10.html -->
+<html lang="es"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Accenture GenAI Mavericks | Synthetic Spain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com/">
+<link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+<link href="./Accenture GenAI Mavericks _ Synthetic Spain_files/css2" rel="stylesheet">
+<style>
+  :root { --purple:#A100FF; --ink:#2E1065; --ink2:#3B0764; --slate:#475569; --muted:#64748B; --line:#EDE4FB; --bg:#F7F4FD; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: #1E1B4B; min-height: 100vh; display: flex; flex-direction: column;
+    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; overflow-x: hidden; }
+  body.edit-mode { -webkit-user-select: text; user-select: text; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
+  .sys { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  button { font-family: inherit; }
+  .grad { background: linear-gradient(135deg, #3B0764 0%, #7C3AED 50%, #A100FF 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+
+  /* ---------- Cabecera ---------- */
+  .topbar { height: 4px; background: linear-gradient(90deg, #A100FF 0%, #7C3AED 50%, #A100FF 100%); }
+  .nav { position: sticky; top: 0; z-index: 40; background: rgba(255,255,255,.96); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid #F3E8FF; padding: .7rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .nav-l, .ctrls, .counter { display: flex; align-items: center; gap: .55rem; }
+  .brand { display: flex; align-items: center; gap: .45rem; cursor: pointer; }
+  .brand .gt { font-size: 1.45rem; font-weight: 800; color: var(--purple); line-height: 1; }
+  .brand .nm { font-weight: 800; letter-spacing: .05em; font-size: .95rem; color: var(--ink2); text-transform: uppercase; }
+  .badge { font-size: .78rem; font-weight: 700; padding: .2rem .7rem; border-radius: 999px; background: #F3E8FF; border: 1px solid #D8B4FE; color: #581C87; }
+  .vsep { width: 1px; height: 18px; background: #E9D5FF; margin: 0 .35rem; }
+  .navtitle { font-size: .85rem; font-weight: 500; color: #581C87; }
+  .counter .c { font-size: .8rem; font-weight: 700; color: var(--ink2); }
+  .prog { width: 8.5rem; height: 8px; background: #F3E8FF; border-radius: 999px; overflow: hidden; }
+  .prog div { height: 100%; background: linear-gradient(90deg, #7E22CE, #A100FF); transition: width .3s; }
+  .nbtn { font-size: .82rem; font-weight: 500; display: inline-flex; align-items: center; gap: .4rem; padding: .42rem .75rem; border-radius: 9px;
+    border: 1px solid #E9D5FF; background: #fff; color: #581C87; cursor: pointer; }
+  .nbtn:hover { background: #FAF5FF; }
+  .nbtn.alt { background: #FAF5FF; border-color: #D8B4FE; }
+  .nbtn.on { background: #7E22CE; border-color: #7E22CE; color: #fff; }
+  #dlBtn { display: none; }
+  body.edit-mode #dlBtn { display: inline-flex; }
+  .ibtn { border: none; background: transparent; color: #6B21A8; padding: .42rem; border-radius: 8px; cursor: pointer; display: inline-flex; }
+  .ibtn:hover { background: #FAF5FF; }
+  .arrow { border: none; padding: .42rem; border-radius: 7px; cursor: pointer; display: inline-flex; background: #FAF5FF; color: #6B21A8; }
+  .arrow.next { background: var(--purple); color: #fff; }
+  svg.i { width: 16px; height: 16px; }
+  @media (max-width: 1000px) { .hide-md { display: none !important; } }
+
+  /* ---------- Área de slides ---------- */
+  main { flex: 1; width: 100%; max-width: 80rem; margin: 0 auto; padding: 1.75rem 2rem; display: flex; flex-direction: column; justify-content: center; }
+  .slide { display: none; }
+  .slide.active { display: flex; flex-direction: column; justify-content: center; min-height: calc(100vh - 150px); animation: slideIn .35s cubic-bezier(.16,1,.3,1); }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- Pie ---------- */
+  footer { background: #fff; border-top: 1px solid #F3E8FF; padding: .6rem 1.5rem; display: flex; justify-content: space-between; align-items: center; font-size: .82rem; color: var(--muted); gap: 1rem; }
+  footer .l, footer .r { display: flex; align-items: center; gap: .55rem; }
+  kbd { font-family: "JetBrains Mono", monospace; font-size: .75rem; padding: .12rem .45rem; border-radius: 5px; background: #FAF5FF; border: 1px solid #E9D5FF; color: #581C87; }
+  footer .sep { color: #E9D5FF; }
+  footer .r b { color: #6B21A8; font-weight: 700; }
+
+  /* ---------- Slide 1 (portada) ---------- */
+  .s1 { background: #fff; border: 1px solid #E9D5FF; border-radius: 16px; padding: 3.5rem; display: flex; flex-direction: column; gap: 1.5rem; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .s1-badge { align-self: flex-start; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: .25rem .8rem; border-radius: 999px; background: #F3E8FF; border: 1px solid #D8B4FE; color: #581C87; }
+  .s1 h1 { font-size: 3rem; font-weight: 800; letter-spacing: -.025em; line-height: 1.22; color: #3B0764; margin: 0; }
+  .s1 p { font-size: 1.125rem; line-height: 1.65; color: #475569; max-width: 56rem; margin: 0; }
+  .s1 p strong { color: #3B0764; } .s1 p .pp { color: #7E22CE; font-weight: 700; }
+  .s1-kpis { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1rem; padding-top: 1.25rem; border-top: 1px solid #F3E8FF; }
+  .s1-k { padding: 1rem 1.1rem; border-radius: .75rem; background: #fff; border: 1px solid #F3E8FF; }
+  .s1-k.f { background: rgba(250,245,255,.7); border-color: #E9D5FF; }
+  .s1-k .n { font-size: 1.875rem; font-weight: 900; line-height: 2.25rem; }
+  .s1-k .n small { font-size: .75rem; font-weight: 400; color: #64748B; }
+  .s1-k .l { font-size: .75rem; color: #475569; margin-top: .25rem; }
+  .s1-team { padding-top: 1.25rem; border-top: 1px solid #F3E8FF; font-size: .875rem; font-weight: 700; color: #3B0764; }
+
+  /* ---------- Componentes comunes (slides 2-9, 11, 12, 14) ---------- */
+  .z { display: flex; flex-direction: column; gap: 1.75rem; width: 100%; }
+  .z-head { border-left: 4px solid var(--purple); padding-left: 1.1rem; }
+  .z-kick { font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--purple); }
+  .z-title { font-size: clamp(1.55rem, 2.5vw, 2.05rem); font-weight: 800; letter-spacing: -.035em; line-height: 1.15; color: var(--ink2); margin: .3rem 0 0; }
+  .z-sub { font-size: 1rem; color: var(--slate); margin: .4rem 0 0; letter-spacing: -.01em; }
+  .z-g2, .z-g3, .z-g4, .z-split { display: grid; gap: 1.25rem; grid-template-columns: minmax(0,1fr); }
+  @media (min-width: 900px) {
+    .z-g2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .z-g3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .z-g4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .z-split { grid-template-columns: 6fr 4fr; }
+    .z-split.roi { grid-template-columns: 5fr 7fr; }
+  }
+  .z-card { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 1.6rem 1.75rem; display: flex; flex-direction: column; gap: .9rem; box-shadow: 0 1px 2px rgba(59,7,100,.03); transition: border-color .2s, box-shadow .2s; }
+  .z-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+  .z-pill { font-size: .72rem; font-weight: 700; padding: .22rem .6rem; border-radius: 999px; text-transform: uppercase; letter-spacing: .01em; border: 1px solid transparent; white-space: nowrap; }
+  .p-purple { background: #F3E8FF; color: #7E22CE; } .p-rose { background: #FFF1F2; color: #BE123C; border-color: #FECDD3; }
+  .p-amber { background: #FFFBEB; color: #B45309; border-color: #FDE68A; } .p-solid { background: #A100FF; color: #fff; }
+  .p-blue { background: #EFF6FF; color: #1D4ED8; border-color: #BFDBFE; } .p-green { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
+  .p-white { background: #fff; color: #3B0764; border-color: #E9D5FF; }
+  .p-soft { text-transform: none; border-radius: 6px; font-weight: 600; }
+  .z-cap { font-size: .9rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .z-h { font-size: 1.2rem; font-weight: 800; color: var(--ink2); letter-spacing: -.025em; margin: 0; }
+  .z-item { border-radius: 12px; padding: .85rem 1rem; font-size: .97rem; font-weight: 500; color: #1E1B4B; letter-spacing: -.01em; border: 1px solid transparent; }
+  .z-foot { border-top: 1px solid #F1F5F9; padding-top: 1rem; font-size: .97rem; font-weight: 600; margin-top: auto; letter-spacing: -.01em; }
+  .z-bar { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 1rem 1.25rem; font-size: .97rem; font-weight: 600; color: var(--ink2); text-align: center; letter-spacing: -.01em; }
+  .z-team { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; font-size: .95rem; font-weight: 700; color: var(--ink2); letter-spacing: -.01em; }
+
+  /* Slide 3 */
+  .z-line { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .9rem 1.1rem; border-radius: 12px; border: 1px solid #EEF0F4; background: #FAFAFC; }
+  .z-line .t { font-size: .98rem; font-weight: 600; color: #1E1B4B; letter-spacing: -.01em; }
+  .z-line .d { font-size: .88rem; color: var(--slate); margin-top: .15rem; }
+  .z-line .m { font-size: 1.05rem; font-weight: 600; white-space: nowrap; }
+  .z-box { border-radius: 12px; padding: .95rem 1rem; text-align: center; font-weight: 700; font-size: .98rem; color: var(--ink2); letter-spacing: -.01em; }
+
+  /* Slide 4 */
+  .z-kpi { text-align: center; padding: 1.6rem 1rem; gap: .2rem; }
+  .z-kpi .n { font-size: clamp(2rem, 3.2vw, 2.65rem); font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+  .z-kpi .l { font-size: .92rem; font-weight: 700; color: var(--ink2); text-transform: uppercase; letter-spacing: -.01em; margin-top: .35rem; }
+  .z-kpi .d { font-size: .88rem; color: var(--slate); }
+  .z-pt { text-align: center; padding: 1.6rem 1.4rem; gap: .4rem; }
+  .z-pt .k { font-size: .85rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .z-pt .t { font-size: 1.12rem; font-weight: 700; color: var(--ink2); letter-spacing: -.02em; }
+  .z-pt .d { font-size: .93rem; color: var(--slate); line-height: 1.5; }
+
+  /* Slide 5 */
+  .z-step .k { font-size: .82rem; font-weight: 600; letter-spacing: .1em; color: var(--purple); }
+  .z-step .inner { background: #FAFAFC; border: 1px solid #F1F1F5; border-radius: 12px; padding: .8rem .9rem; font-size: .93rem; font-weight: 500; color: #1E1B4B; line-height: 1.45; }
+  .z-step .tag { border-radius: 9px; padding: .55rem; text-align: center; font-size: .82rem; font-weight: 600; background: #FAF5FF; color: #7E22CE; }
+  .z-step:hover { border-color: #D8B4FE; box-shadow: 0 8px 20px rgba(161,0,255,.08); }
+  .z-mini { text-align: center; padding: 1.1rem; gap: .2rem; }
+  .z-mini .t { font-size: 1rem; font-weight: 600; letter-spacing: -.01em; }
+  .z-mini .d { font-size: .88rem; color: var(--muted); }
+
+  /* Slide 6 */
+  .z-big { border-radius: 12px; padding: 1.5rem 1rem; text-align: center; font-size: clamp(1.1rem, 1.6vw, 1.38rem); font-weight: 700; letter-spacing: -.025em; border: 1px solid; }
+
+  /* Slide 7 */
+  .z-res { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 1.1rem; border-radius: 12px; border: 1px solid; transition: transform .15s; }
+  .z-res:hover { transform: translateX(3px); }
+  .z-res .t { font-size: 1.1rem; font-weight: 500; letter-spacing: -.01em; }
+  .z-res .d { font-size: .85rem; margin-top: .15rem; }
+  .z-res .v { font-size: 1.25rem; font-weight: 600; white-space: nowrap; }
+  .z-res.big .v { font-size: 1.55rem; }
+  .z-chip { border: 1px solid #F1F1F5; border-radius: 12px; padding: .75rem; text-align: center; font-size: .95rem; font-weight: 600; letter-spacing: -.01em; }
+
+  /* Slide 8 */
+  .z-video { position: relative; border: 2px dashed #D8B4FE; background: #FAF5FF; border-radius: 18px; min-height: 26rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; text-align: center; padding: 2rem; cursor: pointer; overflow: hidden; }
+  .z-video:hover { border-color: #A100FF; }
+  .z-video .play { width: 5.4rem; height: 5.4rem; border-radius: 999px; background: #fff; box-shadow: 0 6px 18px rgba(59,7,100,.12); display: flex; align-items: center; justify-content: center; margin-bottom: .6rem; }
+  .z-video .t { font-size: 1.05rem; font-weight: 800; color: var(--ink2); text-transform: uppercase; letter-spacing: -.02em; }
+  .z-video .d { font-size: .95rem; color: var(--slate); }
+  .z-video video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; border-radius: 16px; }
+  .z-case { padding: 1.25rem 1.4rem; gap: .7rem; }
+  .z-case .t { font-size: 1rem; font-weight: 600; color: var(--ink2); letter-spacing: -.01em; }
+  .z-case .d { font-size: .96rem; color: #1E1B4B; letter-spacing: -.01em; }
+
+  /* Slide 9 */
+  .z-sec .s { font-size: 1.05rem; font-weight: 700; color: var(--ink2); letter-spacing: -.02em; }
+  .z-sec .h { font-size: 1.32rem; font-weight: 600; color: var(--ink2); letter-spacing: -.02em; }
+  .z-sec:hover { border-color: #D8B4FE; }
+
+  /* Slide 11 */
+  .z-cost { border-radius: 12px; padding: 1rem 1.2rem; border: 1px solid; }
+  .z-cost .t { font-size: 1.12rem; font-weight: 600; letter-spacing: -.02em; }
+  .z-cost .d { font-size: .93rem; color: var(--slate); margin-top: .2rem; }
+  .z-stat { border: 1px solid #F1F1F5; border-radius: 12px; padding: 1rem; text-align: center; }
+  .z-stat .n { font-size: clamp(1.8rem, 2.8vw, 2.4rem); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+  .z-stat .l { font-size: .9rem; font-weight: 700; color: var(--slate); text-transform: uppercase; margin-top: .2rem; }
+  .z-sl { display: flex; justify-content: space-between; align-items: baseline; font-size: .97rem; color: #1E1B4B; margin-bottom: .55rem; }
+  .z-sl b { font-family: "JetBrains Mono", monospace; font-weight: 600; color: var(--ink2); }
+  .z-range { -webkit-appearance: none; appearance: none; width: 100%; height: 10px; border-radius: 999px; outline: none; cursor: pointer; border: 1px solid #E5E7EB;
+    background: linear-gradient(to right, #A100FF 0%, #A100FF var(--p, 50%), #F3F4F6 var(--p, 50%), #F3F4F6 100%); }
+  .z-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #A100FF; border: 3px solid #fff; box-shadow: 0 0 0 1px #A100FF, 0 2px 6px rgba(161,0,255,.4); }
+  .z-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #A100FF; border: 3px solid #fff; box-shadow: 0 0 0 1px #A100FF; }
+  .z-out { border: 1px solid #F1F1F5; border-radius: 14px; padding: 1.3rem 1rem; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; text-align: center; background: #FDFCFF; }
+  .z-out .k { font-size: .95rem; color: var(--slate); }
+  .z-out .v { font-size: clamp(1.3rem, 2vw, 1.75rem); font-weight: 800; letter-spacing: -.02em; margin-top: .25rem; font-variant-numeric: tabular-nums; }
+
+  /* Slide 12 */
+  .z-unit { text-align: center; align-items: center; padding: 2.2rem 2.4rem; gap: 1.6rem; }
+  .z-unit .n { font-size: clamp(1.7rem, 2.6vw, 2.25rem); font-weight: 800; letter-spacing: -.04em; color: var(--ink2); line-height: 1.1; }
+  .z-unit .box { width: 100%; border-radius: 12px; border: 1px solid; padding: 1.25rem 1rem; }
+  .z-unit .box .t { font-size: 1.15rem; font-weight: 700; color: var(--ink2); letter-spacing: -.02em; }
+  .z-unit .box .d { font-size: .93rem; font-weight: 600; margin-top: .3rem; }
+  .z-unit .foot { width: 100%; border-radius: 12px; border: 1px solid; padding: .95rem; font-size: .95rem; font-weight: 600; letter-spacing: -.01em; }
+
+  /* Slide 14 */
+  .z-close { background: #fff; border: 1px solid #E9D5FF; border-radius: 22px; padding: 4rem 4rem 4.5rem; display: flex; flex-direction: column; gap: 1.6rem; }
+  .z-close h2 { font-size: clamp(2rem, 3.2vw, 2.65rem); font-weight: 800; letter-spacing: -.04em; line-height: 1.15; color: var(--ink2); margin: 0; }
+  .z-close p { font-size: 1.15rem; color: #1E1B4B; line-height: 1.6; max-width: 54rem; margin: 0; letter-spacing: -.01em; }
+  .z-close .kp { border: 1px solid #F1F1F5; border-radius: 18px; padding: 2rem 1rem; text-align: center; }
+  .z-close .kp .n { font-size: clamp(2rem, 3.2vw, 2.75rem); font-weight: 600; line-height: 1.1; }
+  .z-close .kp .l { font-size: 1rem; font-weight: 700; color: var(--ink2); text-transform: uppercase; letter-spacing: -.01em; margin-top: .4rem; }
+  .btn { padding: .7rem 1.4rem; border-radius: 10px; font-weight: 600; font-size: .95rem; cursor: pointer; border: 1px solid transparent; letter-spacing: -.01em; }
+  .btn.ghost { background: #FAF5FF; color: #3B0764; border-color: #E9D5FF; }
+  .btn.solid { background: #A100FF; color: #fff; }
+  .btn:hover { filter: brightness(.97); }
+
+  /* ---------- Slides 10 y 13 (estilo propio) ---------- */
+  .s-wrap { display: flex; flex-direction: column; gap: 1.4rem; width: 100%; }
+  .s-head { border-left: 4px solid var(--purple); padding-left: 1rem; }
+  .kicker { font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--purple); }
+  .s-title { font-size: clamp(1.45rem, 2.3vw, 1.95rem); font-weight: 800; line-height: 1.2; letter-spacing: -.01em; color: var(--ink2); margin: .3rem 0 0; }
+  .s-sub { font-size: .98rem; color: var(--muted); margin: .4rem 0 0; line-height: 1.5; }
+  .grid2 { display: grid; gap: 1rem; grid-template-columns: minmax(0,1fr); }
+  @media (min-width: 900px) { .grid2 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .card { background: #fff; border: 1px solid #E9D5FF; border-radius: 14px; padding: 1.3rem 1.4rem; box-shadow: 0 1px 2px rgba(59,7,100,.04); display: flex; flex-direction: column; gap: .55rem; }
+  .card.a-green { border-top: 3px solid #10B981; } .card.a-amber { border-top: 3px solid #F59E0B; }
+  .label { display: inline-block; align-self: flex-start; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; padding: .25rem .6rem; border-radius: 6px; background: #F3E8FF; color: #6B21A8; white-space: nowrap; }
+  .label.green { background: #D1FAE5; color: #065F46; } .label.amber { background: #FEF3C7; color: #92400E; } .label.blue { background: #DBEAFE; color: #1E40AF; }
+  .quote { font-size: .97rem; color: #334155; line-height: 1.6; font-style: italic; margin: 0; padding-left: .9rem; border-left: 3px solid #D8B4FE; }
+  .role { font-size: .9rem; font-weight: 700; color: var(--ink2); }
+  .gain { font-size: .88rem; font-weight: 600; color: var(--ink2); }
+  .gain b { color: var(--purple); }
+  .ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .ul li { font-size: .93rem; color: #334155; line-height: 1.5; padding-left: 1rem; position: relative; }
+  .ul li::before { content: ""; position: absolute; left: 0; top: .6em; width: 6px; height: 6px; border-radius: 2px; background: var(--purple); }
+  .ul.g li::before { background: #10B981; } .ul.a li::before { background: #F59E0B; }
+  .ul li b { color: var(--ink2); }
+  .note { font-size: .95rem; color: var(--ink2); background: #F3E8FF; border: 1px solid #D8B4FE; border-radius: 12px; padding: .9rem 1.1rem; line-height: 1.5; }
+  .note b { color: var(--purple); }
+
+  /* ---------- Guion e índice ---------- */
+  .drawer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: rgba(255,255,255,.97); backdrop-filter: blur(16px); border-top: 2px solid #A100FF;
+    padding: 1.1rem 1.5rem; box-shadow: 0 -20px 50px rgba(0,0,0,.15); transform: translateY(100%); transition: transform .3s; max-height: 45vh; overflow-y: auto; }
+  .drawer.open { transform: none; }
+  .drawer .wrap { max-width: 72rem; margin: 0 auto; display: flex; flex-direction: column; gap: .8rem; }
+  .drawer .hd { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #F3E8FF; padding-bottom: .5rem; }
+  .drawer .hd span { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink2); }
+  .drawer .hd code { font-family: "JetBrains Mono", monospace; font-size: .7rem; padding: .1rem .5rem; border-radius: 5px; background: #F3E8FF; color: #6B21A8; margin-left: .5rem; }
+  .drawer .cols { display: grid; gap: 1rem; grid-template-columns: 2fr 1fr 1fr; }
+  @media (max-width: 900px) { .drawer .cols { grid-template-columns: 1fr; } }
+  .drawer h4 { margin: 0 0 .35rem; font-size: .78rem; color: var(--ink2); }
+  .drawer p { margin: 0; font-size: .85rem; line-height: 1.6; color: #334155; padding: .75rem; border-radius: 12px; border: 1px solid #E2E8F0; background: #F8FAFC; }
+  .drawer .b2 p { background: #FAF5FF; border-color: #E9D5FF; } .drawer .b3 p { background: #ECFDF5; border-color: #A7F3D0; }
+  .xbtn { border: none; background: none; color: var(--muted); font-size: .78rem; cursor: pointer; }
+  .modal { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; padding: 1rem; }
+  .modal.open { display: flex; }
+  .modal .box { background: #fff; border-radius: 18px; max-width: 64rem; width: 100%; max-height: 85vh; overflow-y: auto; padding: 1.5rem; }
+  .modal .hd { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #F3E8FF; padding-bottom: .8rem; margin-bottom: 1rem; font-size: .85rem; font-weight: 700; text-transform: uppercase; color: var(--ink2); }
+  .thumbs { display: grid; gap: .75rem; grid-template-columns: repeat(4, minmax(0,1fr)); }
+  .thumb { padding: .8rem; border-radius: 12px; border: 1px solid #F3E8FF; cursor: pointer; }
+  .thumb:hover { border-color: #D8B4FE; }
+  .thumb.cur { background: #FAF5FF; border-color: #A855F7; }
+  .thumb .n { font-family: "JetBrains Mono", monospace; font-size: .68rem; font-weight: 700; color: #7E22CE; }
+  .thumb .t { font-size: .8rem; font-weight: 700; color: var(--ink2); margin-top: .3rem; }
+
+  /* ---------- Modo edición ---------- */
+  body.edit-mode .ed { outline: 2px dashed #A100FF; outline-offset: 2px; background-color: rgba(161,0,255,.04); border-radius: 4px; cursor: text; }
+  body.edit-mode .ed:focus { background-color: rgba(161,0,255,.09); }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #F7F4FD; }
+  ::-webkit-scrollbar-thumb { background: #D8B4FE; border-radius: 999px; }
+
+  /* Ajustes de esta versión */
+  .z-line.c { justify-content: flex-start; text-align: left; position: relative; min-height: 3.4rem; }
+  .z-line.c .m { position: absolute; right: 1.1rem; top: 50%; transform: translateY(-50%); }
+  .z-kpi, .z-pt { justify-content: center; align-items: center; }
+  .z-big { font-weight: 500 !important; font-size: 1.05rem !important; letter-spacing: -.01em !important; }
+  .z-sec .h { font-weight: 400 !important; font-size: 1.08rem !important; }
+  .z-unit .box { padding: 1rem !important; }
+  .z-unit .box .t { font-weight: 400 !important; font-size: 1rem !important; }
+
+  .z-step .tag { margin-top: auto; }
+  .z-step .inner { flex: 1; }
+  .slide { position: relative; }
+</style>
+</head>
+<body>
+
+<div class="topbar"></div>
+
+<header class="nav">
+  <div class="nav-l">
+    <div class="brand" onclick="goToSlide(0)">
+      <span class="gt">&gt;</span><span class="nm">Accenture</span>
+      <span class="badge hide-md">GenAI Mavericks 2026</span>
+    </div>
+    <div class="vsep hide-md"></div>
+    <span class="navtitle hide-md" id="navSlideTitle">La Voz del Mercado</span>
+  </div>
+
+  <div class="counter">
+    <span class="c mono" id="slideCounter">10 / 14</span>
+    <div class="prog hide-md"><div id="progressBar" style="width: 71.4286%;"></div></div>
+  </div>
+
+  <div class="ctrls">
+    <button class="nbtn" id="dlBtn" onclick="downloadHTML()" title="Descargar una copia del HTML con tus cambios">
+      <svg class="i" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path></svg>
+      <span>Descargar HTML</span>
+    </button>
+    <button class="nbtn" id="editModeBtn" onclick="toggleEditMode()" title="Modo edición (E)">
+      <svg class="i" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+      <span id="editBtnText">Modo Edición</span>
+    </button>
+    <button class="nbtn alt" id="notesToggleBtn" onclick="toggleSpeakerNotes()" title="Guion (N)">
+      <svg class="i" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
+      <span>Guion (N)</span>
+    </button>
+    <button class="ibtn" onclick="toggleGridModal()" title="Índice (G)">
+      <svg class="i" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+    </button>
+    <button class="ibtn hide-md" onclick="toggleFullScreen()" title="Pantalla completa (F)">
+      <svg class="i" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+    </button>
+    <button class="arrow" onclick="prevSlide()" title="Anterior (←)">
+      <svg class="i" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+    </button>
+    <button class="arrow next" onclick="nextSlide()" title="Siguiente (→ / Espacio)">
+      <svg class="i" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===================== 01 · PORTADA ===================== -->
+  <section class="slide sys" data-title="Portada Ejecutiva">
+    <div class="s1">
+      <span class="s1-badge">&gt; Accenture GenAI Mavericks · Segunda edición</span>
+      <h1>Synthetic Spain: Simulación Social con IA<br><span class="grad">y Población Sintética Real</span></h1>
+      <p>Anticipamos cómo reaccionará la sociedad española ante nuevas iniciativas, productos o leyes en solo 3 segundos. Desarrollado con <strong>425.000 entrevistas reales del CIS</strong>, <span class="pp">50.000 perfiles sintéticos calibrados</span> y un margen de error verificado de solo 8 puntos.</p>
+      <div class="s1-kpis">
+        <div class="s1-k f"><div class="n" style="color:#581C87;">8,11 <small>pp</small></div><div class="l">Error medio verificado en examen ciego</div></div>
+        <div class="s1-k"><div class="n" style="color:#059669;">2,49 <small>pp</small></div><div class="l">Margen de error si ya existía en CIS</div></div>
+        <div class="s1-k"><div class="n" style="color:#3B0764;">50.000</div><div class="l">Adultos sintéticos según Censo INE</div></div>
+        <div class="s1-k"><div class="n" style="color:#A100FF;">3 seg</div><div class="l">Tiempo de respuesta en CPU normal</div></div>
+      </div>
+      <div class="s1-team">Miguel Alsina · Itziar Carro · Javier Fernández · Javier Picazo · Alejandro Useros</div>
+    </div>
+  </section>
+
+  <!-- ===================== 02 · PROBLEMA ===================== -->
+  <section class="slide" data-title="El Problema de Mercado">
+    <div class="z">
+      <div class="z-head">
+        <div class="z-kick">&gt; El problema de mercado</div>
+        <h2 class="z-title">El Dilema: ¿Esperar semanas o confiar en respuestas sin fundamento?</h2>
+        <p class="z-sub">La investigación tradicional frena la agilidad; la IA genérica sin calibrar inventa opiniones.</p>
+      </div>
+      <div class="z-g3">
+        <div class="z-card" style="border-color:#FECDD3;">
+          <div class="z-row"><span class="z-cap" style="color:#BE123C;">Coste y lentitud</span><span class="z-pill p-rose">Tradicional</span></div>
+          <h3 class="z-h">Encuestas de Panel</h3>
+          <div class="z-item" style="background:#F8FAFC;">15.000 € a 60.000 € por oleada</div>
+          <div class="z-item" style="background:#F8FAFC;">4 a 8 semanas de plazo de entrega</div>
+          <div class="z-item" style="background:#F8FAFC;">Inviable para iterar hipótesis rápidas</div>
+          <div class="z-foot" style="color:#BE123C;">Impacto: Parálisis de decisión por plazos y presupuesto.</div>
+        </div>
+        <div class="z-card" style="border-color:#FDE68A;">
+          <div class="z-row"><span class="z-cap" style="color:#B45309;">Alucinación</span><span class="z-pill p-amber">IA estándar</span></div>
+          <h3 class="z-h">Chatbots Convencionales</h3>
+          <div class="z-item" style="background:#FFFBEB; border-color:#FEF3C7;">34,2 pp de error (peor que el azar)</div>
+          <div class="z-item" style="background:#FFFBEB; border-color:#FEF3C7;">Consenso artificial y estereotipos</div>
+          <div class="z-item" style="background:#FFFBEB; border-color:#FEF3C7;">Caja negra sin respaldo empírico</div>
+          <div class="z-foot" style="color:#B45309;">Impacto: Alto riesgo de decisiones basadas en datos ficticios.</div>
+        </div>
+        <div class="z-card" style="border:2px solid #A100FF;">
+          <div class="z-row"><span class="z-cap" style="color:#3B0764;">Rigor inmediato</span><span class="z-pill p-solid">Synthetic Spain</span></div>
+          <h3 class="z-h">Nuestra Solución</h3>
+          <div class="z-item" style="background:#fff; border-color:#EDE4FB;">8,11 pp de error en examen ciego oficial</div>
+          <div class="z-item" style="background:#fff; border-color:#EDE4FB;">3 segundos por consulta (total y subgrupos)</div>
+          <div class="z-item" style="background:#fff; border-color:#EDE4FB;">Confianza matemática y auditoría de fuentes</div>
+          <div class="z-foot" style="color:#581C87; border-color:#F3E8FF;">Ventaja: Velocidad de IA con el rigor científico del CIS.</div>
+        </div>
+      </div>
+      <div class="z-row" style="background:#fff; border:1px solid var(--line); border-radius:14px; padding:.9rem 1.2rem; flex-wrap:wrap;">
+        <span style="font-weight:700; color:var(--ink2); letter-spacing:-.01em;">Temáticas de Negocio Validadas:</span>
+        <span style="display:flex; flex-wrap:wrap; gap:.6rem;">
+          <span class="z-pill p-white" style="text-transform:none; font-size:.9rem; font-weight:500; padding:.35rem .9rem;">Vivienda</span>
+          <span class="z-pill p-white" style="text-transform:none; font-size:.9rem; font-weight:500; padding:.35rem .9rem;">Soledad</span>
+          <span class="z-pill p-white" style="text-transform:none; font-size:.9rem; font-weight:500; padding:.35rem .9rem;">Tecnología e IA</span>
+          <span class="z-pill p-white" style="text-transform:none; font-size:.9rem; font-weight:500; padding:.35rem .9rem;">Medio Ambiente</span>
+          <span class="z-pill p-white" style="text-transform:none; font-size:.9rem; font-weight:500; padding:.35rem .9rem;">Salud</span>
+          <span class="z-pill p-white" style="text-transform:none; font-size:.9rem; font-weight:500; padding:.35rem .9rem;">Consumo</span>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 03 · PROPUESTA DE VALOR ===================== -->
+  <section class="slide" data-title="Nuestra Propuesta de Valor">
+    <div class="z">
+      <div class="z-head">
+        <div class="z-kick">&gt; Nuestra propuesta de valor</div>
+        <h2 class="z-title">La Estadística Decide. La Inteligencia Artificial Explica.</h2>
+        <p class="z-sub">Los números salen siempre de datos oficiales; la IA solo redacta y ayuda a entender.</p>
+      </div>
+      <div class="z-g2">
+        <div class="z-card" style="padding:2rem; gap:1rem;">
+          <div class="z-row"><h3 class="z-h" style="font-size:1.3rem;">La Estadística (Los Números)</h3><span class="z-pill p-purple" style="border-radius:6px; letter-spacing:.06em;">Cálculo real</span></div>
+          <div style="font-weight:500; color:#581C87;">Cálculo matemático sobre 425.000 encuestas reales</div>
+          <div class="z-line c"><div><div class="t">Pregunta Repetida (2,5 pp)</div></div><span class="m mono" style="color:#059669;">Dato Real</span></div>
+          <div class="z-line c"><div><div class="t">Pregunta Nueva (8,1 pp)</div></div><span class="m mono" style="color:#3B0764;">Estimado</span></div>
+          <div class="z-line c"><div><div class="t">Grupos Sociales (2,6 pp)</div></div><span class="m mono" style="color:#A100FF;">Desglose</span></div>
+          <div class="z-box" style="background:#FAF5FF; border:1px solid #E9D5FF; margin-top:.4rem;">Garantía: La IA no puede inventar ni modificar ningún número.</div>
+        </div>
+        <div class="z-card" style="padding:2rem; gap:1rem; background:#FDFBFF;">
+          <div class="z-row"><h3 class="z-h" style="font-size:1.3rem;">La Inteligencia Artificial (El Lenguaje)</h3><span class="z-pill p-white" style="border-radius:6px; letter-spacing:.06em;">Redacción</span></div>
+          <div style="font-weight:500; color:#581C87;">Comprensión de preguntas y redacción clara</div>
+          <div class="z-line c" style="background:#fff;"><div><div class="t">Entiende el Lenguaje Cotidiano</div></div></div>
+          <div class="z-line c" style="background:#fff;"><div><div class="t">Filtro de Seguridad Ética</div></div></div>
+          <div class="z-line c" style="background:#fff;"><div><div class="t">Explicación para Directivos</div></div></div>
+          <div class="z-box" style="background:#fff; border:1px solid #E9D5FF; margin-top:.4rem;">Control: Si la IA cambia un solo dato del informe, se descarta.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 04 · BASE SOCIOLÓGICA ===================== -->
+  <section class="slide" data-title="Base Sociológica Real">
+    <div class="z">
+      <div class="z-head">
+        <div class="z-kick">&gt; Base sociológica real</div>
+        <h2 class="z-title">El Espejo de España: 50.000 Personas que Reflejan el País</h2>
+        <p class="z-sub">No inventamos perfiles: reproducimos la sociedad española con datos oficiales del INE.</p>
+      </div>
+      <div class="z-g4">
+        <div class="z-card z-kpi"><div class="n" style="color:#3B0764;">108</div><div class="l">Estudios del CIS</div></div>
+        <div class="z-card z-kpi"><div class="n" style="color:#059669;">425k</div><div class="l">Entrevistas reales</div></div>
+        <div class="z-card z-kpi"><div class="n" style="color:#A100FF;">7.523</div><div class="l">Preguntas analizadas</div></div>
+        <div class="z-card z-kpi"><div class="n" style="color:#2E1065;">50.000</div><div class="l">Adultos sintéticos</div></div>
+      </div>
+      <div class="z-g3">
+        <div class="z-card z-pt"><div class="k" style="color:#7E22CE;">Pirámide oficial del INE</div><div class="t">Misma Estructura que España</div></div>
+        <div class="z-card z-pt"><div class="k" style="color:#047857;">Precisión al milímetro</div><div class="t">Desviación Menor al 0,1%</div></div>
+        <div class="z-card z-pt"><div class="k" style="color:#A100FF;">Base verídica</div><div class="t">Respondentes Reales</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 05 · CÓMO FUNCIONA ===================== -->
+  <section class="slide" data-title="Cómo Funciona el Sistema">
+    <div class="z">
+      <div class="z-head">
+        <div class="z-kick">&gt; Cómo funciona el sistema</div>
+        <h2 class="z-title">Cómo Funciona: De la Pregunta al Resultado en 4 Pasos</h2>
+        <p class="z-sub">Un proceso automático que analiza cualquier iniciativa ciudadana o empresarial en 3 segundos.</p>
+      </div>
+      <div class="z-g4">
+        <div class="z-card z-step">
+          <div class="k mono">PASO 01 · ENTIENDE</div>
+          <h3 class="z-h">Comprende y Filtra</h3>
+          <div class="inner">Lee la pregunta del usuario y descarta temas prohibidos.</div>
+          <div class="tag">Filtro Ético Activo</div>
+        </div>
+        <div class="z-card z-step">
+          <div class="k mono">PASO 02 · CALCULA</div>
+          <h3 class="z-h">Busca en el Histórico</h3>
+          <div class="inner">Si ya se preguntó, da el dato real; si es nueva, estima con datos parecidos.</div>
+          <div class="tag">Dato Oficial del CIS</div>
+        </div>
+        <div class="z-card z-step">
+          <div class="k mono">PASO 03 · SEGMENTA</div>
+          <h3 class="z-h">Separa por Grupos</h3>
+          <div class="inner">Calcula qué opinan jóvenes, mayores, regiones y diferentes rentas.</div>
+          <div class="tag">50.000 Personas</div>
+        </div>
+        <div class="z-card z-step" style="background:#FBF7FF; border-color:#E9D5FF;">
+          <div class="k mono">PASO 04 · EXPLICA</div>
+          <h3 class="z-h">Semáforo y Resumen</h3>
+          <div class="inner" style="background:#fff;">Asigna nota de confianza y redacta los motivos de la sociedad.</div>
+          <div class="tag">Informe Ejecutivo</div>
+        </div>
+      </div>
+      <div class="z-g3">
+        <div class="z-card z-mini"><div class="t" style="color:#2E1065;">3 Segundos de Espera</div></div>
+        <div class="z-card z-mini"><div class="t" style="color:#047857;">2,6 Puntos de Error en Grupos</div></div>
+        <div class="z-card z-mini"><div class="t" style="color:#3B0764;">338 Pruebas Automáticas</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 06 · GARANTÍA METODOLÓGICA ===================== -->
+  <section class="slide" data-title="Garantía Metodológica">
+    <div class="z" style="gap:1.4rem;">
+      <div class="z-head">
+        <div class="z-kick">&gt; Garantía metodológica</div>
+        <h2 class="z-title">Garantía de Verdad: Probado con Preguntas Secretas</h2>
+        <p class="z-sub">Comprobamos el sistema como si fuera un examen oficial: sin trampas y con datos que nunca vio.</p>
+      </div>
+      <div class="z-g2" style="gap:1.6rem;">
+        <div class="z-card" style="padding:1.8rem 2.2rem;">
+          <div class="z-row" style="border-bottom:1px solid #F5F3FA; padding-bottom:.8rem;"><h3 class="z-h">1. Examen Secreto con 88 Preguntas</h3><span class="z-pill p-purple">Aislado</span></div>
+          <div class="z-big" style="background:#FDFAFF; border-color:#F3E8FF; color:#2E1065;">11 Encuestas del CIS Jamás Vistas en Desarrollo</div>
+        </div>
+        <div class="z-card" style="padding:1.8rem 2.2rem;">
+          <div class="z-row" style="border-bottom:1px solid #F5F3FA; padding-bottom:.8rem;"><h3 class="z-h">2. Respeto Estricto de las Fechas</h3><span class="z-pill p-blue">Sin trampas</span></div>
+          <div class="z-big" style="background:#F5F9FF; border-color:#DBEAFE; color:#1E3A8A;">Solo Datos Anteriores a la Consulta</div>
+        </div>
+        <div class="z-card" style="padding:1.8rem 2.2rem;">
+          <div class="z-row" style="border-bottom:1px solid #F5F3FA; padding-bottom:.8rem;"><h3 class="z-h">3. Criterios Fijados de Antemano</h3><span class="z-pill p-green">Auditado</span></div>
+          <div class="z-big" style="background:#F0FDF8; border-color:#D1FAE5; color:#064E3B;">Objetivos de Acierto Predefinidos en Git</div>
+        </div>
+        <div class="z-card" style="padding:1.8rem 2.2rem;">
+          <div class="z-row" style="border-bottom:1px solid #F5F3FA; padding-bottom:.8rem;"><h3 class="z-h">4. Rechazo de Falsas Mejoras</h3><span class="z-pill p-amber">Honestidad</span></div>
+          <div class="z-big" style="background:#FFFDF5; border-color:#FEF3C7; color:#78350F;">Descarte de Trucos con Sobreajuste</div>
+        </div>
+      </div>
+      <div class="z-bar" style="border-color:#E9D5FF;">Rigor Total: Un sistema honesto que avisa de sus dudas y no maquilla resultados.</div>
+      <div class="z-team"><span>Miguel Alsina · Itziar Carro · Javier Fernández · Javier Picazo · Alejandro Useros</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== 07 · RESULTADOS ===================== -->
+  <section class="slide" data-title="Resultados Comprobados">
+    <div class="z" style="gap:1.4rem;">
+      <div class="z-head">
+        <div class="z-kick">&gt; Resultados comprobados</div>
+        <h2 class="z-title">Resultados Comprobados: Reducimos el Error a Menos de la Mitad</h2>
+        <p class="z-sub">Examen oficial con 88 preguntas que el sistema no conocía (comparativa de error en puntos porcentuales).</p>
+      </div>
+      <div class="z-card" style="padding:1.75rem; gap:.95rem;">
+        <div class="z-res" style="background:#FFF1F2; border-color:#FECDD3;">
+          <div><div class="t" style="color:#9F1239;">1. ChatGPT sin Calibrar</div></div>
+          <span class="v mono" style="color:#E11D48;">34 Puntos de Error</span>
+        </div>
+        <div class="z-res" style="background:#F8FAFC; border-color:#E2E8F0;">
+          <div><div class="t" style="color:#1E293B;">2. Responder al Azar</div></div>
+          <span class="v mono" style="color:#475569;">17 Puntos de Error</span>
+        </div>
+        <div class="z-res" style="background:#F8FAFC; border-color:#E2E8F0;">
+          <div><div class="t" style="color:#1E293B;">3. Estadística Básica</div></div>
+          <span class="v mono" style="color:#475569;">8,8 Puntos de Error</span>
+        </div>
+        <div class="z-res big" style="background:#fff; border:2px solid #A100FF;">
+          <div><div class="t" style="color:#2E1065;">4. Synthetic Spain – Pregunta Nueva</div></div>
+          <span class="v mono" style="color:#A100FF;">8,1 Puntos de Error</span>
+        </div>
+        <div class="z-res big" style="background:#ECFDF5; border:2px solid #34D399;">
+          <div><div class="t" style="color:#022C22;">5. Synthetic Spain – Pregunta Existente</div></div>
+          <span class="v mono" style="color:#059669;">2,5 Puntos de Error</span>
+        </div>
+        <div class="z-g3" style="border-top:1px solid #F1F1F5; padding-top:1rem; gap:.9rem;">
+          <div class="z-chip" style="color:#1E1B4B;">Acierto en Grupos: 2,6 puntos de error</div>
+          <div class="z-chip" style="color:#1E1B4B;">Semáforo: Acierta el 90% de las veces</div>
+          <div class="z-chip" style="color:#A100FF;">Velocidad: 3 segundos por análisis</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 08 · DEMO ===================== -->
+  <section class="slide" data-title="Demostración de la Plataforma">
+    <div class="z">
+      <div class="z-head">
+        <div class="z-kick">&gt; Demostración de la plataforma</div>
+        <h2 class="z-title">Demostración en Vivo: Tres Casos Reales</h2>
+        <p class="z-sub">El simulador resolviendo consultas cotidianas de empresas e instituciones.</p>
+      </div>
+      <div class="z-split">
+        <div class="z-video" id="videoBox" onclick="pickVideo()" title="Haz clic para cargar el vídeo de la demo">
+          <div class="play"><svg width="30" height="30" viewBox="0 0 24 24" fill="#A100FF"><path d="M7 4.5v15l13-7.5z"></path></svg></div>
+          <div class="t">Vídeo de la Demostración (4 Minutos)</div>
+          <div class="d">Simulación interactiva y desgloses sociodemográficos en directo.</div>
+          <input type="file" id="videoInput" accept="video/*" style="display:none" onchange="loadVideo(this)">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:1.1rem;">
+          <div class="z-card z-case">
+            <div class="z-row"><span class="t">1. Acceso a la Vivienda</span><span class="z-pill p-green">Verde · 92%</span></div>
+            <div class="d">68% apoyo nacional (82% en jóvenes vs. 54% en mayores de 65).</div>
+          </div>
+          <div class="z-card z-case">
+            <div class="z-row"><span class="t">2. Nueva Jornada Laboral</span><span class="z-pill p-amber">Amarillo · 84%</span></div>
+            <div class="d">62% a favor. Rango amplio por gran división asalariados vs autónomos.</div>
+          </div>
+          <div class="z-card z-case">
+            <div class="z-row"><span class="t">3. Pregunta de Voto o Partidos</span><span class="z-pill p-rose">Bloqueo ético</span></div>
+            <div class="d">Bloqueada por seguridad ética; sugiere reformulación hacia temas sociales.</div>
+          </div>
+          <div class="z-bar" style="background:#FDF8FF; border-color:#F3E8FF;">Inferencia Inmediata: Resultados en pantalla en 2–3 segundos.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 09 · CASOS SECTORIALES ===================== -->
+  <section class="slide" data-title="Casos Sectoriales">
+    <div class="z">
+      <div class="z-head">
+        <div class="z-kick">&gt; Casos de aplicación sectorial</div>
+        <h2 class="z-title">Aplicación Inmediata en Cuatro Grandes Sectores</h2>
+        <p class="z-sub">Respuestas prácticas a decisiones cotidianas en clientes clave de consultoría.</p>
+      </div>
+      <div class="z-g2" style="gap:1.6rem;">
+        <div class="z-card z-sec">
+          <div class="z-row"><span class="s">Supermercados y Gran Consumo</span><span class="z-pill p-purple p-soft">Rapidez</span></div>
+          <div class="h">Probar Envases y Precios Antes de Fabricar</div>
+          <div class="z-foot" style="color:#6B21A8; border-color:#F5F3FA; margin-top:0;">Ahorro: De meses de prospección a solo 48 horas.</div>
+        </div>
+        <div class="z-card z-sec">
+          <div class="z-row"><span class="s">Ayuntamientos y Sector Público</span><span class="z-pill p-blue p-soft">Aceptabilidad</span></div>
+          <div class="h">Anticipar la Reacción de los Ciudadanos</div>
+          <div class="z-foot" style="color:#1E40AF; border-color:#F5F3FA; margin-top:0;">Ahorro: Prevenir conflictos y protestas vecinales.</div>
+        </div>
+        <div class="z-card z-sec">
+          <div class="z-row"><span class="s">Banca y Compañías de Seguros</span><span class="z-pill p-green p-soft">Inclusión</span></div>
+          <div class="h">Nuevos Productos y Atención a Mayores</div>
+          <div class="z-foot" style="color:#065F46; border-color:#F5F3FA; margin-top:0;">Ahorro: Lanzar productos con éxito comercial seguro.</div>
+        </div>
+        <div class="z-card z-sec">
+          <div class="z-row"><span class="s">Salud y Bienestar Social</span><span class="z-pill p-rose p-soft">Impacto</span></div>
+          <div class="h">Campañas Preventivas con Impacto Real</div>
+          <div class="z-foot" style="color:#9F1239; border-color:#F5F3FA; margin-top:0;">Ahorro: Presupuestos públicos mucho más eficaces.</div>
+        </div>
+      </div>
+      <div class="z-team"><span>Miguel Alsina · Itziar Carro · Javier Fernández · Javier Picazo · Alejandro Useros</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== 10 · LA VOZ DEL MERCADO ===================== -->
+  <section class="slide sys active" data-title="La Voz del Mercado">
+    <div class="s-wrap">
+      <div class="s-head">
+        <span class="kicker">Validación de mercado</span>
+        <h2 class="s-title">La voz del mercado: qué opinan directivos y líderes empresariales</h2>
+        <p class="s-sub">Consultamos a directivos de grandes sectores para validar el valor de la herramienta.</p>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem;"><span class="role">Directora de Marketing · Gran Consumo</span><span class="label">Velocidad</span></div>
+          <p class="quote">«Poder evaluar 15 mensajes de campaña o conceptos de packaging en una sola mañana cambia radicalmente nuestro trabajo. Nos permite descartar lo que no funciona antes de gastar presupuesto en producción.»</p>
+          <div class="gain"><b>Aporte clave:</b> menor tiempo de lanzamiento al mercado.</div>
+        </div>
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem;"><span class="role">Director de Estrategia e Innovación · Banca</span><span class="label green">Reducción de riesgo</span></div>
+          <p class="quote">«Cuando diseñamos nuevos servicios para jóvenes o séniors, la duda sobre su adopción es enorme. Esta simulación nos da un primer filtro riguroso para no lanzar proyectos condenados al fracaso.»</p>
+          <div class="gain"><b>Aporte clave:</b> menos riesgo de capital antes de invertir.</div>
+        </div>
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem;"><span class="role">Responsable de Asuntos Públicos · Sector Público</span><span class="label blue">Anticipación social</span></div>
+          <p class="quote">«Muchas normativas fracasan no por ser malas, sino por no anticipar la reacción ciudadana. Saber en 3 segundos qué grupos van a sentirse desatendidos permite negociar y buscar soluciones antes.»</p>
+          <div class="gain"><b>Aporte clave:</b> diagnóstico preventivo de fricción ciudadana.</div>
+        </div>
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem;"><span class="role">Socia de Investigación de Mercados</span><span class="label">Complementariedad</span></div>
+          <p class="quote">«No elimina las encuestas presenciales cuando necesitas un dato contractual, pero sí el 80 % de las dudas iniciales. Convierte la encuesta tradicional en un paso final más barato y enfocado.»</p>
+          <div class="gain"><b>Aporte clave:</b> optimización del presupuesto de investigación.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 11 · BUSINESS CASE Y ROI ===================== -->
+  <section class="slide" data-title="Business Case y ROI">
+    <div class="z">
+      <div class="z-head">
+        <div class="z-kick">&gt; Business case y retorno de inversión</div>
+        <h2 class="z-title">Impacto Económico: -72% de Coste y Cero Riesgo</h2>
+        <p class="z-sub">Calculadora interactiva: combinación de simulación sintética previa y encuesta presencial selectiva.</p>
+      </div>
+      <div class="z-split roi" style="gap:2rem;">
+        <div class="z-card" style="padding:1.9rem 2rem; gap:1rem;">
+          <div class="z-cap" style="color:#1E1B4B; font-size:.92rem;">Coste por consulta</div>
+          <div class="z-cost" style="background:#FFF1F2; border-color:#FECDD3;">
+            <div class="t" style="color:#9F1239;">Encuesta de Panel Tradicional</div>
+            <div class="d">25.000 € por oleada · 6 semanas de recogida en campo</div>
+          </div>
+          <div class="z-cost" style="background:#FAF5FF; border-color:#E9D5FF;">
+            <div class="t" style="color:#3B0764;">Synthetic Spain</div>
+            <div class="d">&lt; 1 € por consulta · 3 segundos de tiempo de cómputo</div>
+          </div>
+          <div style="border-top:1px solid #F1F1F5; padding-top:1rem; display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+            <div class="z-stat"><div class="n" style="color:#059669;">100x</div><div class="l">Más rápido</div></div>
+            <div class="z-stat"><div class="n" style="color:#A100FF;">-72%</div><div class="l">Ahorro neto</div></div>
+          </div>
+        </div>
+        <div class="z-card" style="padding:1.9rem 2rem; gap:1.3rem;">
+          <div class="z-row">
+            <span style="display:flex; align-items:center; gap:.6rem; font-weight:800; font-size:1.12rem; color:#2E1065; letter-spacing:-.02em;"><span style="width:12px; height:12px; border-radius:50%; background:#A100FF; display:inline-block;"></span>Calculadora de Ahorro Anual</span>
+            <span class="mono" style="font-size:.85rem; font-weight:600; background:#F3E8FF; color:#6B21A8; padding:.25rem .65rem; border-radius:6px;">Simulador ROI</span>
+          </div>
+          <div>
+            <div class="z-sl"><span>Estudios o campañas anuales:</span><b id="roiSurveysDisplay">12 estudios</b></div>
+            <input type="range" class="z-range" id="roiSurveysSlider" min="4" max="50" value="12" oninput="updateROICalculation()" style="--p: 17.391304347826086%;">
+          </div>
+          <div>
+            <div class="z-sl"><span>Coste medio por estudio tradicional:</span><b id="roiCostDisplay">25.000 €</b></div>
+            <input type="range" class="z-range" id="roiCostSlider" min="10000" max="60000" step="5000" value="25000" oninput="updateROICalculation()" style="--p: 30%;">
+          </div>
+          <div class="z-out">
+            <div><div class="k">Gasto Tradicional</div><div class="v" id="roiTradTotal" style="color:#E11D48;">300.000 €</div></div>
+            <div><div class="k">Modelo Mixto</div><div class="v" id="roiSynthTotal" style="color:#3B0764;">84.000 €</div></div>
+            <div><div class="k" style="color:#047857; font-weight:700;">Ahorro Neto Anual</div><div class="v" id="roiNetSavings" style="color:#059669;">216.000 €</div></div>
+          </div>
+          <p style="margin:0; font-size:.9rem; color:#475569; font-style:italic; line-height:1.6;">* Efecto Des-riesgo: Evitar un único lanzamiento fallido ahorra más capital que todo el presupuesto anual de investigación de mercados.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 12 · INTEGRACIÓN EN ACCENTURE ===================== -->
+  <section class="slide" data-title="Integración en Accenture">
+    <div class="z" style="gap:1.5rem;">
+      <div class="z-head">
+        <div class="z-kick">&gt; Integración en Accenture</div>
+        <h2 class="z-title">Encaje Perfecto en los Equipos de Accenture</h2>
+        <p class="z-sub">Un activo de software transferible e integrable de inmediato en las líneas de negocio de la firma.</p>
+      </div>
+      <div class="z-g3" style="gap:2rem;">
+        <div class="z-card z-unit" style="border-color:#E9D5FF;">
+          <span class="z-pill" style="background:#F3E8FF; color:#A100FF; font-size:.85rem; letter-spacing:.06em; padding:.35rem .9rem;">Márketing &amp; Creatividad</span>
+          <div class="n">Accenture Song</div>
+          <div class="box" style="background:#FDFAFF; border-color:#F3E8FF;"><div class="t">Pre-testing de campañas en 24 horas</div></div>
+          <div class="foot" style="background:#FDFAFF; border-color:#F3E8FF; color:#2E1065;">Creatividad validada con datos reales</div>
+        </div>
+        <div class="z-card z-unit" style="border-color:#BFDBFE;">
+          <span class="z-pill" style="background:#DBEAFE; color:#1E40AF; font-size:.85rem; letter-spacing:.06em; padding:.35rem .9rem;">Estrategia &amp; Dirección</span>
+          <div class="n">Accenture Strategy</div>
+          <div class="box" style="background:#F8FBFF; border-color:#DBEAFE;"><div class="t">Riesgo social en fusiones y reformas</div></div>
+          <div class="foot" style="background:#EFF6FF; border-color:#BFDBFE; color:#1E40AF;">Certeza analítica para comités directivos</div>
+        </div>
+        <div class="z-card z-unit" style="border-color:#A7F3D0;">
+          <span class="z-pill" style="background:#D1FAE5; color:#065F46; font-size:.85rem; letter-spacing:.06em; padding:.35rem .9rem;">Tecnología &amp; Software</span>
+          <div class="n">Data &amp; AI Practice</div>
+          <div class="box" style="background:#F5FDF9; border-color:#D1FAE5;"><div class="t">Activo escalable a toda Europa</div></div>
+          <div class="foot" style="background:#ECFDF5; border-color:#A7F3D0; color:#022C22;">Propiedad intelectual transferible</div>
+        </div>
+      </div>
+      <div class="z-bar" style="border-color:#E9D5FF;">Sinergia Global: Un activo transversal que potencia las propuestas comerciales de Accenture ante grandes clientes.</div>
+      <div class="z-team"><span>Miguel Alsina · Itziar Carro · Javier Fernández · Javier Picazo · Alejandro Useros</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== 13 · IA RESPONSABLE ===================== -->
+  <section class="slide sys" data-title="IA Responsable y Ética">
+    <div class="s-wrap">
+      <div class="s-head">
+        <span class="kicker">IA responsable y ética</span>
+        <h2 class="s-title">Capacidades verificadas y límites claros</h2>
+        <p class="s-sub">Qué puede hacer la plataforma con garantías y qué no debe hacerse nunca.</p>
+      </div>
+      <div class="grid2">
+        <div class="card a-green">
+          <span class="label green">Capacidades verificadas</span>
+          <ul class="ul g">
+            <li><b>Intervalos de confianza fiables:</b> si el sistema da un rango del 45 % al 55 %, acierta 9 de cada 10 veces.</li>
+            <li><b>Transparencia en las fuentes:</b> cada respuesta indica de qué encuestas del CIS procede y con cuántas personas se calculó.</li>
+            <li><b>Privacidad:</b> solo microdatos públicos y anonimizados; no se guarda ningún dato personal.</li>
+          </ul>
+        </div>
+        <div class="card a-amber">
+          <span class="label amber">Límites y reglas éticas</span>
+          <ul class="ul a">
+            <li><b>Preguntas sí/no inéditas:</b> en temas simples y muy polarizados la incertidumbre es mayor, y el sistema lo indica.</li>
+            <li><b>Alerta de antigüedad:</b> si la encuesta de referencia tiene más de 12 meses, se avisa de un posible cambio social.</li>
+            <li><b>Bloqueo electoral y político:</b> prohibido usarlo para pronósticos de voto o para influir en la opinión pública.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note">Diseñado conforme al <b>EU AI Act</b> y a los estándares de IA Responsable de Accenture, con trazabilidad total.</div>
+    </div>
+  </section>
+
+  <!-- ===================== 14 · CONCLUSIÓN ===================== -->
+  <section class="slide" data-title="Conclusión y Propuesta de Valor">
+    <div class="z-close">
+      <span class="z-pill p-purple" style="align-self:flex-start; font-size:.85rem; padding:.4rem .9rem; border:1px solid #E9D5FF; color:#6B21A8;">&gt; Conclusión estratégica</span>
+      <h2>Decisiones Seguras, Inmediatas<br>y con <span class="grad">Datos Reales</span></h2>
+      <p>Synthetic Spain sustituye las dudas de la intuición por la seguridad de los datos oficiales: de esperar semanas a simular en 3 segundos, reduciendo el error a la mitad y des-arriesgando cada inversión.</p>
+      <div class="z-g3" style="gap:1.75rem; margin-top:.8rem;">
+        <div class="kp" style="background:#FBF7FF; border-color:#E9D5FF;"><div class="n mono" style="color:#3B0764;">8,1 pp</div><div class="l">Precisión demostrada</div></div>
+        <div class="kp"><div class="n mono" style="color:#059669;">-72% Coste</div><div class="l">Rapidez en 3 segundos</div></div>
+        <div class="kp"><div class="n" style="color:#A100FF; font-weight:800; letter-spacing:-.03em;">Accenture</div><div class="l">Activo estratégico</div></div>
+      </div>
+      <div class="z-team" style="border-top:1px solid #F1F1F5; padding-top:1.4rem; margin-top:.6rem;">
+        <span style="font-size:.95rem;">Miguel Alsina · Itziar Carro · Javier Fernández · Javier Picazo · Alejandro Useros</span>
+        <span style="display:flex; gap:1rem;">
+          <button class="btn ghost" onclick="goToSlide(7)">Ver Vídeo de Demo</button>
+          <button class="btn solid" onclick="goToSlide(0)">Inicio · ¿Preguntas?</button>
+        </span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- GUION (N) -->
+<aside class="drawer" id="speakerNotesDrawer">
+  <div class="wrap">
+    <div class="hd">
+      <div><span>Guion de Pitch Corporativo</span><code id="notesSlideNumber">Slide 10 de 14 · La Voz del Mercado</code></div>
+      <button class="xbtn" onclick="toggleSpeakerNotes()">Cerrar guion (N)</button>
+    </div>
+    <div class="cols">
+      <div><h4>Qué decir</h4><p id="notesPitchScript">Para validar que no estábamos construyendo una solución teórica de laboratorio, hablamos con directivos y profesionales de grandes empresas. Valoran sobre todo la velocidad para descartar ideas malas en horas, la tranquilidad de reducir el riesgo antes de invertir y la capacidad de que los presupuestos de investigación rindan más.</p></div>
+      <div class="b2"><h4>Criterio del framework cubierto</h4><p id="notesBusinessFocus">Framework: User Feedback &amp; Market Validation + Engagement. Iniciativa proactiva de validación con profesionales reales.</p></div>
+      <div class="b3"><h4>Pregunta clave del jurado</h4><p id="notesJuryQuestion">P: ¿Qué opinan sobre sustituir a las personas por IA? -&gt; R: No se trata de sustituir la voz humana, sino de hacer simulaciones previas para tomar decisiones informadas antes de la encuesta presencial.</p></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ÍNDICE (G) -->
+<div class="modal" id="gridModal" onclick="if(event.target===this)toggleGridModal()">
+  <div class="box">
+    <div class="hd"><span>Índice de diapositivas</span><button class="xbtn" onclick="toggleGridModal()">Cerrar (Esc / G)</button></div>
+    <div class="thumbs" id="gridThumbnailsContainer"></div>
+  </div>
+</div>
+
+<footer>
+  <div class="l">
+    <span>Navega con:</span><kbd>←</kbd><kbd>→</kbd><span>o pulsa</span><kbd>Espacio</kbd>
+    <span class="sep hide-md">|</span><span class="hide-md">Guion:</span><kbd class="hide-md">N</kbd>
+    <span class="sep hide-md">|</span><span class="hide-md">Modo Edición:</span><kbd class="hide-md">E</kbd>
+  </div>
+  <div class="r hide-md"><span>GenAI Mavericks Accenture</span><span class="sep">·</span><b>Edición Ejecutiva Corporativa</b></div>
+</footer>
+
+<script>
+  const slidesData = [
+    { title: "Portada Ejecutiva",
+      script: "Buenos días miembros del jurado de Accenture. Hoy les presentamos Synthetic Spain, desarrollado por Miguel Alsina, Itziar Carro, Javier Fernández, Javier Picazo y Alejandro Useros. En el mundo empresarial actual, saber cómo va a recibir la sociedad un producto o una ley cuesta semanas y decenas de miles de euros. Hemos creado una infraestructura sociométrica anclada en 425.000 entrevistas reales del CIS que predice las respuestas en 3 segundos, con un error demostrado de solo 8 puntos y un indicador de confianza matemática.",
+      business: "Framework: Clarity & Conciseness + Collaboration. Apertura corporativa, segura y presentación del equipo alineado.",
+      jury: "P: ¿Qué valor aporta a los clientes corporativos de Accenture? -> R: Agilidad radical en la toma de decisiones: evaluar decenas de hipótesis en minutos antes de comprometer presupuestos millonarios." },
+    { title: "El Problema de Mercado",
+      script: "Cualquier directivo se enfrenta a un dilema: pagar una fortuna por encuestas que tardan meses (15.000 € a 60.000 € y semanas de campo), o arriesgarse a usar herramientas de IA baratas que alucinan y dan respuestas homogéneas. En nuestras pruebas demostramos que un LLM sin calibrar falla 34 puntos. Nuestro proyecto une lo mejor de ambos mundos: la rapidez de la IA con el rigor científico de las encuestas públicas oficiales.",
+      business: "Framework: Clear Problem Statement (Clarity and Conciseness). Planteamiento accesible y corporativo del dolor del cliente.",
+      jury: "P: ¿Por qué fallan los LLMs en simulación de personas? -> R: Por el fenómeno de homogeneización: exageran los consensos y no capturan la pluralidad real de la población." },
+    { title: "Nuestra Propuesta de Valor",
+      script: "Nuestra gran ventaja competitiva es la separación de tareas: la estadística calcula, la IA explica. Los modelos de lenguaje son excelentes redactando informes ejecutivos, pero pésimos calculando probabilidades desde cero. Al encomendar los números a la base de datos real del CIS y la redacción a la IA, conseguimos precisión sin riesgo de alucinación.",
+      business: "Framework: Innovation and Originality + Unique Selling Proposition. Arquitectura diferencial, entendible y robusta.",
+      jury: "P: ¿Cómo sabéis que la IA no cambia los números al redactar? -> R: Un validador de software compara cada cifra del texto con el cálculo estadístico; si no coinciden, se descarta el texto automáticamente." },
+    { title: "Base Sociológica Real",
+      script: "La base de datos de nuestro sistema no son textos de internet, sino 425.000 entrevistas reales del CIS y una población sintética de 50.000 individuos calibrada con el INE. Si en España el 19% de la población tiene más de 65 años o el 32% vive en zonas rurales, nuestra población sintética reproduce esas proporciones con menos del 0,1% de desviación.",
+      business: "Framework: Feasibility and Practicality. Sustento empírico con datos oficiales verificables.",
+      jury: "P: ¿Por qué 50.000 personas y no más? -> R: Porque 50.000 casos ofrecen una representatividad 20 veces mayor que un barómetro tradicional (2.500 casos) manteniendo el tiempo de cálculo en solo 3 segundos." },
+    { title: "Cómo Funciona el Sistema",
+      script: "El funcionamiento es muy fácil de entender: primero se filtra la pregunta para garantizar que es ética; segundo, se calculan las respuestas usando las encuestas del CIS; tercero, se desglosa el resultado por edades, géneros y regiones estabilizando los subgrupos pequeños; y cuarto, se redacta el informe con su semáforo de confianza. Todo en 3 segundos.",
+      business: "Framework: Critical Thinking + Feasibility. Proceso paso a paso estructurado y comprensible.",
+      jury: "P: ¿Cómo sabéis qué opinan grupos muy específicos como jóvenes sin estudios en zonas rurales? -> R: Usamos MRP (regresión multinivel), que combina la información del subgrupo con la tendencia general del país para evitar errores por falta de datos." },
+    { title: "Garantía Metodológica",
+      script: "¿Cómo demostramos a un cliente o a un jurado que este sistema funciona de verdad? Con un examen ciego: apartamos 88 preguntas reales de 11 encuestas del CIS de 2026 que el sistema no conocía. Además, respetamos las fechas para que solo use información disponible en el momento de la consulta.",
+      business: "Framework: Critical Thinking & Scientific Integrity. Demostración de rigor y honestidad científica.",
+      jury: "P: ¿Cómo sabemos que el sistema no memorizó las respuestas? -> R: Porque las 88 preguntas del examen final estuvieron completamente aisladas de los datos de entrenamiento hasta la evaluación definitiva." },
+    { title: "Resultados Comprobados",
+      script: "Los números hablan por sí solos: mientras una IA sin datos falla 34 puntos y responder al azar falla 17, nuestra plataforma se sitúa en solo 8,1 puntos en preguntas totalmente nuevas. Y si la pregunta ya existía en el CIS, el error baja a 2,5 puntos, que es el margen de error habitual de una encuesta tradicional.",
+      business: "Framework: Making Gen AI Real + Feasibility. Resultados tangibles, comparativos y fáciles de entender.",
+      jury: "P: ¿Qué significa exactamente 8,1 puntos de error? -> R: Que si en la realidad el 60% de los españoles apoya una medida, nuestra predicción estará habitualmente entre el 52% y el 68%." },
+    { title: "Demostración de la Plataforma",
+      script: "En este vídeo vemos la herramienta en directo con tres casos clave: primero, un tema con muchos datos históricos como la vivienda (semáforo verde); segundo, una propuesta laboral inédita donde el sistema actúa con cautela y abre el margen (semáforo amarillo); y tercero, un intento de sondeo electoral que el sistema rechaza automáticamente por ética.",
+      business: "Framework: Feasibility & Practicality. Muestra el producto real funcionando sin artificios.",
+      jury: "P: ¿Qué pasa si alguien intenta engañar al sistema con preguntas trampa? -> R: El filtro inicial comprueba el vocabulario y las opciones antes de procesar nada." },
+    { title: "Casos Sectoriales",
+      script: "La aplicabilidad a los clientes de Accenture es total: en gran consumo ayuda a testear envases antes de producirlos; en el sector público previene polémicas con nuevas normativas; en banca evalúa nuevos productos financieros; y en salud ayuda a diseñar campañas de concienciación que realmente lleguen a la gente.",
+      business: "Framework: Making Gen AI Real & Industry Relevant. Aplicabilidad práctica inmediata a clientes reales.",
+      jury: "P: ¿Cuál de estos sectores empezaría a usarlo más rápido? -> R: Gran consumo, porque lanzan productos continuamente y cada mes que ahorran en estudios de mercado se traduce en ventas directas." },
+    { title: "La Voz del Mercado",
+      script: "Para validar que no estábamos construyendo una solución teórica de laboratorio, hablamos con directivos y profesionales de grandes empresas. Valoran sobre todo la velocidad para descartar ideas malas en horas, la tranquilidad de reducir el riesgo antes de invertir y la capacidad de que los presupuestos de investigación rindan más.",
+      business: "Framework: User Feedback & Market Validation + Engagement. Iniciativa proactiva de validación con profesionales reales.",
+      jury: "P: ¿Qué opinan sobre sustituir a las personas por IA? -> R: No se trata de sustituir la voz humana, sino de hacer simulaciones previas para tomar decisiones informadas antes de la encuesta presencial." },
+    { title: "Business Case y ROI",
+      script: "Para una empresa mediana que haga 12 estudios al año a 25.000 euros cada uno, el gasto habitual es de 300.000 euros. Con nuestra plataforma filtran las 12 ideas en la herramienta y solo pagan la encuesta presencial de las 3 finalistas: el ahorro neto es de 216.000 euros al año, un 72% menos. [Mover los sliders en directo para mostrar otros escenarios.]",
+      business: "Framework: Feasibility & Scalability. Cuantificación económica rigurosa y realista.",
+      jury: "P: ¿La herramienta busca eliminar los paneles de encuestas tradicionales? -> R: No, busca complementarlos: filtra la mayoría de ideas para que solo se gaste en encuestas cuando la idea ya está madura." },
+    { title: "Integración en Accenture",
+      script: "La integración en Accenture es inmediata y aporta valor en tres áreas: en Accenture Song acelera la validación de campañas publicitarias; en Accenture Strategy ayuda a los comités de dirección a evaluar riesgos sociales; y en Data & AI constituye un producto de software exportable a cualquier país de Europa.",
+      business: "Framework: Scalability. Expansión a escala corporativa y alineamiento con las divisiones de Accenture.",
+      jury: "P: ¿Se podría usar este sistema fuera de España? -> R: Sí, el motor es modular. Bastaría conectar los datos del INSEE francés o de Destatis en Alemania." },
+    { title: "IA Responsable y Ética",
+      script: "Una tecnología corporativa madura no solo presume de lo que sabe hacer, sino que define con honestidad sus límites. Nuestro sistema ofrece márgenes de confianza contrastados y privacidad total, e impone límites éticos claros: no permite simulaciones electorales y avisa cuando los datos son antiguos.",
+      business: "Framework: Ethical Considerations. Transparencia, responsabilidad social y cumplimiento normativo.",
+      jury: "P: ¿Cumple esta solución con el EU AI Act? -> R: Está diseñada según sus requisitos de transparencia, auditabilidad y ausencia de discriminación algorítmica." },
+    { title: "Conclusión y Propuesta de Valor",
+      script: "En conclusión: hemos creado una herramienta que sustituye las dudas de la investigación tradicional por la seguridad de los datos reales. Reduce el error a la mitad, ahorra más del 70% del presupuesto y ofrece semáforos de confianza para decidir con tranquilidad. Está lista para integrarse como un activo diferencial de Accenture. Muchas gracias de parte de todo el equipo; quedamos a su disposición para cualquier pregunta.",
+      business: "Framework: Communication & Teamwork + Proactivity. Cierre corporativo, seguro y resolutivo.",
+      jury: "P: ¿Cuáles serían los siguientes pasos para implantarlo en un cliente piloto? -> R: Un taller de dos semanas para conectar sus temáticas prioritarias y calibrar las preguntas de negocio." }
+  ];
+
+  let currentSlide = 0;
+  const totalSlides = slidesData.length;
+  let notesOpen = false;
+  let editModeActive = false;
+
+  function updateSlideView() {
+    document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === currentSlide));
+    document.getElementById('slideCounter').textContent = String(currentSlide + 1).padStart(2, '0') + ' / ' + String(totalSlides).padStart(2, '0');
+    document.getElementById('progressBar').style.width = ((currentSlide + 1) / totalSlides * 100) + '%';
+    document.getElementById('navSlideTitle').textContent = slidesData[currentSlide].title;
+    updateSpeakerNotesContent();
+  }
+  function nextSlide() { if (currentSlide < totalSlides - 1) { currentSlide++; updateSlideView(); } }
+  function prevSlide() { if (currentSlide > 0) { currentSlide--; updateSlideView(); } }
+  function goToSlide(i) {
+    if (i < 0 || i >= totalSlides) return;
+    currentSlide = i; updateSlideView();
+    document.getElementById('gridModal').classList.remove('open');
+  }
+
+  /* ---------- Modo edición: cualquier texto de las slides se puede editar ---------- */
+  function editTargets() {
+    const out = [];
+    document.querySelectorAll('main .slide *').forEach(el => {
+      if (el.closest('button, input, svg, video, .z-video')) return;
+      const hasText = Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.trim());
+      if (!hasText) return;
+      if (out.some(o => o.contains(el))) return;
+      out.push(el);
+    });
+    return out;
+  }
+  function toggleEditMode() {
+    editModeActive = !editModeActive;
+    document.body.classList.toggle('edit-mode', editModeActive);
+    document.getElementById('editModeBtn').classList.toggle('on', editModeActive);
+    document.getElementById('editBtnText').textContent = editModeActive ? 'Guardar / Salir' : 'Modo Edición';
+    editTargets().forEach(el => {
+      if (editModeActive) { el.setAttribute('contenteditable', 'true'); el.classList.add('ed'); }
+      else { el.removeAttribute('contenteditable'); el.classList.remove('ed'); }
+    });
+  }
+  function downloadHTML() {
+    if (editModeActive) toggleEditMode();
+    const clone = document.documentElement.cloneNode(true);
+    clone.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === 0));
+    clone.querySelectorAll('video').forEach(v => v.remove());
+    const drawer = clone.querySelector('#speakerNotesDrawer'); if (drawer) drawer.classList.remove('open');
+    const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    a.download = 'Synthetic Spain (editado).html';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  /* ---------- Guion e índice ---------- */
+  function toggleSpeakerNotes() {
+    notesOpen = !notesOpen;
+    document.getElementById('speakerNotesDrawer').classList.toggle('open', notesOpen);
+    document.getElementById('notesToggleBtn').classList.toggle('on', notesOpen);
+    if (notesOpen) updateSpeakerNotesContent();
+  }
+  function updateSpeakerNotesContent() {
+    const d = slidesData[currentSlide];
+    document.getElementById('notesSlideNumber').textContent = 'Slide ' + (currentSlide + 1) + ' de ' + totalSlides + ' · ' + d.title;
+    document.getElementById('notesPitchScript').textContent = d.script;
+    document.getElementById('notesBusinessFocus').textContent = d.business;
+    document.getElementById('notesJuryQuestion').textContent = d.jury;
+  }
+  function toggleGridModal() {
+    const m = document.getElementById('gridModal');
+    if (!m.classList.contains('open')) {
+      const c = document.getElementById('gridThumbnailsContainer');
+      c.innerHTML = '';
+      slidesData.forEach((s, i) => {
+        const t = document.createElement('div');
+        t.className = 'thumb' + (i === currentSlide ? ' cur' : '');
+        t.innerHTML = '<div class="n">#' + String(i + 1).padStart(2, '0') + '</div><div class="t"></div>';
+        t.querySelector('.t').textContent = s.title;
+        t.onclick = () => goToSlide(i);
+        c.appendChild(t);
+      });
+    }
+    m.classList.toggle('open');
+  }
+  function toggleFullScreen() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    else if (document.exitFullscreen) document.exitFullscreen();
+  }
+
+  /* ---------- Vídeo de la demo: clic en el recuadro para cargar el archivo ---------- */
+  function pickVideo() {
+    if (editModeActive) return;
+    if (document.querySelector('#videoBox video')) return;
+    document.getElementById('videoInput').click();
+  }
+  function loadVideo(input) {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    const v = document.createElement('video');
+    v.src = URL.createObjectURL(f);
+    v.controls = true;
+    document.getElementById('videoBox').appendChild(v);
+    v.play().catch(() => {});
+  }
+
+  /* ---------- Calculadora ROI ---------- */
+  function paintRange(el) {
+    const p = (el.value - el.min) / (el.max - el.min) * 100;
+    el.style.setProperty('--p', p + '%');
+  }
+  function updateROICalculation() {
+    const s = document.getElementById('roiSurveysSlider');
+    const c = document.getElementById('roiCostSlider');
+    paintRange(s); paintRange(c);
+    const surveys = parseInt(s.value, 10);
+    const cost = parseInt(c.value, 10);
+    document.getElementById('roiSurveysDisplay').textContent = surveys + ' estudios';
+    document.getElementById('roiCostDisplay').textContent = cost.toLocaleString('es-ES') + ' €';
+    const trad = surveys * cost;
+    // Modelo mixto: todas las ideas pasan por la simulación y solo el 25% va a encuesta tradicional
+    const synth = Math.round(surveys * 0.25 * cost + surveys * 750);
+    document.getElementById('roiTradTotal').textContent = trad.toLocaleString('es-ES') + ' €';
+    document.getElementById('roiSynthTotal').textContent = synth.toLocaleString('es-ES') + ' €';
+    document.getElementById('roiNetSavings').textContent = (trad - synth).toLocaleString('es-ES') + ' €';
+  }
+
+  /* ---------- Teclado ---------- */
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
+      if (e.key === 'Escape') e.target.blur();
+      return;
+    }
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); nextSlide(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); prevSlide(); }
+    else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); toggleSpeakerNotes(); }
+    else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); toggleEditMode(); }
+    else if (e.key === 'g' || e.key === 'G') { e.preventDefault(); toggleGridModal(); }
+    else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFullScreen(); }
+    else if (e.key === 'Escape') {
+      document.getElementById('gridModal').classList.remove('open');
+      if (notesOpen) toggleSpeakerNotes();
+    }
+  });
+
+  window.addEventListener('DOMContentLoaded', () => { updateSlideView(); updateROICalculation(); });
+</script>
+
+</body></html>
